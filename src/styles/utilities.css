@@ -1,0 +1,167 @@
+/**
+ * KhumKhum ERP — Utility Classes
+ * Shared structural utilities only.
+ * No aesthetic/color utilities — those belong in component CSS.
+ */
+
+/* ─────────────────────────────────────────────
+   DISPLAY
+   ───────────────────────────────────────────── */
+.d-flex         { display: flex; }
+.d-inline-flex  { display: inline-flex; }
+.d-grid         { display: grid; }
+.d-block        { display: block; }
+.d-inline       { display: inline; }
+.d-none         { display: none; }
+
+/* ─────────────────────────────────────────────
+   FLEX
+   ───────────────────────────────────────────── */
+.flex-row        { flex-direction: row; }
+.flex-col        { flex-direction: column; }
+.flex-wrap       { flex-wrap: wrap; }
+.flex-nowrap     { flex-wrap: nowrap; }
+.flex-1          { flex: 1 1 0%; }
+.flex-auto       { flex: 1 1 auto; }
+.flex-none       { flex: none; }
+.flex-shrink-0   { flex-shrink: 0; }
+.flex-grow-0     { flex-grow: 0; }
+.flex-grow-1     { flex-grow: 1; }
+
+.items-start     { align-items: flex-start; }
+.items-center    { align-items: center; }
+.items-end       { align-items: flex-end; }
+.items-stretch   { align-items: stretch; }
+
+.justify-start   { justify-content: flex-start; }
+.justify-center  { justify-content: center; }
+.justify-end     { justify-content: flex-end; }
+.justify-between { justify-content: space-between; }
+.justify-around  { justify-content: space-around; }
+
+/* ─────────────────────────────────────────────
+   GAP
+   ───────────────────────────────────────────── */
+.gap-1  { gap: var(--space-1); }
+.gap-2  { gap: var(--space-2); }
+.gap-3  { gap: var(--space-3); }
+.gap-4  { gap: var(--space-4); }
+.gap-6  { gap: var(--space-6); }
+.gap-8  { gap: var(--space-8); }
+
+/* ─────────────────────────────────────────────
+   POSITION
+   ───────────────────────────────────────────── */
+.relative { position: relative; }
+.absolute { position: absolute; }
+.fixed    { position: fixed; }
+.sticky   { position: sticky; }
+
+/* ─────────────────────────────────────────────
+   OVERFLOW
+   ───────────────────────────────────────────── */
+.overflow-auto   { overflow: auto; }
+.overflow-hidden { overflow: hidden; }
+.overflow-x-auto { overflow-x: auto; }
+.overflow-y-auto { overflow-y: auto; }
+
+/* ─────────────────────────────────────────────
+   WIDTH / HEIGHT
+   ───────────────────────────────────────────── */
+.w-full    { width: 100%; }
+.h-full    { height: 100%; }
+.min-h-0   { min-height: 0; }
+.min-w-0   { min-width: 0; }
+.max-w-full { max-width: 100%; }
+
+/* ─────────────────────────────────────────────
+   VISIBILITY
+   ───────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ─────────────────────────────────────────────
+   CURSOR
+   ───────────────────────────────────────────── */
+.cursor-pointer  { cursor: pointer; }
+.cursor-default  { cursor: default; }
+.cursor-not-allowed { cursor: not-allowed; }
+.cursor-grab     { cursor: grab; }
+
+/* ─────────────────────────────────────────────
+   SELECT
+   ───────────────────────────────────────────── */
+.select-none { user-select: none; }
+.select-text { user-select: text; }
+.select-all  { user-select: all; }
+
+/* ─────────────────────────────────────────────
+   DIVIDER
+   ───────────────────────────────────────────── */
+.divider {
+  height: 1px;
+  background-color: var(--border-default);
+  border: none;
+  margin: 0;
+}
+
+.divider-vertical {
+  width: 1px;
+  height: 100%;
+  background-color: var(--border-default);
+}
+
+/* ─────────────────────────────────────────────
+   SCROLL AREA
+   ───────────────────────────────────────────── */
+.scroll-area {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-300) transparent;
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background-color: var(--color-neutral-300);
+  border-radius: var(--radius-full);
+}
+
+[data-theme="dark"] .scroll-area::-webkit-scrollbar-thumb {
+  background-color: var(--color-neutral-700);
+}
+
+/* ─────────────────────────────────────────────
+   TRUNCATE
+   ───────────────────────────────────────────── */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────
+   INTERACTIVE BASE
+   ───────────────────────────────────────────── */
+.interactive {
+  transition: background-color var(--transition-fast),
+              color var(--transition-fast),
+              border-color var(--transition-fast),
+              box-shadow var(--transition-fast);
+}

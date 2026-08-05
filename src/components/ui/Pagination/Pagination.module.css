@@ -1,0 +1,43 @@
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border-default);
+  background-color: var(--bg-surface);
+  flex-wrap: wrap;
+}
+.info { flex-shrink: 0; }
+.countText { font-size: var(--font-size-xs); color: var(--text-secondary); }
+.controls { display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap; }
+.pageSizeControl { display: flex; align-items: center; gap: var(--space-1-5); }
+.pageSizeLabel { font-size: var(--font-size-xs); color: var(--text-secondary); }
+.pageSizeSelect {
+  height: 26px;
+  padding: 0 var(--space-1-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+.pageButtons { display: flex; align-items: center; gap: var(--space-0-5); }
+.pageBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background-color var(--transition-fast), color var(--transition-fast);
+}
+.pageBtn:hover:not(:disabled) { background-color: var(--bg-surface-2); color: var(--text-primary); }
+.pageBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pageBtn:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: 1px; }
+.pageInfo { font-size: var(--font-size-xs); color: var(--text-secondary); white-space: nowrap; padding: 0 var(--space-1); }

@@ -1,0 +1,10 @@
+/**
+ * KhumKhum ERP — Global Styles
+ * Imports design system in correct order.
+ * Import fonts from Google Fonts via layout.tsx.
+ */
+
+@import '../styles/tokens.css';
+@import '../styles/reset.css';
+@import '../styles/typography.css';
+@import '../styles/utilities.css';

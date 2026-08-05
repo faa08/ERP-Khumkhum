@@ -1,0 +1,212 @@
+/* Sidebar Styles */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: var(--sidebar-width);
+  min-height: 100%;
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  transition: width var(--transition-sidebar);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.sidebar--collapsed {
+  width: var(--sidebar-width-collapsed);
+}
+
+/* ─── BRAND ─── */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2-5);
+  padding: var(--space-3) var(--space-3);
+  height: var(--topbar-height);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.brandIcon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-md);
+  background-color: var(--color-primary-600);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: var(--font-weight-bold);
+  flex-shrink: 0;
+  letter-spacing: 0.5px;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.brandName {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-neutral-0);
+  line-height: 1;
+}
+
+.brandTagline {
+  font-size: var(--font-size-xs);
+  color: var(--color-neutral-500);
+  line-height: 1;
+}
+
+/* ─── NAV ─── */
+.nav {
+  flex: 1;
+  padding: var(--space-2) 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* ─── GROUP ─── */
+.group {
+  padding: var(--space-1) 0;
+}
+
+.groupLabel {
+  padding: var(--space-1) var(--space-3);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-wider);
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+  white-space: nowrap;
+}
+
+.groupDivider {
+  margin: var(--space-1) var(--space-2);
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.groupItems {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* ─── ITEM ─── */
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1-5) var(--space-3);
+  margin: 1px var(--space-1-5);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-sidebar);
+  text-decoration: none;
+  cursor: pointer;
+  background: var(--bg-sidebar-item);
+  border: none;
+  width: calc(100% - var(--space-3));
+  transition:
+    background-color var(--transition-fast),
+    color var(--transition-fast);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.item:hover:not(.item--active) {
+  background-color: var(--bg-sidebar-hover);
+  color: var(--color-neutral-100);
+}
+
+.item--active {
+  background-color: var(--bg-sidebar-active);
+  color: var(--text-sidebar-active);
+}
+
+.item--nested {
+  padding-left: calc(var(--space-3) + var(--space-4));
+  font-size: var(--font-size-xs);
+}
+
+.item--collapsed {
+  padding: var(--space-1-5);
+  margin: 1px auto;
+  width: calc(var(--sidebar-width-collapsed) - var(--space-3));
+  justify-content: center;
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: -1px;
+}
+
+/* ─── ITEM PARTS ─── */
+.itemIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.itemLabel {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.itemChevron {
+  display: flex;
+  align-items: center;
+  color: var(--color-neutral-600);
+  flex-shrink: 0;
+}
+
+.itemBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background-color: var(--color-primary-600);
+  color: white;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+
+/* ─── NESTED CHILDREN ─── */
+.children {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: var(--z-sidebar);
+    transform: translateX(0);
+  }
+
+  .sidebar--collapsed {
+    transform: translateX(calc(-1 * var(--sidebar-width)));
+    width: var(--sidebar-width);
+  }
+}

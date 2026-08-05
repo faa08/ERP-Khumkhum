@@ -1,0 +1,133 @@
+/**
+ * KhumKhum ERP — Typography System
+ * Consistent type scale for all ERP interfaces.
+ * Reference these classes in components — do not define custom font sizes inline.
+ */
+
+/* ─────────────────────────────────────────────
+   PAGE TITLES
+   ───────────────────────────────────────────── */
+.page-title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-tight);
+  color: var(--text-primary);
+  letter-spacing: var(--letter-spacing-tight);
+}
+
+/* ─────────────────────────────────────────────
+   SECTION TITLES
+   ───────────────────────────────────────────── */
+.section-title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-snug);
+  color: var(--text-primary);
+}
+
+/* ─────────────────────────────────────────────
+   CARD / WIDGET TITLES
+   ───────────────────────────────────────────── */
+.card-title {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-snug);
+  color: var(--text-primary);
+}
+
+/* ─────────────────────────────────────────────
+   BODY TEXT
+   ───────────────────────────────────────────── */
+.body-text {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--text-primary);
+}
+
+.body-text-secondary {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--text-secondary);
+}
+
+/* ─────────────────────────────────────────────
+   CAPTION / HELPER TEXT
+   ───────────────────────────────────────────── */
+.caption {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--text-secondary);
+}
+
+.caption-xs {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-normal);
+  color: var(--text-tertiary);
+}
+
+/* ─────────────────────────────────────────────
+   TABLE TEXT
+   Dense, readable for data tables.
+   ───────────────────────────────────────────── */
+.table-text {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-snug);
+  color: var(--text-primary);
+}
+
+.table-header-text {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-snug);
+  color: var(--text-secondary);
+  letter-spacing: var(--letter-spacing-wide);
+  text-transform: uppercase;
+}
+
+/* ─────────────────────────────────────────────
+   LABEL TEXT
+   Used for form labels, nav items.
+   ───────────────────────────────────────────── */
+.label-text {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-snug);
+  color: var(--text-primary);
+}
+
+/* ─────────────────────────────────────────────
+   BUTTON TEXT
+   ───────────────────────────────────────────── */
+.button-text {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  letter-spacing: var(--letter-spacing-normal);
+}
+
+/* ─────────────────────────────────────────────
+   MONOSPACE (codes, IDs, numbers)
+   ───────────────────────────────────────────── */
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+/* ─────────────────────────────────────────────
+   UTILITY MODIFIERS
+   ───────────────────────────────────────────── */
+.text-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.text-break {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}

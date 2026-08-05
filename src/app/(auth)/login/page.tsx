@@ -1,0 +1,130 @@
+'use client';
+
+import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import Link from 'next/link';
+import { Eye, EyeOff, LogIn } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { loginSchema, type LoginFormData } from '@/lib/validations';
+import { ROUTES } from '@/lib/constants';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { Alert } from '@/components/ui/Alert';
+import { FormField } from '@/components/form/FormField';
+import styles from './login.module.css';
+
+export default function LoginPage() {
+  const router = useRouter();
+  const { login, isLoading, error, clearError } = useAuth();
+  const [showPassword, setShowPassword] = useState(false);
+
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { username: '', password: '', rememberMe: false },
+  });
+
+  const onSubmit = async (data: LoginFormData) => {
+    clearError();
+    await login(data);
+    router.push(ROUTES.DASHBOARD);
+  };
+
+  return (
+    <div className={styles.card}>
+      {/* Header */}
+      <div className={styles.header}>
+        <div className={styles.brandMark} aria-hidden="true">KK</div>
+        <h1 className={styles.title}>KhumKhum ERP</h1>
+        <p className={styles.subtitle}>Sign in to your account to continue</p>
+      </div>
+
+      {/* Error */}
+      {error && (
+        <Alert variant="danger" title={error} dismissible onDismiss={clearError} />
+      )}
+
+      {/* Form */}
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className={styles.form}>
+        <FormField
+          label="Username"
+          required
+          htmlFor="username"
+          error={errors.username?.message}
+        >
+          <Input
+            id="username"
+            type="text"
+            placeholder="Enter your username"
+            autoComplete="username"
+            autoFocus
+            fullWidth
+            error={errors.username?.message}
+            {...register('username')}
+          />
+        </FormField>
+
+        <FormField
+          label="Password"
+          required
+          htmlFor="password"
+          error={errors.password?.message}
+        >
+          <Input
+            id="password"
+            type={showPassword ? 'text' : 'password'}
+            placeholder="Enter your password"
+            autoComplete="current-password"
+            fullWidth
+            error={errors.password?.message}
+            rightElement={
+              <button
+                type="button"
+                onClick={() => setShowPassword((p) => !p)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className={styles.showPasswordBtn}
+              >
+                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            }
+            {...register('password')}
+          />
+        </FormField>
+
+        <div className={styles.row}>
+          <Checkbox
+            id="rememberMe"
+            label="Remember me"
+            {...register('rememberMe')}
+          />
+          <Link href={ROUTES.FORGOT_PASSWORD} className={styles.forgotLink}>
+            Forgot password?
+          </Link>
+        </div>
+
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          fullWidth
+          loading={isLoading}
+          leftIcon={!isLoading ? <LogIn size={16} /> : undefined}
+        >
+          {isLoading ? 'Signing in...' : 'Sign In'}
+        </Button>
+      </form>
+
+      {/* Footer note */}
+      <p className={styles.footerNote}>
+        For account access, contact your system administrator.
+      </p>
+
+      {/* Dev hint */}
+      <p className={styles.devHint}>
+        Dev: admin / admin123
+      </p>
+    </div>
+  );
+}

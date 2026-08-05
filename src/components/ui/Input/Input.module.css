@@ -1,0 +1,155 @@
+/* Input Component Styles */
+
+.wrapper {
+  display: inline-flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.wrapper--full {
+  width: 100%;
+  display: flex;
+}
+
+.inputWrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+/* ─── BASE INPUT ─── */
+
+.input {
+  width: 100%;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-sans);
+  line-height: var(--line-height-normal);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  appearance: none;
+}
+
+.input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input:hover:not(:disabled):not(.input--error) {
+  border-color: var(--border-strong);
+}
+
+.input:focus-visible {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: var(--focus-ring);
+}
+
+/* ─── SIZES ─── */
+
+.input--sm {
+  height: 28px;
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  border-radius: var(--radius-sm);
+}
+
+.input--md {
+  height: 34px;
+  padding: 0 var(--space-2-5);
+}
+
+.input--lg {
+  height: 40px;
+  padding: 0 var(--space-3);
+  font-size: var(--font-size-md);
+}
+
+/* ─── WITH ICONS ─── */
+
+.input--hasLeft {
+  padding-left: 32px;
+}
+
+.input--hasRight {
+  padding-right: 32px;
+}
+
+.leftIcon,
+.rightIcon {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.leftIcon {
+  left: var(--space-2);
+}
+
+.rightIcon {
+  right: var(--space-2);
+}
+
+.leftIcon svg,
+.rightIcon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.rightElement {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding-right: var(--space-1-5);
+}
+
+/* ─── STATES ─── */
+
+.input--error {
+  border-color: var(--border-error);
+}
+
+.input--error:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-danger-500);
+}
+
+.input--success {
+  border-color: var(--border-success);
+}
+
+.input--disabled {
+  background-color: var(--bg-surface-2);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* ─── HELPER TEXT ─── */
+
+.helperText {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  line-height: var(--line-height-snug);
+}
+
+.errorText {
+  font-size: var(--font-size-xs);
+  color: var(--text-danger);
+  line-height: var(--line-height-snug);
+}
+
+.successText {
+  font-size: var(--font-size-xs);
+  color: var(--text-success);
+  line-height: var(--line-height-snug);
+}

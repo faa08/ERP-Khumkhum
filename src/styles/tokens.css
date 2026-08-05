@@ -1,0 +1,289 @@
+/**
+ * KhumKhum ERP — Design Tokens
+ * All CSS Custom Properties that define the design system.
+ * Every component must reference these tokens — never hardcode values.
+ */
+
+:root {
+  /* ─────────────────────────────────────────────
+     COLOR — NEUTRAL PALETTE
+     Base palette for backgrounds, borders, text.
+     ───────────────────────────────────────────── */
+  --color-neutral-0:   #ffffff;
+  --color-neutral-50:  #f8f9fa;
+  --color-neutral-100: #f1f3f5;
+  --color-neutral-200: #e9ecef;
+  --color-neutral-300: #dee2e6;
+  --color-neutral-400: #ced4da;
+  --color-neutral-500: #adb5bd;
+  --color-neutral-600: #6c757d;
+  --color-neutral-700: #495057;
+  --color-neutral-800: #343a40;
+  --color-neutral-900: #212529;
+  --color-neutral-950: #141618;
+
+  /* ─────────────────────────────────────────────
+     COLOR — PRIMARY (Enterprise Blue)
+     Used only for primary actions and key focus.
+     ───────────────────────────────────────────── */
+  --color-primary-50:  #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+
+  /* ─────────────────────────────────────────────
+     COLOR — SEMANTIC
+     ───────────────────────────────────────────── */
+  /* Success */
+  --color-success-50:  #f0fdf4;
+  --color-success-100: #dcfce7;
+  --color-success-200: #bbf7d0;
+  --color-success-500: #22c55e;
+  --color-success-600: #16a34a;
+  --color-success-700: #15803d;
+  --color-success-800: #166534;
+
+  /* Warning */
+  --color-warning-50:  #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-200: #fde68a;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-warning-700: #b45309;
+  --color-warning-800: #92400e;
+
+  /* Danger */
+  --color-danger-50:  #fff1f2;
+  --color-danger-100: #ffe4e6;
+  --color-danger-200: #fecdd3;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-danger-700: #b91c1c;
+  --color-danger-800: #991b1b;
+
+  /* Info */
+  --color-info-50:  #f0f9ff;
+  --color-info-100: #e0f2fe;
+  --color-info-200: #bae6fd;
+  --color-info-500: #0ea5e9;
+  --color-info-600: #0284c7;
+  --color-info-700: #0369a1;
+  --color-info-800: #075985;
+
+  /* ─────────────────────────────────────────────
+     SEMANTIC UI TOKENS — LIGHT MODE
+     Components reference these, not raw palette.
+     ───────────────────────────────────────────── */
+
+  /* Background */
+  --bg-app:          var(--color-neutral-50);
+  --bg-surface:      var(--color-neutral-0);
+  --bg-surface-2:    var(--color-neutral-100);
+  --bg-surface-3:    var(--color-neutral-200);
+  --bg-overlay:      rgba(0, 0, 0, 0.40);
+  --bg-sidebar:      var(--color-neutral-900);
+  --bg-sidebar-item: transparent;
+  --bg-sidebar-active: var(--color-primary-600);
+  --bg-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --bg-topbar:       var(--color-neutral-0);
+
+  /* Border */
+  --border-default:  var(--color-neutral-200);
+  --border-strong:   var(--color-neutral-300);
+  --border-focus:    var(--color-primary-500);
+  --border-error:    var(--color-danger-500);
+  --border-success:  var(--color-success-500);
+
+  /* Text */
+  --text-primary:    var(--color-neutral-900);
+  --text-secondary:  var(--color-neutral-600);
+  --text-tertiary:   var(--color-neutral-500);
+  --text-disabled:   var(--color-neutral-400);
+  --text-inverse:    var(--color-neutral-0);
+  --text-sidebar:    var(--color-neutral-300);
+  --text-sidebar-active: var(--color-neutral-0);
+  --text-link:       var(--color-primary-600);
+  --text-danger:     var(--color-danger-600);
+  --text-success:    var(--color-success-700);
+  --text-warning:    var(--color-warning-700);
+  --text-info:       var(--color-info-700);
+
+  /* Brand / Action */
+  --color-action-primary:         var(--color-primary-600);
+  --color-action-primary-hover:   var(--color-primary-700);
+  --color-action-primary-active:  var(--color-primary-800);
+  --color-action-primary-text:    var(--color-neutral-0);
+
+  --color-action-secondary:       var(--color-neutral-0);
+  --color-action-secondary-border:var(--color-neutral-300);
+  --color-action-secondary-hover: var(--color-neutral-100);
+  --color-action-secondary-text:  var(--color-neutral-800);
+
+  --color-action-ghost-hover:     var(--color-neutral-100);
+  --color-action-ghost-text:      var(--color-neutral-700);
+
+  --color-action-danger:          var(--color-danger-600);
+  --color-action-danger-hover:    var(--color-danger-700);
+  --color-action-danger-text:     var(--color-neutral-0);
+
+  /* ─────────────────────────────────────────────
+     SPACING SCALE (4px base unit)
+     ───────────────────────────────────────────── */
+  --space-0:   0px;
+  --space-px:  1px;
+  --space-0-5: 2px;
+  --space-1:   4px;
+  --space-1-5: 6px;
+  --space-2:   8px;
+  --space-2-5: 10px;
+  --space-3:   12px;
+  --space-3-5: 14px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-7:   28px;
+  --space-8:   32px;
+  --space-9:   36px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-14:  56px;
+  --space-16:  64px;
+  --space-20:  80px;
+  --space-24:  96px;
+
+  /* ─────────────────────────────────────────────
+     TYPOGRAPHY
+     ───────────────────────────────────────────── */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+
+  --font-size-xs:   11px;
+  --font-size-sm:   12px;
+  --font-size-base: 13px;
+  --font-size-md:   14px;
+  --font-size-lg:   15px;
+  --font-size-xl:   16px;
+  --font-size-2xl:  18px;
+  --font-size-3xl:  20px;
+  --font-size-4xl:  24px;
+
+  --font-weight-regular:   400;
+  --font-weight-medium:    500;
+  --font-weight-semibold:  600;
+  --font-weight-bold:      700;
+
+  --line-height-tight:   1.25;
+  --line-height-snug:    1.375;
+  --line-height-normal:  1.5;
+  --line-height-relaxed: 1.625;
+
+  --letter-spacing-tight:  -0.025em;
+  --letter-spacing-normal: 0em;
+  --letter-spacing-wide:   0.025em;
+  --letter-spacing-wider:  0.05em;
+
+  /* ─────────────────────────────────────────────
+     BORDER RADIUS
+     ───────────────────────────────────────────── */
+  --radius-none: 0px;
+  --radius-sm:   3px;
+  --radius-md:   5px;
+  --radius-lg:   7px;
+  --radius-xl:   10px;
+  --radius-2xl:  14px;
+  --radius-full: 9999px;
+
+  /* ─────────────────────────────────────────────
+     SHADOWS
+     Minimal, enterprise-appropriate.
+     ───────────────────────────────────────────── */
+  --shadow-xs:  0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-sm:  0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
+  --shadow-md:  0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+  --shadow-lg:  0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
+  --shadow-xl:  0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+
+  /* ─────────────────────────────────────────────
+     Z-INDEX SCALE
+     ───────────────────────────────────────────── */
+  --z-base:     0;
+  --z-raised:   10;
+  --z-dropdown: 100;
+  --z-sticky:   200;
+  --z-sidebar:  300;
+  --z-topbar:   300;
+  --z-drawer:   400;
+  --z-modal:    500;
+  --z-toast:    600;
+  --z-tooltip:  700;
+
+  /* ─────────────────────────────────────────────
+     LAYOUT
+     ───────────────────────────────────────────── */
+  --sidebar-width:          240px;
+  --sidebar-width-collapsed: 56px;
+  --topbar-height:          52px;
+
+  /* ─────────────────────────────────────────────
+     TRANSITIONS
+     Subtle only — functional transitions.
+     ───────────────────────────────────────────── */
+  --transition-fast:    80ms ease;
+  --transition-normal:  150ms ease;
+  --transition-slow:    250ms ease;
+  --transition-sidebar: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ─────────────────────────────────────────────
+     FOCUS RING
+     ───────────────────────────────────────────── */
+  --focus-ring: 0 0 0 2px var(--color-primary-500);
+  --focus-ring-offset: 0 0 0 4px var(--color-primary-100);
+}
+
+/* ═══════════════════════════════════════════════
+   DARK MODE OVERRIDES
+   ═══════════════════════════════════════════════ */
+[data-theme="dark"] {
+  --bg-app:          #0f1117;
+  --bg-surface:      #1a1d27;
+  --bg-surface-2:    #1f2335;
+  --bg-surface-3:    #252840;
+  --bg-sidebar:      #111318;
+  --bg-sidebar-hover: rgba(255, 255, 255, 0.06);
+  --bg-topbar:       #1a1d27;
+
+  --border-default:  #2a2d3d;
+  --border-strong:   #353848;
+
+  --text-primary:    #e2e4ee;
+  --text-secondary:  #9095b0;
+  --text-tertiary:   #6b7094;
+  --text-disabled:   #4a4f6a;
+  --text-sidebar:    #9095b0;
+  --text-link:       var(--color-primary-400);
+  --text-danger:     var(--color-danger-400);
+  --text-success:    var(--color-success-400);
+  --text-warning:    var(--color-warning-400);
+  --text-info:       var(--color-info-400);
+
+  --color-action-secondary:       #252840;
+  --color-action-secondary-border:#2a2d3d;
+  --color-action-secondary-hover: #2e3145;
+  --color-action-secondary-text:  #e2e4ee;
+
+  --color-action-ghost-hover:     rgba(255, 255, 255, 0.06);
+  --color-action-ghost-text:      #9095b0;
+
+  --shadow-xs:  0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-sm:  0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px -1px rgba(0, 0, 0, 0.3);
+  --shadow-md:  0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+  --shadow-lg:  0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+
+  --focus-ring-offset: 0 0 0 4px rgba(59, 130, 246, 0.15);
+}

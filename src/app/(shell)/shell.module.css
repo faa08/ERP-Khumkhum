@@ -1,0 +1,32 @@
+/* Shell Layout */
+
+.layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-6);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neutral-300) transparent;
+  outline: none;
+}
+
+.content::-webkit-scrollbar { width: 6px; }
+.content::-webkit-scrollbar-thumb { background-color: var(--color-neutral-300); border-radius: 3px; }
+[data-theme="dark"] .content::-webkit-scrollbar-thumb { background-color: var(--color-neutral-700); }
+
+@media (max-width: 768px) {
+  .content { padding: var(--space-4); }
+}

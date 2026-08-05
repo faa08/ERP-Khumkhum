@@ -1,0 +1,23 @@
+.card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.header {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.body--none { padding: 0; }
+.body--sm   { padding: var(--space-3); }
+.body--md   { padding: var(--space-4); }
+.body--lg   { padding: var(--space-6); }
+.footer {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-default);
+  background-color: var(--bg-surface-2);
+}

@@ -5,6 +5,7 @@ import { Topbar } from '@/components/layout/Topbar';
 import styles from './shell.module.css';
 
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import '../globals.css';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 

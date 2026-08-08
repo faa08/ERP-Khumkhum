@@ -9,9 +9,10 @@
    ───────────────────────────────────────────── */
 .page-title {
   font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--font-weight-extrabold);
   line-height: var(--line-height-tight);
   color: var(--text-primary);
+  font-family: var(--font-display);
   letter-spacing: var(--letter-spacing-tight);
 }
 

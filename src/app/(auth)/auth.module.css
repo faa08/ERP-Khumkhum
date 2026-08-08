@@ -1,12 +1,17 @@
+/* ─── Auth Layout — KhumKhum Brand ─── */
+
 .layout {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: var(--bg-app);
+  background-color: var(--cream);
+  background-image: radial-gradient(circle, rgba(211,31,38,0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
   padding: var(--space-4);
 }
+
 .panel {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
 }

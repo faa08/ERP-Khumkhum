@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import styles from './auth.module.css';
+import '../globals.css';
 
 export const metadata: Metadata = { title: 'Sign In' };
 

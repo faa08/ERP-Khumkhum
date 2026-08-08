@@ -1,4 +1,4 @@
-/* Topbar Styles */
+/* ─── Topbar — KhumKhum Style ─── */
 
 .topbar {
   display: flex;
@@ -6,12 +6,13 @@
   gap: var(--space-3);
   height: var(--topbar-height);
   padding: 0 var(--space-4);
-  background-color: var(--bg-topbar);
-  border-bottom: 1px solid var(--border-default);
+  background-color: var(--cream-card);
+  border-bottom: 2px solid rgba(42, 24, 16, 0.10);
   position: sticky;
   top: 0;
   z-index: var(--z-topbar);
   flex-shrink: 0;
+  box-shadow: 0 2px 0 rgba(139, 94, 60, 0.08);
 }
 
 .left  { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
@@ -23,18 +24,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--radius-md);
-  border: none;
+  border: 1.5px solid transparent;
   background: transparent;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   cursor: pointer;
-  transition: background-color var(--transition-fast), color var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
-.iconBtn:hover:not(:disabled) { background-color: var(--bg-surface-2); color: var(--text-primary); }
+.iconBtn:hover:not(:disabled) {
+  background-color: var(--cream-dark);
+  color: var(--ink);
+  border-color: rgba(42, 24, 16, 0.15);
+}
 .iconBtn:disabled { opacity: 0.4; cursor: not-allowed; }
-.iconBtn:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: 1px; }
+.iconBtn:focus-visible { outline: 2px solid var(--chili); outline-offset: 1px; }
 
 /* ─── SEARCH ─── */
 .searchBar {
@@ -42,35 +47,36 @@
   display: flex;
   align-items: center;
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
 }
 .searchIcon {
   position: absolute;
   left: var(--space-2-5);
-  color: var(--text-tertiary);
+  color: var(--ink-muted);
   pointer-events: none;
 }
 .searchInput {
   width: 100%;
-  height: 32px;
+  height: 34px;
   padding: 0 var(--space-10) 0 var(--space-8);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background-color: var(--bg-surface-2);
-  color: var(--text-primary);
+  border: 1.5px solid rgba(139, 94, 60, 0.25);
+  border-radius: var(--radius-lg);
+  background-color: var(--cream);
+  color: var(--ink);
   font-size: var(--font-size-sm);
   font-family: var(--font-sans);
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.75;
+  transition: border-color var(--transition-fast);
 }
-.searchInput::placeholder { color: var(--text-tertiary); }
+.searchInput::placeholder { color: var(--ink-muted); }
 .searchKbd {
   position: absolute;
   right: var(--space-2);
   font-size: var(--font-size-xs);
-  color: var(--text-tertiary);
-  background-color: var(--bg-surface-3);
-  border: 1px solid var(--border-default);
+  color: var(--ink-muted);
+  background-color: var(--cream-dark);
+  border: 1px solid rgba(139, 94, 60, 0.25);
   border-radius: var(--radius-sm);
   padding: 1px 5px;
   font-family: var(--font-mono);
@@ -86,15 +92,18 @@
   gap: var(--space-2);
   height: 36px;
   padding: 0 var(--space-2);
-  border-radius: var(--radius-md);
-  border: none;
+  border-radius: var(--radius-lg);
+  border: 1.5px solid transparent;
   background: transparent;
   cursor: pointer;
-  transition: background-color var(--transition-fast);
+  transition: background-color var(--transition-fast), border-color var(--transition-fast);
   max-width: 200px;
 }
-.userBtn:hover { background-color: var(--bg-surface-2); }
-.userBtn:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: 1px; }
+.userBtn:hover {
+  background-color: var(--cream-dark);
+  border-color: rgba(42, 24, 16, 0.12);
+}
+.userBtn:focus-visible { outline: 2px solid var(--chili); outline-offset: 1px; }
 
 .userInfo {
   display: flex;
@@ -105,8 +114,9 @@
 }
 .userName {
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-medium);
-  color: var(--text-primary);
+  font-weight: var(--font-weight-semibold);
+  color: var(--ink);
+  font-family: var(--font-sans);
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -115,7 +125,7 @@
 }
 .userRole {
   font-size: 10px;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   line-height: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -123,7 +133,7 @@
   max-width: 120px;
 }
 .userChevron {
-  color: var(--text-tertiary);
+  color: var(--ink-muted);
   flex-shrink: 0;
   transition: transform var(--transition-normal);
 }
@@ -135,32 +145,39 @@
   right: 0;
   top: calc(100% + 6px);
   z-index: var(--z-dropdown);
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-default);
+  background-color: var(--cream-card);
+  border: 2px solid var(--ink);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  min-width: 200px;
+  box-shadow: var(--shadow-comic-lg);
+  min-width: 210px;
   overflow: hidden;
-  animation: fadeIn var(--transition-fast) ease;
+  animation: fadeInDown var(--transition-fast) ease;
 }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+@keyframes fadeInDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
 
 .dropdownHeader {
   padding: var(--space-3) var(--space-3);
+  background-color: var(--cream);
+  border-bottom: 1.5px solid rgba(42, 24, 16, 0.10);
 }
 .dropdownName {
   font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
+  font-weight: var(--font-weight-bold);
+  color: var(--ink);
+  font-family: var(--font-display);
 }
 .dropdownEmail {
   font-size: var(--font-size-xs);
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   margin-top: 2px;
 }
 .dropdownDivider {
   border: none;
-  border-top: 1px solid var(--border-default);
+  border-top: 1px solid rgba(42, 24, 16, 0.08);
   margin: var(--space-1) 0;
 }
 .dropdownItem {
@@ -170,21 +187,58 @@
   width: 100%;
   padding: var(--space-2) var(--space-3);
   font-size: var(--font-size-sm);
-  color: var(--text-primary);
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
   background: transparent;
   border: none;
   cursor: pointer;
   text-align: left;
-  transition: background-color var(--transition-fast);
+  transition: background-color var(--transition-fast), color var(--transition-fast);
 }
-.dropdownItem:hover { background-color: var(--bg-surface-2); }
-.dropdownItem:focus-visible { outline: 2px solid var(--color-primary-500); outline-offset: -2px; }
-.dropdownItem--danger { color: var(--text-danger); }
-.dropdownItem--danger:hover { background-color: var(--color-danger-50); }
-[data-theme="dark"] .dropdownItem--danger:hover { background-color: rgba(220,38,38,0.1); }
+.dropdownItem:hover {
+  background-color: var(--cream-dark);
+  color: var(--ink);
+}
+.dropdownItem:focus-visible { outline: 2px solid var(--chili); outline-offset: -2px; }
+.dropdownItem--danger { color: var(--color-danger-600); }
+.dropdownItem--danger:hover { background-color: var(--chili-light); color: var(--chili-deep); }
 
 /* ─── RESPONSIVE ─── */
 @media (max-width: 640px) {
   .center { display: none; }
   .userInfo { display: none; }
 }
+
+/* ─── DARK MODE ─── */
+[data-theme="dark"] .topbar {
+  background-color: var(--bg-topbar);
+  border-bottom-color: rgba(139, 94, 60, 0.20);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.3);
+}
+[data-theme="dark"] .iconBtn:hover:not(:disabled) {
+  background-color: var(--bg-surface-2);
+  border-color: rgba(139,94,60,0.20);
+}
+[data-theme="dark"] .searchInput {
+  background-color: var(--bg-surface-2);
+  border-color: rgba(139,94,60,0.25);
+  color: var(--text-primary);
+}
+[data-theme="dark"] .userBtn:hover {
+  background-color: var(--bg-surface-2);
+  border-color: rgba(139,94,60,0.20);
+}
+[data-theme="dark"] .userName { color: var(--text-primary); }
+[data-theme="dark"] .userRole { color: var(--text-secondary); }
+[data-theme="dark"] .dropdown {
+  background-color: var(--bg-surface);
+  border-color: rgba(139,94,60,0.35);
+  box-shadow: var(--shadow-comic-lg);
+}
+[data-theme="dark"] .dropdownHeader {
+  background-color: var(--bg-surface-2);
+  border-bottom-color: rgba(139,94,60,0.15);
+}
+[data-theme="dark"] .dropdownName { color: var(--text-primary); }
+[data-theme="dark"] .dropdownItem:hover { background-color: var(--bg-surface-2); color: var(--text-primary); }
+[data-theme="dark"] .dropdownItem--danger:hover { background-color: rgba(211,31,38,0.12); }

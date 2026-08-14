@@ -1,73 +1,60 @@
 /* ─── Login Card — KhumKhum Brand ─── */
 
 .card {
-  background-color: var(--cream-card);
-  border: 2.5px solid var(--ink);
-  border-radius: var(--radius-xl);
-  padding: var(--space-8);
+  background: transparent;
+  width: 100%;
+  max-width: 400px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  box-shadow: var(--shadow-comic-lg);
+  gap: var(--space-6);
   position: relative;
-}
-
-/* Decorative corner accent */
-.card::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  right: 20px;
-  width: 40px;
-  height: 4px;
-  background-color: var(--chili);
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  color: var(--cream);
 }
 
 .header {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  text-align: center;
+  align-items: flex-start;
+  gap: var(--space-3);
+  text-align: left;
 }
 
 .brandMark {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   background-color: var(--chili);
-  border-radius: var(--radius-xl);
-  border: 2.5px solid var(--ink);
-  box-shadow: var(--shadow-comic);
+  border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: var(--font-weight-extrabold);
   color: var(--cream);
   font-family: var(--font-display);
   letter-spacing: 0.5px;
-  margin-bottom: var(--space-1);
+  margin-bottom: var(--space-2);
 }
 
 .title {
-  font-size: var(--font-size-2xl);
+  font-size: 2.5rem;
   font-weight: var(--font-weight-extrabold);
-  color: var(--ink);
+  color: var(--cream);
   font-family: var(--font-display);
   line-height: var(--line-height-tight);
 }
 
 .subtitle {
-  font-size: var(--font-size-sm);
-  color: var(--ink-soft);
+  font-size: var(--font-size-md);
+  color: rgba(255, 248, 231, 0.7); /* translucent cream */
   font-family: var(--font-sans);
+  max-width: 300px;
+  line-height: var(--line-height-relaxed);
 }
 
 .form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-5);
 }
 
 .row {
@@ -79,14 +66,14 @@
 
 .forgotLink {
   font-size: var(--font-size-sm);
-  color: var(--chili);
+  color: var(--chili-bright);
   text-decoration: none;
   font-weight: var(--font-weight-semibold);
   white-space: nowrap;
   flex-shrink: 0;
   transition: color var(--transition-fast);
 }
-.forgotLink:hover { color: var(--chili-deep); text-decoration: underline; }
+.forgotLink:hover { color: var(--cream); text-decoration: underline; }
 
 .showPasswordBtn {
   display: flex;
@@ -101,37 +88,25 @@
   border-radius: var(--radius-sm);
   transition: color var(--transition-fast);
 }
-.showPasswordBtn:hover { color: var(--ink); }
+.showPasswordBtn:hover { color: var(--chili); }
 .showPasswordBtn:focus-visible { outline: 2px solid var(--chili); outline-offset: 1px; }
 
 .footerNote {
   font-size: var(--font-size-xs);
-  color: var(--ink-muted);
-  text-align: center;
+  color: rgba(255, 248, 231, 0.5);
+  text-align: left;
   line-height: var(--line-height-normal);
+  margin-top: var(--space-4);
 }
 
 .devHint {
   font-size: var(--font-size-xs);
-  color: var(--chili-deep);
-  text-align: center;
-  background-color: var(--chili-light);
-  border: 1.5px solid rgba(211, 31, 38, 0.25);
-  border-radius: var(--radius-md);
-  padding: var(--space-1-5) var(--space-3);
-  font-family: var(--font-mono);
-}
-
-[data-theme="dark"] .card {
-  background-color: var(--bg-surface);
-  border-color: rgba(139, 94, 60, 0.4);
-  box-shadow: 5px 5px 0 rgba(0,0,0,0.5);
-}
-[data-theme="dark"] .card::before { background-color: var(--chili); }
-[data-theme="dark"] .title { color: var(--text-primary); }
-[data-theme="dark"] .subtitle { color: var(--text-secondary); }
-[data-theme="dark"] .devHint {
-  background-color: rgba(211,31,38,0.10);
-  border-color: rgba(211,31,38,0.25);
   color: var(--chili-bright);
+  text-align: left;
+  background-color: rgba(211, 31, 38, 0.15);
+  border: 1px solid rgba(211, 31, 38, 0.3);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  margin-top: var(--space-2);
 }

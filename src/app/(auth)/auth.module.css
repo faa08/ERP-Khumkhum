@@ -3,15 +3,32 @@
 .layout {
   min-height: 100vh;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: var(--cream);
-  background-image: radial-gradient(circle, rgba(211,31,38,0.08) 1px, transparent 1px);
-  background-size: 24px 24px;
-  padding: var(--space-4);
+  background-color: var(--ink); /* Dark background for the left side */
 }
 
 .panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
   width: 100%;
-  max-width: 420px;
+}
+
+.visual {
+  display: none;
+}
+
+@media (min-width: 1024px) {
+  .panel {
+    flex: 0 0 50%;
+  }
+  .visual {
+    display: block;
+    flex: 1;
+    background-image: url('/images/login-bg.jpg');
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
 }

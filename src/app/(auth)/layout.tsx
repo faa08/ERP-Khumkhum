@@ -7,8 +7,9 @@ export const metadata: Metadata = { title: 'Sign In' };
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className={styles.layout}>
+    <div className={styles.layout} data-theme="dark">
       <div className={styles.panel}>{children}</div>
+      <div className={styles.visual} aria-hidden="true" />
     </div>
   );
 }

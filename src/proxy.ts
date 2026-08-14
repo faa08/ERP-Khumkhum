@@ -4,7 +4,7 @@ import type { NextRequest } from 'next/server';
 // Daftar route publik yang bisa diakses tanpa login
 const publicRoutes = ['/login', '/forgot-password', '/reset-password'];
 
-export function proxy(req: NextRequest) {
+export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   
   // Mengabaikan asset publik, file static, dan API (API dilindungi secara terpisah jika diperlukan)

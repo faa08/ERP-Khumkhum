@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 // Daftar route publik yang bisa diakses tanpa login
-const publicRoutes = ['/login', '/forgot-password', '/reset-password'];
+const publicRoutes = ['/', '/login', '/forgot-password', '/reset-password'];
 
 export default function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -16,7 +16,7 @@ export default function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const isPublicRoute = publicRoutes.some((route) => pathname.startsWith(route));
+  const isPublicRoute = publicRoutes.some((route) => pathname === route || pathname.startsWith(route + '/'));
   
   // Ambil token JWT dari custom session cookie IKM
   const token = req.cookies.get('erp_session')?.value;
@@ -29,16 +29,11 @@ export default function proxy(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Jika sudah login tapi mencoba mengakses halaman login
-  if (token && isPublicRoute) {
+  // Jika sudah login tapi mencoba mengakses halaman login/register
+  if (token && (pathname === '/login' || pathname === '/forgot-password' || pathname === '/reset-password')) {
     return NextResponse.redirect(new URL('/dashboard', req.url));
   }
   
-  // Jika mengakses root '/' arahkan ke dashboard
-  if (pathname === '/') {
-    return NextResponse.redirect(new URL('/dashboard', req.url));
-  }
-
   return NextResponse.next();
 }
 

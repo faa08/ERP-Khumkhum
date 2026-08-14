@@ -40,8 +40,8 @@ export function DataTable<TData extends { id?: string | number }>({
   enableColumnVisibility = true,
   enableSorting = true,
   bulkActions,
-  emptyStateTitle = 'No records found',
-  emptyStateDescription = 'No records match your search criteria.',
+  emptyStateTitle = 'Tidak ada data ditemukan',
+  emptyStateDescription = 'Tidak ada rekam jejak yang cocok dengan kriteria pencarian Anda.',
   stickyHeader = true,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);

@@ -75,7 +75,7 @@ export default function ProductionstandardsPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
@@ -94,9 +94,9 @@ export default function ProductionstandardsPage() {
   return (
     <div>
       <PageHeader
-        title="Production Standards Master Data"
+        title="Data Induk Standar Produksi"
         description="Manage production standards and recipes."
-        breadcrumbs={[{ label: 'Master Data' }, { label: 'Production Standards' }]}
+        breadcrumbs={[{ label: 'Data Induk' }, { label: 'Production Standards' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Production Standard</Button>}
       />
       <DataTable columns={columns} data={data}  />
@@ -104,12 +104,12 @@ export default function ProductionstandardsPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Production Standard' : 'Create Production Standard'}
+        title={selectedItem ? 'Edit Production Standard' : 'Buat Production Standard'}
         size="md"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

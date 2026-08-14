@@ -19,38 +19,38 @@ export function UserDetailModal({ isOpen, onClose, user }: UserDetailModalProps)
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="User Details"
-      description="Detailed information about this user."
+      title="Detail Pengguna"
+      description="Informasi detail mengenai pengguna ini."
       size="md"
       footer={
-        <Button variant="secondary" onClick={onClose}>Close</Button>
+        <Button variant="secondary" onClick={onClose}>Tutup</Button>
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
-          <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Employee ID</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>ID Karyawan</span>
           <span style={{ fontWeight: 'var(--font-weight-medium)' }}>{user.employeeId}</span>
           
-          <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Name</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Nama Lengkap</span>
           <span>{user.name}</span>
           
           <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Email</span>
           <span>{user.email}</span>
           
-          <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Department</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Departemen</span>
           <span>{user.department}</span>
           
-          <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Role</span>
+          <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Peran (Role)</span>
           <span>{ROLE_LABELS[user.role]}</span>
           
           <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Status</span>
           <div>
-            <StatusBadge status={user.isActive ? 'active' : 'inactive'} label={user.isActive ? 'Active' : 'Inactive'} />
+            <StatusBadge status={user.isActive ? 'active' : 'inactive'} label={user.isActive ? 'Aktif' : 'Non-Aktif'} />
           </div>
           
           {user.lastLogin && (
             <>
-              <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Last Login</span>
+              <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-size-sm)' }}>Login Terakhir</span>
               <span>{new Date(user.lastLogin).toLocaleString()}</span>
             </>
           )}

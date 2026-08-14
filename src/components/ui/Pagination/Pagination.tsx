@@ -33,19 +33,19 @@ export function Pagination({
     <div className={cn(styles.container, className)}>
       <div className={styles.info}>
         <span className={styles.countText}>
-          {totalCount === 0 ? 'No results' : `${start}–${end} of ${totalCount}`}
+          {totalCount === 0 ? 'Tidak ada hasil' : `${start}–${end} dari ${totalCount}`}
         </span>
       </div>
 
       <div className={styles.controls}>
         {onPageSizeChange && (
           <div className={styles.pageSizeControl}>
-            <span className={styles.pageSizeLabel}>Rows:</span>
+            <span className={styles.pageSizeLabel}>Baris:</span>
             <select
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
               className={styles.pageSizeSelect}
-              aria-label="Rows per page"
+              aria-label="Baris per halaman"
             >
               {pageSizeOptions.map((size) => (
                 <option key={size} value={size}>{size}</option>
@@ -58,7 +58,7 @@ export function Pagination({
           <button
             onClick={() => onPageChange(0)}
             disabled={pageIndex === 0}
-            aria-label="First page"
+            aria-label="Halaman pertama"
             className={styles.pageBtn}
           >
             <ChevronsLeft size={14} />
@@ -66,18 +66,18 @@ export function Pagination({
           <button
             onClick={() => onPageChange(pageIndex - 1)}
             disabled={pageIndex === 0}
-            aria-label="Previous page"
+            aria-label="Halaman sebelumnya"
             className={styles.pageBtn}
           >
             <ChevronLeft size={14} />
           </button>
           <span className={styles.pageInfo}>
-            Page {totalPages === 0 ? 0 : pageIndex + 1} of {totalPages}
+            Halaman {totalPages === 0 ? 0 : pageIndex + 1} dari {totalPages}
           </span>
           <button
             onClick={() => onPageChange(pageIndex + 1)}
             disabled={pageIndex >= totalPages - 1}
-            aria-label="Next page"
+            aria-label="Halaman berikutnya"
             className={styles.pageBtn}
           >
             <ChevronRight size={14} />
@@ -85,7 +85,7 @@ export function Pagination({
           <button
             onClick={() => onPageChange(totalPages - 1)}
             disabled={pageIndex >= totalPages - 1}
-            aria-label="Last page"
+            aria-label="Halaman terakhir"
             className={styles.pageBtn}
           >
             <ChevronsRight size={14} />

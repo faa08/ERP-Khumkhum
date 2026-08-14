@@ -44,9 +44,9 @@ export default function ReportsPage() {
   return (
     <div>
       <PageHeader
-        title="Unified Reports"
+        title="Laporan Terpadu"
         description="Generate, view, and export operational reports."
-        breadcrumbs={[{ label: 'Management' }, { label: 'Reports' }]}
+        breadcrumbs={[{ label: 'Manajemen' }, { label: 'Reports' }]}
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             <Button variant="secondary" onClick={handleExportCSV} leftIcon={<Download size={16} />}>CSV</Button>

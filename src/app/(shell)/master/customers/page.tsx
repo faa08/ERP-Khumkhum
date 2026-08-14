@@ -77,7 +77,7 @@ export default function CustomersPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
@@ -96,9 +96,9 @@ export default function CustomersPage() {
   return (
     <div>
       <PageHeader
-        title="Customers Master Data"
+        title="Data Induk Pelanggan"
         description="Manage customer data."
-        breadcrumbs={[{ label: 'Master Data' }, { label: 'Customers' }]}
+        breadcrumbs={[{ label: 'Data Induk' }, { label: 'Customers' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Customer</Button>}
       />
       <DataTable columns={columns} data={data}  />
@@ -106,12 +106,12 @@ export default function CustomersPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Customer' : 'Create Customer'}
+        title={selectedItem ? 'Edit Customer' : 'Buat Customer'}
         size="md"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

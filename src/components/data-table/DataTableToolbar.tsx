@@ -41,15 +41,15 @@ export function DataTableToolbar<TData>({
               type="search"
               value={globalFilter}
               onChange={(e) => onGlobalFilterChange(e.target.value)}
-              placeholder="Search..."
-              aria-label="Search table"
+              placeholder="Cari..."
+              aria-label="Cari tabel"
               className={styles.searchInput}
             />
             {globalFilter && (
               <button
                 type="button"
                 onClick={() => onGlobalFilterChange('')}
-                aria-label="Clear search"
+                aria-label="Hapus pencarian"
                 className={styles.searchClear}
               >
                 <X size={12} />
@@ -60,7 +60,7 @@ export function DataTableToolbar<TData>({
 
         {showBulkActions && (
           <div className={styles.bulkActions}>
-            <span className={styles.selectedCount}>{selectedCount} selected</span>
+            <span className={styles.selectedCount}>{selectedCount} terpilih</span>
             {bulkActions.map((action) => (
               <Button
                 key={action.id}
@@ -82,11 +82,11 @@ export function DataTableToolbar<TData>({
             <button
               type="button"
               className={styles.columnToggleBtn}
-              aria-label="Toggle column visibility"
-              title="Columns"
+              aria-label="Tampilkan/sembunyikan kolom"
+              title="Kolom"
             >
               <SlidersHorizontal size={14} />
-              <span>Columns</span>
+              <span>Kolom</span>
             </button>
             <div className={styles.columnDropdown}>
               {table

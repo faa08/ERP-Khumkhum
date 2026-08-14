@@ -77,7 +77,7 @@ export default function RawmaterialsPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
@@ -96,9 +96,9 @@ export default function RawmaterialsPage() {
   return (
     <div>
       <PageHeader
-        title="Raw Materials Master Data"
+        title="Data Induk Bahan Baku"
         description="Manage raw materials inventory catalog."
-        breadcrumbs={[{ label: 'Master Data' }, { label: 'Raw Materials' }]}
+        breadcrumbs={[{ label: 'Data Induk' }, { label: 'Raw Materials' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Raw Material</Button>}
       />
       <DataTable columns={columns} data={data}  />
@@ -106,12 +106,12 @@ export default function RawmaterialsPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Raw Material' : 'Create Raw Material'}
+        title={selectedItem ? 'Edit Raw Material' : 'Buat Raw Material'}
         size="md"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

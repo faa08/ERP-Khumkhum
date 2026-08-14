@@ -15,6 +15,7 @@ const userSchema = z.object({
   employeeId: z.string().min(1, 'Employee ID is required'),
   name: z.string().min(2, 'Name is required'),
   email: z.string().email('Invalid email address'),
+  password: z.string().optional(),
   role: z.string().min(1, 'Role is required'),
   department: z.string().min(1, 'Department is required'),
 });
@@ -38,6 +39,7 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
       employeeId: '',
       name: '',
       email: '',
+      password: '',
       role: '',
       department: '',
     }
@@ -50,11 +52,12 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
           employeeId: user.employeeId,
           name: user.name,
           email: user.email,
+          password: '',
           role: user.role,
           department: user.department,
         });
       } else {
-        reset({ employeeId: '', name: '', email: '', role: '', department: '' });
+        reset({ employeeId: '', name: '', email: '', password: '', role: '', department: '' });
       }
     }
   }, [isOpen, user, reset]);
@@ -80,42 +83,48 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
     <Drawer
       isOpen={isOpen}
       onClose={onClose}
-      title={isEditing ? 'Edit User' : 'Create New User'}
-      description={isEditing ? 'Update user information and access level.' : 'Add a new user to the ERP system.'}
+      title={isEditing ? 'Edit Pengguna' : 'Buat Pengguna Baru'}
+      description={isEditing ? 'Perbarui informasi dan hak akses pengguna.' : 'Tambahkan pengguna baru ke sistem ERP.'}
       size="md"
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose} disabled={isSubmitting}>Batal</Button>
           <Button variant="primary" onClick={handleSubmit(handleFormSubmit)} loading={isSubmitting}>
-            {isEditing ? 'Save Changes' : 'Create User'}
+            {isEditing ? 'Simpan Perubahan' : 'Buat Pengguna'}
           </Button>
         </>
       }
     >
       <form onSubmit={handleSubmit(handleFormSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-        <FormField label="Employee ID" required error={errors.employeeId?.message}>
-          <Input fullWidth {...register('employeeId')} placeholder="e.g. EMP-001" disabled={isEditing} />
+        <FormField label="ID Karyawan" required error={errors.employeeId?.message}>
+          <Input fullWidth {...register('employeeId')} placeholder="misal: EMP-001" disabled={isEditing} />
         </FormField>
         
-        <FormField label="Full Name" required error={errors.name?.message}>
-          <Input fullWidth {...register('name')} placeholder="Enter full name" />
+        <FormField label="Nama Lengkap" required error={errors.name?.message}>
+          <Input fullWidth {...register('name')} placeholder="Masukkan nama lengkap" />
         </FormField>
         
-        <FormField label="Email Address" required error={errors.email?.message}>
+        <FormField label="Alamat Email" required error={errors.email?.message}>
           <Input fullWidth type="email" {...register('email')} placeholder="email@khumkhum.id" />
         </FormField>
         
-        <FormField label="Role" required error={errors.role?.message}>
+        {!isEditing && (
+          <FormField label="Kata Sandi" error={errors.password?.message}>
+            <Input fullWidth type="text" {...register('password')} placeholder="Kosongkan untuk default 'password123'" />
+          </FormField>
+        )}
+        
+        <FormField label="Peran (Role)" required error={errors.role?.message}>
           <Combobox
             options={roleOptions}
             value={roleValue}
             onChange={(val) => setValue('role', val, { shouldValidate: true })}
-            placeholder="Select a role..."
+            placeholder="Pilih peran..."
           />
         </FormField>
 
-        <FormField label="Department" required error={errors.department?.message}>
-          <Input fullWidth {...register('department')} placeholder="e.g. Production" />
+        <FormField label="Departemen" required error={errors.department?.message}>
+          <Input fullWidth {...register('department')} placeholder="misal: Produksi" />
         </FormField>
       </form>
     </Drawer>

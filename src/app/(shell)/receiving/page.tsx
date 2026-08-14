@@ -51,7 +51,7 @@ export default function ReceivingPage() {
   const handleCancel = (item: Entity) => {
     setConfirmDialog({
       isOpen: true,
-      title: 'Cancel Receiving Batch',
+      title: 'Batalkan Receiving Batch',
       description: `Are you sure you want to cancel this record?`,
       variant: 'danger',
       onConfirm: async () => {
@@ -80,12 +80,12 @@ export default function ReceivingPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
               id: 'cancel', 
-              label: 'Cancel Record', 
+              label: 'Batalkan Rekam Jejak', 
               icon: <Ban size={14} />,
               danger: true,
               onClick: () => handleCancel(row.original)
@@ -99,9 +99,9 @@ export default function ReceivingPage() {
   return (
     <div>
       <PageHeader
-        title="Raw Material Receiving"
+        title="Penerimaan Bahan Baku"
         description="Manage incoming raw materials from farmers and suppliers."
-        breadcrumbs={[{ label: 'Operations' }, { label: 'Raw Material Receiving' }]}
+        breadcrumbs={[{ label: 'Operasional' }, { label: 'Raw Material Receiving' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Receiving Batch</Button>}
       />
       
@@ -110,12 +110,12 @@ export default function ReceivingPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Receiving Batch' : 'Create Receiving Batch'}
+        title={selectedItem ? 'Edit Receiving Batch' : 'Buat Receiving Batch'}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Close</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Tutup</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

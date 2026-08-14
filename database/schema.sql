@@ -1,11 +1,14 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Enum for User Roles
+-- Enum for User Roles (6 Core Roles sesuai PRD)
 CREATE TYPE user_role AS ENUM (
-  'SUPER_ADMIN', 'ADMIN_OPERASIONAL', 'PETUGAS_PENERIMAAN', 
-  'PETUGAS_PRODUKSI', 'PETUGAS_QC', 'STAFF_GUDANG_PPIC', 
-  'STAFF_SALES', 'MANAGEMENT'
+  'SUPER_ADMIN',   -- Kontrol penuh sistem, user management, audit, void
+  'QC',            -- Quality Control & Ops, inspeksi, standar mutu
+  'WAREHOUSE',     -- Gudang, Logistik, Sales, PPIC, Penerimaan, Sortasi
+  'PRODUCTION',    -- Operator Lini Produksi, Batch WIP, Rendemen
+  'MANAGEMENT',    -- Eksekutif & Viewer, Dashboard KPI, Traceability
+  'FARMER'         -- Petani Mitra (interaksi via WhatsApp, bukan web login)
 );
 
 -- Users Table
@@ -101,7 +104,7 @@ CREATE TABLE sortings (
 CREATE TABLE production_orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   batch_number VARCHAR(100) UNIQUE NOT NULL,
-  status VARCHAR(50) DEFAULT 'DRAFT', -- DRAFT, IN_PROGRESS, COMPLETED, CANCELLED
+  status VARCHAR(50) DEFAULT 'DRAFT', -- DRAFT, IN_PROGRESS, QC_PENDING, COMPLETED, CANCELLED
   start_date TIMESTAMP WITH TIME ZONE,
   end_date TIMESTAMP WITH TIME ZONE,
   created_by UUID REFERENCES users(id),

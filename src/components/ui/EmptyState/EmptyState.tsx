@@ -20,8 +20,8 @@ export interface EmptyStateProps {
  * Always explain WHY it's empty and what the user can do about it.
  */
 export function EmptyState({
-  title = 'No data found',
-  description = 'There are no records to display.',
+  title = 'Tidak ada data',
+  description = 'Tidak ada rekam jejak untuk ditampilkan.',
   icon,
   action,
   className,

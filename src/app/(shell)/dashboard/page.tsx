@@ -35,10 +35,10 @@ function ExecutiveDashboard() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)', marginTop: 'var(--space-6)' }}>
       {/* KPI Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-4)' }}>
-        <KpiCard title="Total Production" value="1,250 kg" icon={<Factory size={24} />} trend="+5.2%" trendPositive />
-        <KpiCard title="Raw Material Received" value="3,400 kg" icon={<Package size={24} />} trend="+12%" trendPositive />
-        <KpiCard title="Quality Pass Rate" value="98.5%" icon={<ShieldCheck size={24} />} trend="-0.5%" trendPositive={false} />
-        <KpiCard title="Sales Summary" value="Rp 450M" icon={<TrendingUp size={24} />} trend="+8.4%" trendPositive />
+        <KpiCard title="Total Produksi" value="1,250 kg" icon={<Factory size={24} />} trend="+5.2%" trendPositive />
+        <KpiCard title="Bahan Baku Diterima" value="3,400 kg" icon={<Package size={24} />} trend="+12%" trendPositive />
+        <KpiCard title="Tingkat Kelulusan Kualitas" value="98.5%" icon={<ShieldCheck size={24} />} trend="-0.5%" trendPositive={false} />
+        <KpiCard title="Ringkasan Penjualan" value="Rp 450M" icon={<TrendingUp size={24} />} trend="+8.4%" trendPositive />
       </div>
 
       {/* Charts / Summaries */}

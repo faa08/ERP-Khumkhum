@@ -51,7 +51,7 @@ export default function QualitycontrolPage() {
   const handleCancel = (item: Entity) => {
     setConfirmDialog({
       isOpen: true,
-      title: 'Cancel QC Inspection',
+      title: 'Batalkan QC Inspection',
       description: `Are you sure you want to cancel this record?`,
       variant: 'danger',
       onConfirm: async () => {
@@ -80,12 +80,12 @@ export default function QualitycontrolPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
               id: 'cancel', 
-              label: 'Cancel Record', 
+              label: 'Batalkan Rekam Jejak', 
               icon: <Ban size={14} />,
               danger: true,
               onClick: () => handleCancel(row.original)
@@ -99,9 +99,9 @@ export default function QualitycontrolPage() {
   return (
     <div>
       <PageHeader
-        title="Quality Control"
+        title="Kendali Mutu (QC)"
         description="Manage quality inspections and defect tracking."
-        breadcrumbs={[{ label: 'Operations' }, { label: 'Quality Control' }]}
+        breadcrumbs={[{ label: 'Operasional' }, { label: 'Quality Control' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create QC Inspection</Button>}
       />
       
@@ -110,12 +110,12 @@ export default function QualitycontrolPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit QC Inspection' : 'Create QC Inspection'}
+        title={selectedItem ? 'Edit QC Inspection' : 'Buat QC Inspection'}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Close</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Tutup</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

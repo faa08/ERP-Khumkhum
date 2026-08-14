@@ -77,7 +77,7 @@ export default function ProductsPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
@@ -96,9 +96,9 @@ export default function ProductsPage() {
   return (
     <div>
       <PageHeader
-        title="Products Master Data"
+        title="Data Induk Produk"
         description="Manage finished products catalog."
-        breadcrumbs={[{ label: 'Master Data' }, { label: 'Products' }]}
+        breadcrumbs={[{ label: 'Data Induk' }, { label: 'Products' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Product</Button>}
       />
       <DataTable columns={columns} data={data}  />
@@ -106,12 +106,12 @@ export default function ProductsPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Product' : 'Create Product'}
+        title={selectedItem ? 'Edit Product' : 'Buat Product'}
         size="md"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

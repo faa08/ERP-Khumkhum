@@ -28,8 +28,10 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginFormData) => {
     clearError();
-    await login(data);
-    router.push(ROUTES.DASHBOARD);
+    const success = await login(data);
+    if (success) {
+      router.push(ROUTES.DASHBOARD);
+    }
   };
 
   return (
@@ -38,7 +40,7 @@ export default function LoginPage() {
       <div className={styles.header}>
         <div className={styles.brandMark} aria-hidden="true">KK</div>
         <h1 className={styles.title}>KhumKhum ERP</h1>
-        <p className={styles.subtitle}>Sign in to your account to continue</p>
+        <p className={styles.subtitle}>Masuk ke akun Anda untuk melanjutkan</p>
       </div>
 
       {/* Error */}
@@ -49,7 +51,7 @@ export default function LoginPage() {
       {/* Form */}
       <form onSubmit={handleSubmit(onSubmit)} noValidate className={styles.form}>
         <FormField
-          label="Username"
+          label="Email"
           required
           htmlFor="username"
           error={errors.username?.message}
@@ -57,7 +59,7 @@ export default function LoginPage() {
           <Input
             id="username"
             type="text"
-            placeholder="Enter your username"
+            placeholder="Masukkan alamat email Anda"
             autoComplete="username"
             autoFocus
             fullWidth
@@ -67,7 +69,7 @@ export default function LoginPage() {
         </FormField>
 
         <FormField
-          label="Password"
+          label="Kata Sandi"
           required
           htmlFor="password"
           error={errors.password?.message}
@@ -75,7 +77,7 @@ export default function LoginPage() {
           <Input
             id="password"
             type={showPassword ? 'text' : 'password'}
-            placeholder="Enter your password"
+            placeholder="Masukkan kata sandi Anda"
             autoComplete="current-password"
             fullWidth
             error={errors.password?.message}
@@ -83,7 +85,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setShowPassword((p) => !p)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'}
                 className={styles.showPasswordBtn}
               >
                 {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -96,11 +98,11 @@ export default function LoginPage() {
         <div className={styles.row}>
           <Checkbox
             id="rememberMe"
-            label="Remember me"
+            label="Ingat saya"
             {...register('rememberMe')}
           />
           <Link href={ROUTES.FORGOT_PASSWORD} className={styles.forgotLink}>
-            Forgot password?
+            Lupa kata sandi?
           </Link>
         </div>
 
@@ -112,18 +114,18 @@ export default function LoginPage() {
           loading={isLoading}
           leftIcon={!isLoading ? <LogIn size={16} /> : undefined}
         >
-          {isLoading ? 'Signing in...' : 'Sign In'}
+          {isLoading ? 'Sedang masuk...' : 'Masuk'}
         </Button>
       </form>
 
       {/* Footer note */}
       <p className={styles.footerNote}>
-        For account access, contact your system administrator.
+        Untuk akses akun, silakan hubungi administrator sistem Anda.
       </p>
 
       {/* Dev hint */}
       <p className={styles.devHint}>
-        Dev: admin / admin123
+        Dev: superadmin@khumkhum.id / password123
       </p>
     </div>
   );

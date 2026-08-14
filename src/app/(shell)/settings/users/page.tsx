@@ -1,32 +1,35 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable } from '@/components/data-table/DataTable';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { Dropdown } from '@/components/ui/Dropdown';
+import { Dropdown, type DropdownItem } from '@/components/ui/Dropdown';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Edit2, Key, Ban, CheckCircle, Eye } from 'lucide-react';
+import { Plus, MoreVertical, Edit2, Key, Ban, CheckCircle, Eye, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { ROLE_LABELS, type User } from '@/types/auth';
+import { ROLE_LABELS, type User, type UserRole } from '@/types/auth';
+import type { UserRole as DbUserRole } from '@/types/database';
 import { UserFormDrawer } from './UserFormDrawer';
 import { UserDetailModal } from './UserDetailModal';
-
-// MOCK DATA
-const MOCK_USERS: User[] = [
-  { id: '1', employeeId: 'EMP-001', name: 'Super Admin', email: 'admin@khumkhum.id', role: 'super_admin', department: 'IT', isActive: true, lastLogin: '2026-08-05T08:00:00Z' },
-  { id: '2', employeeId: 'EMP-002', name: 'Budi Operasional', email: 'budi@khumkhum.id', role: 'admin_operasional', department: 'Operations', isActive: true, lastLogin: '2026-08-04T10:30:00Z' },
-  { id: '3', employeeId: 'EMP-003', name: 'Siti Produksi', email: 'siti@khumkhum.id', role: 'petugas_produksi', department: 'Production', isActive: false },
-];
+import {
+  getUsersAction,
+  createUserAction,
+  updateUserAction,
+  toggleUserStatusAction,
+  resetUserPasswordAction,
+  deleteUserAction,
+} from '@/actions/admin';
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<User[]>(MOCK_USERS);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
-  
+
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -38,10 +41,46 @@ export default function UsersPage() {
     title: '',
     description: '',
     onConfirm: () => {},
-    variant: 'primary'
+    variant: 'primary',
   });
 
   const toast = useToast();
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await getUsersAction();
+      if (res.success && res.data) {
+        const mappedUsers: User[] = res.data.map((u) => ({
+          id: u.id,
+          employeeId: u.id.slice(0, 8).toUpperCase(),
+          name: u.name,
+          email: u.email,
+          role: u.role as UserRole,
+          department: u.role.toLowerCase().includes('produksi')
+            ? 'Produksi'
+            : u.role.toLowerCase().includes('gudang')
+            ? 'Warehouse & PPIC'
+            : u.role.toLowerCase().includes('qc')
+            ? 'Quality Control'
+            : 'Management',
+          isActive: u.is_active,
+          lastLogin: u.updated_at,
+        }));
+        setUsers(mappedUsers);
+      } else {
+        toast.error(res.error || 'Gagal memuat data pengguna');
+      }
+    } catch {
+      toast.error('Terjadi kesalahan saat memuat data pengguna');
+    } finally {
+      setLoading(false);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const handleCreate = () => {
     setSelectedUser(null);
@@ -59,20 +98,36 @@ export default function UsersPage() {
   };
 
   const handleFormSubmit = async (data: Partial<User>) => {
-    // Simulated API call
-    await new Promise(r => setTimeout(r, 800));
-    
     if (selectedUser) {
-      setUsers(users.map(u => u.id === selectedUser.id ? { ...u, ...data } as User : u));
-      toast.success('User updated');
+      const res = await updateUserAction(selectedUser.id, {
+        name: data.name,
+        email: data.email,
+        role: data.role as DbUserRole,
+      });
+
+      if (res.success) {
+        toast.success('Pengguna berhasil diperbarui');
+        fetchUsers();
+      } else {
+        toast.error(res.error || 'Gagal memperbarui pengguna');
+      }
     } else {
-      const newUser: User = {
-        ...data,
-        id: Math.random().toString(36).substr(2, 9),
-        isActive: true,
-      } as User;
-      setUsers([...users, newUser]);
-      toast.success('User created');
+      // @ts-ignore - password is not in User type but we pass it from the form
+      const password = (data as any).password || 'password123';
+      
+      const res = await createUserAction({
+        name: data.name || '',
+        email: data.email || '',
+        role: (data.role as DbUserRole) || 'QC',
+        password: password,
+      });
+
+      if (res.success) {
+        toast.success(`Pengguna berhasil dibuat (Password: ${password})`);
+        fetchUsers();
+      } else {
+        toast.error(res.error || 'Gagal membuat pengguna');
+      }
     }
   };
 
@@ -80,89 +135,173 @@ export default function UsersPage() {
     const isActivating = !user.isActive;
     setConfirmDialog({
       isOpen: true,
-      title: isActivating ? 'Reactivate User' : 'Deactivate User',
-      description: `Are you sure you want to ${isActivating ? 'reactivate' : 'deactivate'} ${user.name}?`,
+      title: isActivating ? 'Aktifkan Pengguna' : 'Nonaktifkan Pengguna',
+      description: `Apakah Anda yakin ingin ${isActivating ? 'mengaktifkan' : 'menonaktifkan'} akses untuk ${user.name}?`,
       variant: isActivating ? 'primary' : 'danger',
       onConfirm: async () => {
-        setUsers(users.map(u => u.id === user.id ? { ...u, isActive: isActivating } : u));
-        toast.success(`User ${isActivating ? 'reactivated' : 'deactivated'}`);
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-      }
+        const res = await toggleUserStatusAction(user.id, isActivating);
+        if (res.success) {
+          toast.success(`Pengguna berhasil ${isActivating ? 'diaktifkan' : 'dinonaktifkan'}`);
+          fetchUsers();
+        } else {
+          toast.error(res.error || 'Gagal mengubah status pengguna');
+        }
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+      },
     });
   };
 
   const handleResetPassword = (user: User) => {
     setConfirmDialog({
       isOpen: true,
-      title: 'Reset Password',
-      description: `Are you sure you want to reset the password for ${user.name}? A temporary password will be generated.`,
+      title: 'Reset Kata Sandi',
+      description: `Apakah Anda yakin ingin mereset kata sandi untuk ${user.name}? Kata sandi akan diatur ulang menjadi "password123".`,
       variant: 'danger',
       onConfirm: async () => {
-        toast.success('Password reset successful');
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-      }
+        const res = await resetUserPasswordAction(user.id, 'password123');
+        if (res.success) {
+          toast.success(`Kata sandi untuk ${user.name} direset menjadi "password123"`);
+        } else {
+          toast.error(res.error || 'Gagal mereset kata sandi');
+        }
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+      },
     });
   };
 
-  const columns = useMemo<ColumnDef<User>[]>(() => [
-    { accessorKey: 'employeeId', header: 'Emp ID' },
-    { accessorKey: 'name', header: 'Name' },
-    { accessorKey: 'email', header: 'Email' },
-    { 
-      accessorKey: 'role', 
-      header: 'Role',
-      cell: ({ row }) => ROLE_LABELS[row.original.role] 
-    },
-    { accessorKey: 'department', header: 'Department' },
-    {
-      accessorKey: 'isActive',
-      header: 'Status',
-      cell: ({ row }) => (
-        <StatusBadge status={row.original.isActive ? 'active' : 'inactive'} label={row.original.isActive ? 'Active' : 'Inactive'} />
-      )
-    },
-    {
-      id: 'actions',
-      cell: ({ row }) => {
-        const user = row.original;
-        return (
-          <Dropdown
-            trigger={
-              <Button variant="ghost" size="sm" style={{ padding: '0 8px' }}>
-                <MoreVertical size={16} />
-              </Button>
-            }
-            items={[
-              { id: 'view', label: 'View Details', icon: <Eye size={14} />, onClick: () => handleView(user) },
-              { id: 'edit', label: 'Edit User', icon: <Edit2 size={14} />, onClick: () => handleEdit(user) },
-              { id: 'reset', label: 'Reset Password', icon: <Key size={14} />, onClick: () => handleResetPassword(user) },
-              { divider: true, id: 'div1', label: '' },
-              { 
-                id: 'toggle-status', 
-                label: user.isActive ? 'Deactivate' : 'Reactivate', 
-                icon: user.isActive ? <Ban size={14} /> : <CheckCircle size={14} />,
-                danger: user.isActive,
-                onClick: () => handleToggleStatus(user)
-              },
-            ]}
+  const handleDeleteUser = (user: User) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Pengguna',
+      description: `Apakah Anda yakin ingin menghapus akun ${user.name}? Tindakan ini tidak dapat dibatalkan.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        const res = await deleteUserAction(user.id);
+        if (res.success) {
+          toast.success('Pengguna berhasil dihapus');
+          fetchUsers();
+        } else {
+          toast.error(res.error || 'Gagal menghapus pengguna');
+        }
+        setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+
+  const columns: ColumnDef<User>[] = useMemo(
+    () => [
+      {
+        accessorKey: 'name',
+        header: 'Pengguna',
+        cell: ({ row }) => (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontWeight: 'var(--font-medium)', color: 'var(--text-primary)' }}>
+              {row.original.name}
+            </span>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+              {row.original.email}
+            </span>
+          </div>
+        ),
+      },
+      {
+        accessorKey: 'role',
+        header: 'Peran / Hak Akses',
+        cell: ({ row }) => (
+          <span style={{ fontSize: 'var(--text-sm)' }}>
+            {ROLE_LABELS[row.original.role] || row.original.role}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'department',
+        header: 'Departemen',
+        cell: ({ row }) => (
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+            {row.original.department}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'isActive',
+        header: 'Status',
+        cell: ({ row }) => (
+          <StatusBadge
+            status={row.original.isActive ? 'active' : 'inactive'}
+            label={row.original.isActive ? 'Aktif' : 'Nonaktif'}
           />
-        );
-      }
-    }
-  ], [users]);
+        ),
+      },
+      {
+        id: 'actions',
+        header: '',
+        cell: ({ row }) => {
+          const user = row.original;
+          const dropdownItems: DropdownItem[] = [
+            {
+              id: 'view',
+              label: 'Lihat Detail',
+              icon: <Eye size={14} />,
+              onClick: () => handleView(user),
+            },
+            {
+              id: 'edit',
+              label: 'Edit Pengguna',
+              icon: <Edit2 size={14} />,
+              onClick: () => handleEdit(user),
+            },
+            {
+              id: 'reset-pwd',
+              label: 'Reset Kata Sandi',
+              icon: <Key size={14} />,
+              onClick: () => handleResetPassword(user),
+            },
+            {
+              id: 'toggle-status',
+              label: user.isActive ? 'Nonaktifkan' : 'Aktifkan',
+              icon: user.isActive ? <Ban size={14} /> : <CheckCircle size={14} />,
+              danger: user.isActive,
+              onClick: () => handleToggleStatus(user),
+            },
+            {
+              id: 'delete',
+              label: 'Hapus Pengguna',
+              icon: <Trash2 size={14} />,
+              danger: true,
+              onClick: () => handleDeleteUser(user),
+            },
+          ];
+
+          return (
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <Dropdown
+                trigger={
+                  <Button variant="ghost" size="sm" aria-label="Actions">
+                    <MoreVertical size={16} />
+                  </Button>
+                }
+                items={dropdownItems}
+              />
+            </div>
+          );
+        },
+      },
+    ],
+    []
+  );
 
   return (
     <div>
       <PageHeader
-        title="User Management"
-        description="Manage system users, roles, and access permissions."
+        title="Manajemen Pengguna"
+        description="Kelola akun staf, role pengguna, dan kontrol hak akses sistem ERP."
         breadcrumbs={[
-          { label: 'Settings', href: '/settings' },
-          { label: 'Users' }
+          { label: 'Pengaturan', href: '/settings' },
+          { label: 'Pengguna' },
         ]}
         actions={
-          <Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>
-            Create User
+          <Button variant="primary" leftIcon={<Plus size={16} />} onClick={handleCreate}>
+            Tambah Pengguna
           </Button>
         }
       />
@@ -170,7 +309,7 @@ export default function UsersPage() {
       <DataTable
         columns={columns}
         data={users}
-        
+        isLoading={loading}
       />
 
       <UserFormDrawer
@@ -188,11 +327,11 @@ export default function UsersPage() {
 
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}
-        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmDialog.onConfirm}
         title={confirmDialog.title}
         description={confirmDialog.description}
         variant={confirmDialog.variant}
+        onConfirm={confirmDialog.onConfirm}
+        onClose={() => setConfirmDialog((prev) => ({ ...prev, isOpen: false }))}
       />
     </div>
   );

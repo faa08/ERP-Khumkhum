@@ -51,7 +51,7 @@ export default function ProductionPage() {
   const handleCancel = (item: Entity) => {
     setConfirmDialog({
       isOpen: true,
-      title: 'Cancel Production Order',
+      title: 'Batalkan Production Order',
       description: `Are you sure you want to cancel this record?`,
       variant: 'danger',
       onConfirm: async () => {
@@ -80,12 +80,12 @@ export default function ProductionPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
               id: 'cancel', 
-              label: 'Cancel Record', 
+              label: 'Batalkan Rekam Jejak', 
               icon: <Ban size={14} />,
               danger: true,
               onClick: () => handleCancel(row.original)
@@ -99,9 +99,9 @@ export default function ProductionPage() {
   return (
     <div>
       <PageHeader
-        title="Production Orders"
+        title="Pesanan Produksi"
         description="Manage production batches, WIP, and finished goods."
-        breadcrumbs={[{ label: 'Operations' }, { label: 'Production Orders' }]}
+        breadcrumbs={[{ label: 'Operasional' }, { label: 'Production Orders' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Production Order</Button>}
       />
       
@@ -110,12 +110,12 @@ export default function ProductionPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Production Order' : 'Create Production Order'}
+        title={selectedItem ? 'Edit Production Order' : 'Buat Production Order'}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Close</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Tutup</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

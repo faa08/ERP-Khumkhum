@@ -79,7 +79,7 @@ export default function FarmersPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
@@ -98,9 +98,9 @@ export default function FarmersPage() {
   return (
     <div>
       <PageHeader
-        title="Farmers Master Data"
+        title="Data Induk Petani"
         description="Manage farmer partners and suppliers."
-        breadcrumbs={[{ label: 'Master Data' }, { label: 'Farmers' }]}
+        breadcrumbs={[{ label: 'Data Induk' }, { label: 'Farmers' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Farmer</Button>}
       />
       <DataTable columns={columns} data={data}  />
@@ -108,12 +108,12 @@ export default function FarmersPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Farmer' : 'Create Farmer'}
+        title={selectedItem ? 'Edit Farmer' : 'Buat Farmer'}
         size="md"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

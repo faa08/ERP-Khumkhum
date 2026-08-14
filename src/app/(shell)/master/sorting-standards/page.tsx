@@ -94,7 +94,7 @@ export default function SortingstandardsPage() {
   return (
     <div>
       <PageHeader
-        title="Sorting Standards Master Data"
+        title="Data Induk Standar Sortasi"
         description="Manage sorting standards and criteria."
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Sorting Standards' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Sorting Standard</Button>}

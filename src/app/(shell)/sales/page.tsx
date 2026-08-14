@@ -50,7 +50,7 @@ export default function SalesPage() {
   const handleCancel = (item: Entity) => {
     setConfirmDialog({
       isOpen: true,
-      title: 'Cancel Sales Order',
+      title: 'Batalkan Sales Order',
       description: `Are you sure you want to cancel this record?`,
       variant: 'danger',
       onConfirm: async () => {
@@ -78,12 +78,12 @@ export default function SalesPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
               id: 'cancel', 
-              label: 'Cancel Record', 
+              label: 'Batalkan Rekam Jejak', 
               icon: <Ban size={14} />,
               danger: true,
               onClick: () => handleCancel(row.original)
@@ -97,9 +97,9 @@ export default function SalesPage() {
   return (
     <div>
       <PageHeader
-        title="Sales Orders"
+        title="Pesanan Penjualan"
         description="Manage customer orders and delivery statuses."
-        breadcrumbs={[{ label: 'Operations' }, { label: 'Sales Orders' }]}
+        breadcrumbs={[{ label: 'Operasional' }, { label: 'Sales Orders' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Sales Order</Button>}
       />
       
@@ -108,12 +108,12 @@ export default function SalesPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Sales Order' : 'Create Sales Order'}
+        title={selectedItem ? 'Edit Sales Order' : 'Buat Sales Order'}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Close</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Tutup</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >

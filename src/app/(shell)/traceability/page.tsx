@@ -78,9 +78,9 @@ export default function TraceabilityPage() {
   return (
     <div style={{ paddingBottom: 'var(--space-8)' }}>
       <PageHeader
-        title="Batch Traceability"
+        title="Pelacakan Batch"
         description="Track a specific batch from farmer receiving to customer delivery."
-        breadcrumbs={[{ label: 'Operations' }, { label: 'Traceability' }]}
+        breadcrumbs={[{ label: 'Operasional' }, { label: 'Traceability' }]}
       />
       
       <div style={{ marginBottom: 'var(--space-6)' }}>
@@ -105,13 +105,13 @@ export default function TraceabilityPage() {
 
       {!hasSearched ? (
         <EmptyState 
-          title="Ready to Trace"
+          title="Siap untuk Dilacak"
           description="Enter a batch number above to see its complete lifecycle."
           icon={<Search size={40} />}
         />
       ) : search !== TRACE_MOCK_DATA.batchNo ? (
         <EmptyState 
-          title="Batch Not Found"
+          title="Batch Tidak Ditemukan"
           description={`No records found for batch "${search}". Please check the number and try again.`}
         />
       ) : (

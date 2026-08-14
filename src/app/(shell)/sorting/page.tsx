@@ -51,24 +51,24 @@ export default function SortingPage() {
   const handleCancel = (item: Entity) => {
     setConfirmDialog({
       isOpen: true,
-      title: 'Cancel Sorting Session',
-      description: `Are you sure you want to cancel this record?`,
+      title: 'Batalkan Sesi Sortasi',
+      description: `Apakah Anda yakin ingin membatalkan rekam jejak ini?`,
       variant: 'danger',
       onConfirm: async () => {
-        setData(data.map(d => d.id === item.id ? { ...d, status: 'cancelled' } : d));
-        toast.success('Sorting Session cancelled');
+        setData(data.map(d => d.id === item.id ? { ...d, status: 'dibatalkan' } : d));
+        toast.success('Sesi Sortasi berhasil dibatalkan');
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
       }
     });
   };
 
   const columns = useMemo<ColumnDef<Entity>[]>(() => [
-    { accessorKey: 'sessionId', header: 'Session ID' },
-    { accessorKey: 'receivingBatch', header: 'Linked Receiving Batch' },
-    { accessorKey: 'grade', header: 'Grade Classification' },
-    { accessorKey: 'acceptedQty', header: 'Accepted Qty (kg)' },
-    { accessorKey: 'rejectedQty', header: 'Rejected Qty (kg)' },
-    { accessorKey: 'wasteQty', header: 'Waste Qty (kg)' },
+    { accessorKey: 'sessionId', header: 'ID Sesi' },
+    { accessorKey: 'receivingBatch', header: 'Batch Penerimaan' },
+    { accessorKey: 'grade', header: 'Klasifikasi Grade' },
+    { accessorKey: 'acceptedQty', header: 'Qty Diterima (kg)' },
+    { accessorKey: 'rejectedQty', header: 'Qty Ditolak (kg)' },
+    { accessorKey: 'wasteQty', header: 'Qty Limbah (kg)' },
     {
       accessorKey: 'status',
       header: 'Status',
@@ -80,12 +80,12 @@ export default function SortingPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
               id: 'cancel', 
-              label: 'Cancel Record', 
+              label: 'Batalkan Rekam Jejak', 
               icon: <Ban size={14} />,
               danger: true,
               onClick: () => handleCancel(row.original)
@@ -99,10 +99,10 @@ export default function SortingPage() {
   return (
     <div>
       <PageHeader
-        title="Sorting & Grading"
-        description="Process raw materials into graded categories."
-        breadcrumbs={[{ label: 'Operations' }, { label: 'Sorting & Grading' }]}
-        actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Sorting Session</Button>}
+        title="Sortasi & Grading"
+        description="Memproses bahan baku menjadi berbagai kategori grade (kualitas)."
+        breadcrumbs={[{ label: 'Operasional' }, { label: 'Sortasi & Grading' }]}
+        actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Buat Sesi Sortasi</Button>}
       />
       
       <DataTable columns={columns} data={data} />
@@ -110,22 +110,22 @@ export default function SortingPage() {
       <Drawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Sorting Session' : 'Create Sorting Session'}
+        title={selectedItem ? 'Edit Sesi Sortasi' : 'Buat Sesi Sortasi Baru'}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Close</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Saved successfully'); }}>Save</Button>
+            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Tutup</Button>
+            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <FormField label="Session ID" required><Input defaultValue={selectedItem?.sessionId || ''} /></FormField>
-          <FormField label="Linked Receiving Batch" required><Input defaultValue={selectedItem?.receivingBatch || ''} /></FormField>
-          <FormField label="Grade Classification" required><Input defaultValue={selectedItem?.grade || ''} /></FormField>
-          <FormField label="Accepted Qty (kg)" required><Input defaultValue={selectedItem?.acceptedQty || ''} /></FormField>
-          <FormField label="Rejected Qty (kg)" required><Input defaultValue={selectedItem?.rejectedQty || ''} /></FormField>
-          <FormField label="Waste Qty (kg)" required><Input defaultValue={selectedItem?.wasteQty || ''} /></FormField>
+          <FormField label="ID Sesi" required><Input defaultValue={selectedItem?.sessionId || ''} /></FormField>
+          <FormField label="Batch Penerimaan" required><Input defaultValue={selectedItem?.receivingBatch || ''} /></FormField>
+          <FormField label="Klasifikasi Grade" required><Input defaultValue={selectedItem?.grade || ''} /></FormField>
+          <FormField label="Qty Diterima (kg)" required><Input defaultValue={selectedItem?.acceptedQty || ''} /></FormField>
+          <FormField label="Qty Ditolak (kg)" required><Input defaultValue={selectedItem?.rejectedQty || ''} /></FormField>
+          <FormField label="Qty Limbah (kg)" required><Input defaultValue={selectedItem?.wasteQty || ''} /></FormField>
         </div>
       </Drawer>
 

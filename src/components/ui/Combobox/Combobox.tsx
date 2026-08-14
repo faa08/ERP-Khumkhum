@@ -71,7 +71,7 @@ export function Combobox({ options, value, onChange, placeholder = 'Select optio
               className={styles.searchInput}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
+              placeholder="Cari..."
               onClick={(e) => e.stopPropagation()}
             />
           </div>

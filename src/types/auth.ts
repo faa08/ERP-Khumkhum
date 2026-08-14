@@ -1,24 +1,30 @@
 /**
- * KhumKhum ERP — Auth Types
+ * KhumKhum ERP — Auth Types & RBAC Definitions
+ * 
+ * 6 Core User Roles sesuai PRD:
+ * 1. SUPER_ADMIN   — Kontrol penuh sistem
+ * 2. QC            — Quality Control & Ops
+ * 3. WAREHOUSE     — Gudang, Logistik, Sales & PPIC  
+ * 4. PRODUCTION    — Operator Lini Produksi
+ * 5. MANAGEMENT    — Eksekutif & Viewer
+ * 6. FARMER        — Petani Mitra (via WhatsApp)
  */
 
 export type UserRole =
-  | 'super_admin'
-  | 'admin_operasional'
-  | 'petugas_penerimaan'
-  | 'petugas_produksi'
-  | 'petugas_qc'
-  | 'staff_gudang'
-  | 'staff_sales'
-  | 'management_viewer';
+  | 'SUPER_ADMIN'
+  | 'QC'
+  | 'WAREHOUSE'
+  | 'PRODUCTION'
+  | 'MANAGEMENT'
+  | 'FARMER';
 
 export interface User {
   id: string;
-  employeeId: string;
+  employeeId?: string;
   name: string;
   email: string;
   role: UserRole;
-  department: string;
+  department?: string;
   avatarUrl?: string;
   isActive: boolean;
   lastLogin?: string;
@@ -37,32 +43,20 @@ export interface LoginCredentials {
   rememberMe?: boolean;
 }
 
-export interface AuthSession {
-  accessToken: string;
-  refreshToken: string;
-  expiresAt: string;
-  user: User;
-}
-
 export const ROLE_LABELS: Record<UserRole, string> = {
-  super_admin:          'Super Admin',
-  admin_operasional:    'Admin Operasional',
-  petugas_penerimaan:   'Petugas Penerimaan',
-  petugas_produksi:     'Petugas Produksi',
-  petugas_qc:           'Petugas QC',
-  staff_gudang:         'Staff Gudang / PPIC',
-  staff_sales:          'Staff Sales',
-  management_viewer:    'Management Viewer',
+  SUPER_ADMIN: 'Super Admin',
+  QC:          'Quality Control & Ops',
+  WAREHOUSE:   'Warehouse, Logistik & PPIC',
+  PRODUCTION:  'Petugas Produksi',
+  MANAGEMENT:  'Manajemen (Viewer)',
+  FARMER:      'Petani Mitra',
 };
 
-// Simple permission map for UI routing protection
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
-  super_admin:          ['*'],
-  admin_operasional:    ['dashboard', 'master', 'production', 'inventory', 'qc', 'sales', 'reports', 'settings'],
-  petugas_penerimaan:   ['dashboard', 'inventory', 'qc'], // simplified
-  petugas_produksi:     ['dashboard', 'production'],
-  petugas_qc:           ['dashboard', 'qc'],
-  staff_gudang:         ['dashboard', 'inventory', 'master'], // usually can view master
-  staff_sales:          ['dashboard', 'sales', 'customers'],
-  management_viewer:    ['dashboard', 'reports', 'master', 'production', 'inventory', 'qc', 'sales'], // read-only
+  SUPER_ADMIN: ['*'],
+  QC:          ['dashboard', 'qc', 'standards', 'traceability'],
+  WAREHOUSE:   ['dashboard', 'master', 'receiving', 'sorting', 'inventory', 'sales', 'ppic', 'traceability'],
+  PRODUCTION:  ['dashboard', 'production', 'ppic'],
+  MANAGEMENT:  ['dashboard', 'reports', 'traceability', 'master', 'production', 'inventory', 'qc', 'sales'],
+  FARMER:      [], // Petani tidak login ke web — interaksi via WhatsApp
 };

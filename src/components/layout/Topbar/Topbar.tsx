@@ -57,10 +57,10 @@ export function Topbar() {
           </svg>
           <input
             type="search"
-            placeholder="Search... (coming soon)"
+            placeholder="Cari... (segera hadir)"
             disabled
             className={styles.searchInput}
-            aria-label="Global search (not yet available)"
+            aria-label="Pencarian global (belum tersedia)"
           />
           <kbd className={styles.searchKbd}>⌘K</kbd>
         </div>
@@ -81,10 +81,10 @@ export function Topbar() {
         {/* Notification bell — placeholder */}
         <button
           type="button"
-          aria-label="Notifications (not yet available)"
+          aria-label="Notifikasi (belum tersedia)"
           className={styles.iconBtn}
           disabled
-          title="Notifications — coming soon"
+          title="Notifikasi — segera hadir"
         >
           <Bell size={16} />
         </button>
@@ -103,7 +103,7 @@ export function Topbar() {
             <div className={styles.userInfo}>
               <span className={styles.userName}>{user?.name ?? 'User'}</span>
               <span className={styles.userRole}>
-                {user ? ROLE_LABELS[user.role] : 'Guest'}
+                {user ? ROLE_LABELS[user.role] : 'Tamu'}
               </span>
             </div>
             <ChevronDown size={12} className={cn(styles.userChevron, isUserMenuOpen && styles['userChevron--open'])} />
@@ -117,14 +117,14 @@ export function Topbar() {
               </div>
               <hr className={styles.dropdownDivider} />
               <button type="button" role="menuitem" className={styles.dropdownItem} onClick={() => setIsUserMenuOpen(false)}>
-                <User size={14} /> Profile
+                <User size={14} /> Profil
               </button>
               <button type="button" role="menuitem" className={styles.dropdownItem} onClick={() => setIsUserMenuOpen(false)}>
-                <Settings size={14} /> Settings
+                <Settings size={14} /> Pengaturan
               </button>
               <hr className={styles.dropdownDivider} />
               <button type="button" role="menuitem" className={cn(styles.dropdownItem, styles['dropdownItem--danger'])} onClick={logout}>
-                <LogOut size={14} /> Sign out
+                <LogOut size={14} /> Keluar
               </button>
             </div>
           )}

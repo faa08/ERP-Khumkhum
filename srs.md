@@ -382,9 +382,9 @@ Frontend
 
 Backend
 
-- NestJS
+- Next.js Server Actions (Monolith)
 - TypeScript
-- Prisma ORM
+- Supabase Client (PostgreSQL)
 
 Database
 
@@ -392,13 +392,11 @@ Database
 
 AI
 
-- External AI API
+- External AI API (Gemini)
 
 Deployment
 
-Frontend → Vercel
-
-Backend → Railway / VPS
+- Frontend & Backend → Vercel
 
 Database → Supabase
 

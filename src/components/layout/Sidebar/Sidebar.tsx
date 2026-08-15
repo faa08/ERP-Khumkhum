@@ -209,7 +209,7 @@ function SidebarItem({ item, isCollapsed, depth = 0 }: SidebarItemProps) {
 // ─────────────────────────────────────────────
 
 export function Sidebar() {
-  const { isCollapsed } = useSidebar();
+  const { isCollapsed, toggle } = useSidebar();
   const { user } = useAuth();
 
   // Filter navigation groups based on RBAC
@@ -232,43 +232,53 @@ export function Sidebar() {
   }, [user]);
 
   return (
-    <aside
-      className={cn(styles.sidebar, isCollapsed && styles['sidebar--collapsed'])}
-      aria-label="Main navigation"
-    >
-      {/* Brand */}
-      <div className={styles.brand}>
-        <div className={styles.brandIcon} aria-hidden="true">
-          KK
+    <>
+      {/* Mobile backdrop */}
+      {!isCollapsed && (
+        <div
+          className={cn(styles.backdrop, 'md-hidden')}
+          aria-hidden="true"
+          onClick={toggle}
+        />
+      )}
+      <aside
+        className={cn(styles.sidebar, isCollapsed && styles['sidebar--collapsed'])}
+        aria-label="Main navigation"
+      >
+        {/* Brand */}
+        <div className={styles.brand}>
+          <div className={styles.brandIcon} aria-hidden="true">
+            KK
+          </div>
+          {!isCollapsed && (
+            <div className={styles.brandText}>
+              <span className={styles.brandName}>KhumKhum</span>
+              <span className={styles.brandTagline}>ERP System</span>
+            </div>
+          )}
         </div>
-        {!isCollapsed && (
-          <div className={styles.brandText}>
-            <span className={styles.brandName}>KhumKhum</span>
-            <span className={styles.brandTagline}>ERP System</span>
-          </div>
-        )}
-      </div>
 
-      {/* Navigation */}
-      <nav className={cn(styles.nav, 'scroll-area')} aria-label="Navigation">
-        {filteredGroups.map((group, groupIdx) => (
-          <div key={group.id} className={styles.group}>
-            {!isCollapsed && (
-              <p className={styles.groupLabel} aria-hidden="true">
-                {group.label}
-              </p>
-            )}
-            {isCollapsed && groupIdx > 0 && (
-              <hr className={styles.groupDivider} aria-hidden="true" />
-            )}
-            <ul className={styles.groupItems} role="list">
-              {group.items.map((item) => (
-                <SidebarItem key={item.id} item={item} isCollapsed={isCollapsed} />
-              ))}
-            </ul>
-          </div>
-        ))}
-      </nav>
-    </aside>
+        {/* Navigation */}
+        <nav className={cn(styles.nav, 'scroll-area')} aria-label="Navigation">
+          {filteredGroups.map((group, groupIdx) => (
+            <div key={group.id} className={styles.group}>
+              {!isCollapsed && (
+                <p className={styles.groupLabel} aria-hidden="true">
+                  {group.label}
+                </p>
+              )}
+              {isCollapsed && groupIdx > 0 && (
+                <hr className={styles.groupDivider} aria-hidden="true" />
+              )}
+              <ul className={styles.groupItems} role="list">
+                {group.items.map((item) => (
+                  <SidebarItem key={item.id} item={item} isCollapsed={isCollapsed} />
+                ))}
+              </ul>
+            </div>
+          ))}
+        </nav>
+      </aside>
+    </>
   );
 }

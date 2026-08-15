@@ -6,7 +6,7 @@ import styles from './Tabs.module.css';
 
 export interface TabItem {
   id: string;
-  label: string;
+  label: React.ReactNode;
   badge?: string | number;
   disabled?: boolean;
   content: React.ReactNode;

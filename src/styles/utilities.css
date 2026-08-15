@@ -165,3 +165,10 @@
               border-color var(--transition-fast),
               box-shadow var(--transition-fast);
 }
+
+/* ─────────────────────────────────────────────
+   RESPONSIVE
+   ───────────────────────────────────────────── */
+@media (min-width: 769px) {
+  .md-hidden { display: none !important; }
+}

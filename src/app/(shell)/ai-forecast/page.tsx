@@ -4,8 +4,7 @@ import React from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { Brain, TrendingUp, Package, Factory, AlertCircle } from 'lucide-react';
-import styles from './ai-forecast.module.css';
+import { Brain, TrendingUp, Package, Factory, AlertCircle, Sparkles } from 'lucide-react';
 
 export default function AiForecastPage() {
   return (
@@ -25,7 +24,7 @@ export default function AiForecastPage() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
         
         {/* 1. Demand Forecast */}
-        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><TrendingUp size={18} /> <strong>Prakiraan Permintaan (30 Hari Kedepan)</strong></div>}>
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><TrendingUp size={18} color="var(--color-primary-600)" /> <strong style={{ color: 'var(--color-primary-700)' }}>Prakiraan Permintaan (30 Hari Kedepan)</strong></div>}>
           <p style={{ margin: 0, marginBottom: 'var(--space-4)', color: 'var(--text-secondary)' }}>
             Berdasarkan data penjualan historis dan tren musiman, ekspektasi permintaan untuk jamur kering premium diproyeksikan meningkat.
           </p>
@@ -43,7 +42,7 @@ export default function AiForecastPage() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'var(--space-4)' }}>
           {/* 2. Production Recommendation */}
-          <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><Factory size={18} /> <strong>Rekomendasi Produksi</strong></div>}>
+          <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><Factory size={18} color="var(--color-success-600)" /> <strong style={{ color: 'var(--color-success-700)' }}>Rekomendasi Produksi</strong></div>}>
              <p style={{ margin: 0, marginBottom: 'var(--space-4)', color: 'var(--text-secondary)' }}>
               Untuk memenuhi prakiraan permintaan sekaligus menjaga tingkat stok aman, target produksi berikut direkomendasikan untuk minggu ini:
             </p>
@@ -54,7 +53,7 @@ export default function AiForecastPage() {
           </Card>
 
           {/* 3. Material Requirement */}
-          <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><Package size={18} /> <strong>Kebutuhan Material</strong></div>}>
+          <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><Package size={18} color="var(--color-info-600)" /> <strong style={{ color: 'var(--color-info-700)' }}>Kebutuhan Material</strong></div>}>
              <p style={{ margin: 0, marginBottom: 'var(--space-4)', color: 'var(--text-secondary)' }}>
               Kebutuhan pengadaan untuk mendukung rekomendasi peningkatan produksi:
             </p>
@@ -66,7 +65,7 @@ export default function AiForecastPage() {
         </div>
 
         {/* 4. Operational Insight */}
-        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><AlertCircle size={18} /> <strong>Wawasan Operasional</strong></div>}>
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><Sparkles size={18} color="var(--color-warning-600)" /> <strong style={{ color: 'var(--color-warning-700)' }}>Wawasan Operasional</strong></div>}>
           <div style={{ display: 'flex', gap: 'var(--space-3)', padding: 'var(--space-3)', backgroundColor: 'var(--color-warning-50)', color: 'var(--color-warning-700)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-warning-200)' }}>
             <AlertCircle size={20} />
             <div>

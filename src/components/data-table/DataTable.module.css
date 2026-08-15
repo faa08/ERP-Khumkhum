@@ -7,6 +7,8 @@
   border-radius: var(--radius-lg);
   background-color: var(--bg-surface);
   overflow: hidden;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* ─── TOOLBAR ─── */
@@ -20,15 +22,15 @@
   background-color: var(--bg-surface);
   flex-wrap: wrap;
 }
-.toolbarLeft  { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1; }
-.toolbarRight { display: flex; align-items: center; gap: var(--space-2); flex-shrink: 0; }
+.toolbarLeft  { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex: 1; min-width: 0; }
+.toolbarRight { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; flex-shrink: 0; }
 
 /* Search */
 .searchWrapper {
   position: relative;
   display: flex;
   align-items: center;
-  min-width: 200px;
+  width: 100%;
   max-width: 320px;
 }
 .searchIcon {
@@ -69,8 +71,8 @@
 .searchClear:hover { background-color: var(--color-neutral-300); color: var(--text-primary); }
 
 /* Bulk actions */
-.bulkActions { display: flex; align-items: center; gap: var(--space-2); }
-.selectedCount { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--color-primary-600); }
+.bulkActions { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.selectedCount { font-size: var(--font-size-xs); font-weight: var(--font-weight-medium); color: var(--color-primary-600); white-space: nowrap; }
 
 /* Column toggle */
 .columnToggle { position: relative; }
@@ -87,6 +89,7 @@
   font-size: var(--font-size-xs);
   cursor: pointer;
   transition: background-color var(--transition-fast);
+  white-space: nowrap;
 }
 .columnToggleBtn:hover { background-color: var(--bg-surface-2); color: var(--text-primary); }
 .columnDropdown {
@@ -119,9 +122,11 @@
 /* ─── TABLE ─── */
 .tableContainer {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   flex: 1;
   scrollbar-width: thin;
   scrollbar-color: var(--color-neutral-300) transparent;
+  width: 100%;
 }
 .tableContainer::-webkit-scrollbar { height: 6px; }
 .tableContainer::-webkit-scrollbar-thumb { background-color: var(--color-neutral-300); border-radius: 3px; }
@@ -132,7 +137,7 @@
   font-size: var(--font-size-sm);
 }
 
-.thead { background-color: var(--bg-surface-2); }
+.thead { background-color: var(--color-neutral-50); }
 .thead--sticky { position: sticky; top: 0; z-index: var(--z-sticky); }
 
 .th {
@@ -158,7 +163,7 @@
 .sortIcon { display: flex; align-items: center; color: var(--color-primary-500); }
 .sortIconNeutral { color: var(--text-tertiary); }
 
-.tbody {}
+
 
 .tr {
   border-bottom: 1px solid var(--border-default);

@@ -14,12 +14,8 @@ import { useToast } from '@/hooks/useToast';
 import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import {
-  getReceivings,
-  createReceiving,
-  getFarmers,
-  getRawMaterials,
-} from '@/actions/warehouse';
+import { getReceivings, createReceiving } from '@/actions/receiving';
+import { getFarmers, getRawMaterials } from '@/actions/master';
 import type { DbReceiving } from '@/types/database';
 
 interface FormState {

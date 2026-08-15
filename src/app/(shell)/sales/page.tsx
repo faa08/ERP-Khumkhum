@@ -14,13 +14,8 @@ import { useToast } from '@/hooks/useToast';
 import { Plus, MoreVertical, Eye, CheckCircle, Truck, Package, FileText } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import {
-  getSalesOrders,
-  createSalesOrder,
-  updateSalesOrderStatus,
-  getCustomers,
-  getProducts,
-} from '@/actions/warehouse';
+import { getSalesOrders, createSalesOrder, updateSalesOrderStatus } from '@/actions/sales';
+import { getCustomers, getProducts } from '@/actions/master';
 import type { DbSalesOrder } from '@/types/database';
 
 interface OrderItem { product_id: string; quantity: string; unit_price: string; }

@@ -106,6 +106,8 @@ export const STATUS_COLOR_MAP: Record<string, 'success' | 'warning' | 'danger' |
   sorting:      'info',
   planned:      'info',
   pending:      'warning',
+  pending_sorting: 'warning',
+  sorted:       'success',
   on_hold:      'warning',
   cancelled:    'danger',
   rejected:     'danger',

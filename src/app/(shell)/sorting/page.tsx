@@ -18,7 +18,7 @@ import {
   createSorting,
   updateSorting,
   getUnsortedReceivings,
-} from '@/actions/warehouse';
+} from '@/actions/sorting';
 import type { DbSorting } from '@/types/database';
 
 interface FormState {

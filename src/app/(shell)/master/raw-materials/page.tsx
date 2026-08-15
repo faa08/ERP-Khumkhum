@@ -1,37 +1,29 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable } from '@/components/data-table/DataTable';
 import { Button } from '@/components/ui/Button';
-import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Edit2, Ban, CheckCircle, Eye } from 'lucide-react';
+import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
-
-interface Entity {
-  id: string;
-  code: string;
-  name: string;
-  type: string;
-  isActive: boolean;
-}
-
-const MOCK_DATA: Entity[] = [
-  { id: '1', code: 'Sample Code 1', name: 'Sample Name 1', type: 'Sample Material Type 1', isActive: true },
-  { id: '2', code: 'Sample Code 2', name: 'Sample Name 2', type: 'Sample Material Type 2', isActive: true },
-];
+import { getRawMaterials, createRawMaterial, updateRawMaterial, deleteRawMaterial } from '@/actions/master';
+import type { DbRawMaterial } from '@/types/database';
 
 export default function RawmaterialsPage() {
-  const [data, setData] = useState<Entity[]>(MOCK_DATA);
+  const [data, setData] = useState<DbRawMaterial[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<Entity | null>(null);
+  const [selectedItem, setSelectedItem] = useState<DbRawMaterial | null>(null);
   
+  const [form, setForm] = useState({ code: '', name: '', uom: '' });
+  const [isSaving, setIsSaving] = useState(false);
+
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -42,56 +34,109 @@ export default function RawmaterialsPage() {
 
   const toast = useToast();
 
-  const handleCreate = () => { setSelectedItem(null); setDrawerOpen(true); };
-  const handleEdit = (item: Entity) => { setSelectedItem(item); setDrawerOpen(true); };
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    const res = await getRawMaterials();
+    if (res.success && res.data) {
+      setData(res.data);
+    } else {
+      toast.error(res.error || 'Failed to load raw materials');
+    }
+    setIsLoading(false);
+  }, [toast]);
 
-  const handleToggleStatus = (item: Entity) => {
-    const isActivating = !item.isActive;
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleCreate = () => {
+    setSelectedItem(null);
+    setForm({ code: '', name: '', uom: '' });
+    setDrawerOpen(true);
+  };
+
+  const handleEdit = (item: DbRawMaterial) => {
+    setSelectedItem(item);
+    setForm({
+      code: item.code || '',
+      name: item.name || '',
+      uom: item.uom || ''
+    });
+    setDrawerOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!form.code || !form.name || !form.uom) {
+      toast.error('Code, Name, and UOM are required');
+      return;
+    }
+    setIsSaving(true);
+    
+    if (selectedItem) {
+      const res = await updateRawMaterial(selectedItem.id, form);
+      if (res.success) {
+        toast.success('Raw material updated successfully');
+        setDrawerOpen(false);
+        loadData();
+      } else {
+        toast.error(res.error || 'Failed to update raw material');
+      }
+    } else {
+      const res = await createRawMaterial(form);
+      if (res.success) {
+        toast.success('Raw material created successfully');
+        setDrawerOpen(false);
+        loadData();
+      } else {
+        toast.error(res.error || 'Failed to create raw material');
+      }
+    }
+    setIsSaving(false);
+  };
+
+  const handleDelete = (item: DbRawMaterial) => {
     setConfirmDialog({
       isOpen: true,
-      title: isActivating ? 'Activate Raw Material' : 'Deactivate Raw Material',
-      description: `Are you sure you want to ${isActivating ? 'activate' : 'deactivate'} ${item.name}?`,
-      variant: isActivating ? 'primary' : 'danger',
+      title: 'Delete Raw Material',
+      description: `Are you sure you want to delete ${item.name}?`,
+      variant: 'danger',
       onConfirm: async () => {
-        setData(data.map(d => d.id === item.id ? { ...d, isActive: isActivating } : d));
-        toast.success(`Raw Material ${isActivating ? 'activated' : 'deactivated'}`);
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        const res = await deleteRawMaterial(item.id);
+        if (res.success) {
+          toast.success('Raw material deleted successfully');
+          loadData();
+        } else {
+          toast.error(res.error || 'Failed to delete raw material');
+        }
       }
     });
   };
 
-  const columns = useMemo<ColumnDef<Entity>[]>(() => [
+  const columns = useMemo<ColumnDef<DbRawMaterial>[]>(() => [
     { accessorKey: 'code', header: 'Code' },
     { accessorKey: 'name', header: 'Name' },
-    { accessorKey: 'type', header: 'Material Type' },
-    {
-      accessorKey: 'isActive',
-      header: 'Status',
-      cell: ({ row }) => (
-        <StatusBadge status={row.original.isActive ? 'active' : 'inactive'} label={row.original.isActive ? 'Active' : 'Inactive'} />
-      )
-    },
+    { accessorKey: 'uom', header: 'Unit of Measure (UOM)' },
     {
       id: 'actions',
       cell: ({ row }) => (
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
             { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
             { divider: true, id: 'div1', label: '' },
             { 
-              id: 'toggle', 
-              label: row.original.isActive ? 'Deactivate' : 'Activate', 
-              icon: row.original.isActive ? <Ban size={14} /> : <CheckCircle size={14} />,
-              danger: row.original.isActive,
-              onClick: () => handleToggleStatus(row.original)
+              id: 'delete', 
+              label: 'Delete', 
+              icon: <Trash2 size={14} />,
+              danger: true,
+              onClick: () => handleDelete(row.original)
             },
           ]}
         />
       )
     }
-  ], [data]);
+  ], []);
 
   return (
     <div>
@@ -101,7 +146,7 @@ export default function RawmaterialsPage() {
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Raw Materials' }]}
         actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Raw Material</Button>}
       />
-      <DataTable columns={columns} data={data}  />
+      <DataTable columns={columns} data={data} />
 
       <Drawer
         isOpen={drawerOpen}
@@ -111,14 +156,32 @@ export default function RawmaterialsPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
+            <Button variant="primary" onClick={handleSave} loading={isSaving}>Simpan</Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <FormField label="Code" required><Input defaultValue={selectedItem?.code || ''} /></FormField>
-          <FormField label="Name" required><Input defaultValue={selectedItem?.name || ''} /></FormField>
-          <FormField label="Material Type" required><Input defaultValue={selectedItem?.type || ''} /></FormField>
+          <FormField label="Code" required>
+            <Input 
+              value={form.code} 
+              onChange={e => setForm(f => ({ ...f, code: e.target.value }))} 
+              placeholder="e.g. RM-JAMUR-BASAH" 
+            />
+          </FormField>
+          <FormField label="Name" required>
+            <Input 
+              value={form.name} 
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))} 
+              placeholder="e.g. Jamur Tiram Basah" 
+            />
+          </FormField>
+          <FormField label="Unit of Measure (UOM)" required>
+            <Input 
+              value={form.uom} 
+              onChange={e => setForm(f => ({ ...f, uom: e.target.value }))} 
+              placeholder="e.g. kg, gram" 
+            />
+          </FormField>
         </div>
       </Drawer>
 

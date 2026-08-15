@@ -227,6 +227,14 @@
 
 /* ─── RESPONSIVE ─── */
 @media (max-width: 768px) {
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: calc(var(--z-sidebar) - 1);
+    backdrop-filter: blur(2px);
+  }
+
   .sidebar {
     position: fixed;
     left: 0;
@@ -234,10 +242,10 @@
     bottom: 0;
     z-index: var(--z-sidebar);
     transform: translateX(0);
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.15);
   }
 
   .sidebar--collapsed {
-    transform: translateX(calc(-1 * var(--sidebar-width)));
-    width: var(--sidebar-width);
+    transform: translateX(-100%);
   }
 }

@@ -32,6 +32,11 @@ export function SidebarProvider({ children }: SidebarProviderProps) {
     const stored = localStorage.getItem(STORAGE_KEYS.SIDEBAR_COLLAPSED);
     if (stored !== null) {
       setIsCollapsed(JSON.parse(stored) as boolean);
+    } else {
+      // Default to collapsed on mobile screens
+      if (window.innerWidth <= 768) {
+        setIsCollapsed(true);
+      }
     }
   }, []);
 

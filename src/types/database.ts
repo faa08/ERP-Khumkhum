@@ -1,8 +1,8 @@
 /**
  * Supabase Database Types
- * Matched with database/schema.sql
- * 
- * 6 Core Roles sesuai PRD:
+ * Matched with database/schema.sql + PRD Spesifikasi 6 Role
+ *
+ * 6 Core Roles:
  * SUPER_ADMIN, QC, WAREHOUSE, PRODUCTION, MANAGEMENT, FARMER
  */
 
@@ -30,6 +30,8 @@ export interface DbFarmer {
   name: string;
   contact?: string | null;
   address?: string | null;
+  phone_number?: string | null;
+  price_per_kg?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -69,23 +71,40 @@ export interface DbWarehouse {
   updated_at: string;
 }
 
+// ─────────────────────────────────────────────
+// WAREHOUSE MODULE TYPES
+// ─────────────────────────────────────────────
+
+/** Penerimaan Bahan Baku Jamur (table: receivings) */
 export interface DbReceiving {
   id: string;
-  batch_number: string;
+  batch_number: string;              // RM-YYYYMMDD-XXX
   farmer_id?: string | null;
   raw_material_id: string;
-  weight: number;
+  weight: number;                    // W_terima (berat timbang aktual)
+  weight_sent?: number | null;       // W_kirim (berat kirim petani)
+  weight_difference?: number | null; // ΔW = W_terima - W_kirim
+  diff_percentage?: number | null;   // %ΔW
+  scale_photo_url?: string | null;
   notes?: string | null;
   received_by?: string | null;
   received_date: string;
+  status?: string | null;            // 'RECEIVED' | 'SORTED' | 'VOIDED'
   created_at: string;
   updated_at: string;
+  // Joined fields
+  farmer?: Pick<DbFarmer, 'id' | 'name' | 'contact' | 'phone_number'> | null;
 }
 
+/** Sortasi & Grading (table: sortings) */
 export interface DbSorting {
   id: string;
   receiving_id: string;
-  grade?: string | null;
+  leaf_weight?: number | null;          // W_daun (kg)
+  stem_weight?: number | null;          // W_batang (kg)
+  leaf_percentage?: number | null;      // %Daun = W_daun/(W_daun+W_batang)×100
+  quality_grade?: string | null;        // 'A' | 'B' | 'C'
+  is_standard_compliant?: boolean | null; // leaf_percentage >= 75
   accepted_quantity: number;
   rejected_quantity: number;
   waste: number;
@@ -93,12 +112,47 @@ export interface DbSorting {
   sorting_date: string;
   created_at: string;
   updated_at: string;
+  // Joined
+  receiving?: Pick<DbReceiving, 'id' | 'batch_number' | 'weight' | 'farmer_id'> | null;
+  farmer?: Pick<DbFarmer, 'name' | 'phone_number'> | null;
 }
+
+/** Estimasi Panen Petani untuk PPIC */
+export interface DbFarmerHarvestEstimate {
+  id: string;
+  farmer_id: string;
+  expected_date: string;
+  estimated_kg: number;
+  source: 'WA_BOT' | 'MANUAL';
+  created_at: string;
+  farmer?: Pick<DbFarmer, 'id' | 'name' | 'phone_number'> | null;
+}
+
+/** Log WhatsApp Gateway */
+export interface DbWhatsappLog {
+  id: string;
+  farmer_id?: string | null;
+  phone_number: string;
+  message_type: 'RECEIPT_NOTA' | 'SORTATION_INFO' | 'HARVEST_REMINDER' | 'HARVEST_CONFIRM' | 'OTHER';
+  payload: Record<string, any>;
+  status: 'PENDING' | 'SENT' | 'FAILED' | 'SIMULATED';
+  gateway_response?: Record<string, any> | null;
+  created_at: string;
+}
+
+// ─────────────────────────────────────────────
+// PRODUCTION MODULE TYPES (read by Warehouse)
+// ─────────────────────────────────────────────
 
 export interface DbProductionOrder {
   id: string;
   batch_number: string;
-  status: 'DRAFT' | 'IN_PROGRESS' | 'QC_PENDING' | 'COMPLETED' | 'CANCELLED';
+  status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED_WIP' | 'QC_PENDING' | 'RELEASED' | 'COMPLETED' | 'CANCELLED';
+  product_variant?: string | null;
+  input_weight?: number | null;
+  output_weight?: number | null;
+  yield_percentage?: number | null;
+  is_yield_compliant?: boolean | null;
   start_date?: string | null;
   end_date?: string | null;
   created_by?: string | null;
@@ -124,10 +178,25 @@ export interface DbProductionResult {
   created_at: string;
 }
 
+// ─────────────────────────────────────────────
+// QC MODULE TYPES
+// ─────────────────────────────────────────────
+
 export interface DbQcInspection {
   id: string;
+  batch_id?: string | null;
   reference_type: 'RECEIVING' | 'SORTING' | 'PRODUCTION';
   reference_id: string;
+  inspector_id?: string | null;
+  sample_size?: number | null;
+  defect_burnt?: number | null;
+  defect_salty?: number | null;
+  defect_leaking_pack?: number | null;
+  defect_crushed?: number | null;
+  defect_soggy?: number | null;
+  total_defects?: number | null;
+  defect_rate?: number | null;
+  decision?: 'RELEASED' | 'REWORK' | 'REJECTED' | null;
   is_passed: boolean;
   defect_type?: string | null;
   notes?: string | null;
@@ -136,6 +205,10 @@ export interface DbQcInspection {
   created_at: string;
 }
 
+// ─────────────────────────────────────────────
+// INVENTORY MODULE TYPES
+// ─────────────────────────────────────────────
+
 export interface DbInventory {
   id: string;
   warehouse_id: string;
@@ -143,7 +216,10 @@ export interface DbInventory {
   item_id: string;
   batch_number?: string | null;
   quantity: number;
+  reorder_point?: number | null;
   last_updated_at: string;
+  warehouse?: Pick<DbWarehouse, 'id' | 'name'> | null;
+  item_name?: string | null;
 }
 
 export interface DbStockMovement {
@@ -152,18 +228,37 @@ export interface DbStockMovement {
   movement_type: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER';
   quantity: number;
   reference_id?: string | null;
+  reference_type?: string | null;
+  notes?: string | null;
   movement_date: string;
   created_by?: string | null;
 }
 
+export interface DbStockOpnameItem {
+  inventory_id: string;
+  item_name: string;
+  system_qty: number;
+  physical_qty: number;
+  difference: number;
+}
+
+// ─────────────────────────────────────────────
+// SALES ORDER MODULE TYPES
+// ─────────────────────────────────────────────
+
 export interface DbSalesOrder {
   id: string;
+  order_number?: string | null;       // SO-YYYYMMDD-XXX
   customer_id: string;
   order_date: string;
   status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
+  total_amount?: number | null;
+  notes?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
+  customer?: Pick<DbCustomer, 'id' | 'name' | 'contact'> | null;
+  items?: DbSalesOrderItem[] | null;
 }
 
 export interface DbSalesOrderItem {
@@ -171,13 +266,64 @@ export interface DbSalesOrderItem {
   sales_order_id: string;
   product_id: string;
   quantity: number;
+  unit_price?: number | null;
+  subtotal?: number | null;
   created_at: string;
+  product?: Pick<DbProduct, 'id' | 'sku' | 'name'> | null;
 }
+
+// ─────────────────────────────────────────────
+// MANAGEMENT / EXECUTIVE MODULE TYPES
+// ─────────────────────────────────────────────
+
+/** Aggregated KPI metrics for Executive Dashboard */
+export interface DbKpiMetrics {
+  total_supply_kg: number;
+  avg_yield_percentage: number;
+  overall_defect_rate: number;
+  stock_accuracy_percentage: number;
+  total_sales_revenue: number;
+  total_production_batches: number;
+  period_from: string;
+  period_to: string;
+}
+
+/** One node in the traceability chain */
+export interface TraceabilityNode {
+  step: number;
+  label: string;
+  id: string;
+  status: string;
+  data: Record<string, string | number | boolean | null>;
+}
+
+/** Full traceability result */
+export interface TraceabilityResult {
+  search_type: 'FORWARD' | 'BACKWARD';
+  search_keyword: string;
+  chain: TraceabilityNode[];
+  found: boolean;
+}
+
+/** Farmer performance ranking for management */
+export interface FarmerRanking {
+  rank: number;
+  farmer_id: string;
+  farmer_name: string;
+  total_supply_kg: number;
+  avg_leaf_percentage: number;
+  delivery_count: number;
+  grade_a_count: number;
+}
+
+// ─────────────────────────────────────────────
+// AUDIT LOG & SETTINGS
+// ─────────────────────────────────────────────
 
 export interface DbAuditLog {
   id: string;
   user_id?: string | null;
-  action: 'LOGIN' | 'LOGOUT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT';
+  action: 'LOGIN' | 'LOGOUT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT' | 'VOID';
   entity_type?: string | null;
   entity_id?: string | null;
   details?: Record<string, any> | null;

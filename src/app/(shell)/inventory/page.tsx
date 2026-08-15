@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/useToast';
 import { Package, AlertTriangle, TrendingDown, Plus } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import { getInventorySummary, getStockMovements } from '@/actions/warehouse';
+import { getInventorySummary, getStockMovements } from '@/actions/inventory';
 import type { DbInventory, DbStockMovement } from '@/types/database';
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; color: string; rop: number }> = {

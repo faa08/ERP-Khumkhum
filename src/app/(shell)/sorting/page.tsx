@@ -13,11 +13,7 @@ import { useToast } from '@/hooks/useToast';
 import { Plus, MoreVertical, Eye, CheckCircle, AlertTriangle, MessageCircle } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import {
-  getSortings,
-  createSorting,
-  getUnsortedReceivings,
-} from '@/actions/warehouse';
+import { getSortings, createSorting, getUnsortedReceivings } from '@/actions/sorting';
 import type { DbSorting } from '@/types/database';
 
 interface FormState {

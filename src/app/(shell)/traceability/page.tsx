@@ -9,7 +9,7 @@ import { DataTable } from '@/components/data-table/DataTable';
 import { useToast } from '@/hooks/useToast';
 import { Search, ArrowRight, ArrowLeft, CheckCircle, Clock, AlertTriangle, Trophy } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { searchTraceability, getFarmerRanking } from '@/actions/management';
+import { searchTraceability, getFarmerRanking } from '@/actions/traceability';
 import type { TraceabilityResult, TraceabilityNode, FarmerRanking } from '@/types/database';
 
 /** DataTable requires { id?: string | number } — extend FarmerRanking with id */

@@ -13,7 +13,7 @@ import { CalendarDays, TrendingUp, AlertCircle, Plus, MessageSquare, PenTool, Sp
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, addDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { getPpicData } from '@/actions/warehouse';
+import { getPpicData } from '@/actions/ppic';
 import type { DbFarmerHarvestEstimate } from '@/types/database';
 
 // Simple Exponential Smoothing (alpha = 0.3)

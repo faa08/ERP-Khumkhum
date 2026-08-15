@@ -10,12 +10,13 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Eye, CheckCircle, AlertTriangle, MessageCircle } from 'lucide-react';
+import { Plus, MoreVertical, Eye, Edit, CheckCircle, AlertTriangle, MessageCircle } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import {
   getSortings,
   createSorting,
+  updateSorting,
   getUnsortedReceivings,
 } from '@/actions/warehouse';
 import type { DbSorting } from '@/types/database';
@@ -39,6 +40,12 @@ export default function SortingPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [viewItem, setViewItem] = useState<DbSorting | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
+
+  // State Edit/Koreksi
+  const [editItem, setEditItem] = useState<DbSorting | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<{ leaf_weight: string; stem_weight: string }>({ leaf_weight: '', stem_weight: '' });
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const toast = useToast();
 
@@ -84,6 +91,46 @@ export default function SortingPage() {
       loadData();
     } else {
       toast.error(res.error || 'Gagal menyimpan');
+    }
+  };
+
+  // ── Live kalkulasi Edit ─────────────────────────────────────────
+  const editLeafW = parseFloat(editForm.leaf_weight) || 0;
+  const editStemW = parseFloat(editForm.stem_weight) || 0;
+  const editTotal = editLeafW + editStemW;
+  const editLeafPct = editTotal > 0 ? (editLeafW / editTotal) * 100 : 0;
+  const editGrade = editLeafPct >= 80 ? 'A' : editLeafPct >= 75 ? 'B' : 'C';
+  const editIsStandard = editLeafPct >= 75;
+  const editGradeColor = editGrade === 'A' ? 'var(--color-success-600)' : editGrade === 'B' ? 'var(--color-warning-600)' : 'var(--color-danger-600)';
+
+  const handleOpenEdit = (item: DbSorting) => {
+    setEditItem(item);
+    setEditForm({
+      leaf_weight: (item.leaf_weight != null ? item.leaf_weight : item.accepted_quantity).toString(),
+      stem_weight: (item.stem_weight != null ? item.stem_weight : item.waste).toString(),
+    });
+    setEditOpen(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!editItem || !editForm.leaf_weight || !editForm.stem_weight) {
+      toast.error('Lengkapi berat daun dan batang');
+      return;
+    }
+    setIsUpdating(true);
+    const res = await updateSorting({
+      id: editItem.id,
+      leaf_weight: parseFloat(editForm.leaf_weight),
+      stem_weight: parseFloat(editForm.stem_weight),
+    });
+    setIsUpdating(false);
+    if (res.success) {
+      toast.success('Data sortasi berhasil dikoreksi! Stok gudang telah disesuaikan.');
+      setEditOpen(false);
+      setEditItem(null);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal mengupdate sortasi');
     }
   };
 
@@ -161,6 +208,7 @@ export default function SortingPage() {
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
             { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} />, onClick: () => { setViewItem(row.original); setViewOpen(true); } },
+            { id: 'edit', label: 'Koreksi / Edit Sortasi', icon: <Edit size={14} />, onClick: () => handleOpenEdit(row.original) },
           ]}
         />
       ),
@@ -302,6 +350,92 @@ export default function SortingPage() {
                 <strong style={{ fontSize: 'var(--text-sm)' }}>{row.value}</strong>
               </div>
             ))}
+          </div>
+        )}
+      </Drawer>
+
+      {/* ── EDIT / KOREKSI DRAWER ── */}
+      <Drawer
+        isOpen={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Koreksi / Edit Hasil Sortasi"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditOpen(false)}>Batal</Button>
+            <Button variant="primary" onClick={handleUpdate} loading={isUpdating}>Simpan Perubahan</Button>
+          </>
+        }
+      >
+        {editItem && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <div style={{
+              padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)',
+            }}>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Batch Penerimaan</div>
+              <div style={{ fontWeight: 600, color: 'var(--color-primary-600)', fontFamily: 'monospace' }}>
+                {(editItem as any).receiving?.batch_number || editItem.receiving_id}
+              </div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                Petani: <strong>{(editItem as any).receiving?.farmer?.name || '-'}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+              <FormField label="Berat Daun Baru (kg)" required>
+                <Input
+                  type="number" step="0.01" min="0" placeholder="0.00"
+                  value={editForm.leaf_weight}
+                  onChange={e => setEditForm(f => ({ ...f, leaf_weight: e.target.value }))}
+                />
+              </FormField>
+              <FormField label="Berat Batang Baru (kg)" required>
+                <Input
+                  type="number" step="0.01" min="0" placeholder="0.00"
+                  value={editForm.stem_weight}
+                  onChange={e => setEditForm(f => ({ ...f, stem_weight: e.target.value }))}
+                />
+              </FormField>
+            </div>
+
+            {/* Live Preview Edit */}
+            {editTotal > 0 && (
+              <div style={{
+                padding: 'var(--space-4)',
+                borderRadius: 'var(--radius-md)',
+                background: editIsStandard ? 'var(--color-success-50)' : 'var(--color-danger-50)',
+                border: `1px solid ${editIsStandard ? 'var(--color-success-200)' : 'var(--color-danger-200)'}`,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)', fontWeight: 600,
+                  color: editIsStandard ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>
+                  {editIsStandard ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
+                  {editIsStandard ? 'Lolos Standar (≥ 75%)' : 'Di Bawah Standar (< 75%)'}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>% Daun Baru</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: editGradeColor }}>{editLeafPct.toFixed(1)}%</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Grade Baru</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: editGradeColor }}>Grade {editGrade}</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Total Baru</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{editTotal.toFixed(2)} kg</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{
+              padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
+              background: 'var(--color-warning-50)', border: '1px solid var(--color-warning-200)',
+              fontSize: 'var(--text-xs)', color: 'var(--color-warning-800)',
+            }}>
+              ⚠️ Stok persediaan jamur bersih di gudang akan otomatis disesuaikan dengan selisih timbangan baru.
+            </div>
           </div>
         )}
       </Drawer>

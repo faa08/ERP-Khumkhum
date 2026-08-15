@@ -141,23 +141,32 @@ export interface DbWhatsappLog {
 }
 
 // ─────────────────────────────────────────────
-// PRODUCTION MODULE TYPES (read by Warehouse)
+// PRODUCTION MODULE TYPES
 // ─────────────────────────────────────────────
 
 export interface DbProductionOrder {
   id: string;
   batch_number: string;
+  product_id?: string | null;
+  target_quantity?: number | null;
   status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED_WIP' | 'QC_PENDING' | 'RELEASED' | 'COMPLETED' | 'CANCELLED';
   product_variant?: string | null;
   input_weight?: number | null;
   output_weight?: number | null;
   yield_percentage?: number | null;
   is_yield_compliant?: boolean | null;
+  anomaly_reason?: string | null;
+  notes?: string | null;
   start_date?: string | null;
   end_date?: string | null;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
+  // Joined fields
+  product?: Pick<DbProduct, 'id' | 'sku' | 'name'> | null;
+  creator?: { id: string; name: string } | null;
+  materials?: DbProductionMaterial[];
+  results?: DbProductionResult[];
 }
 
 export interface DbProductionMaterial {
@@ -166,6 +175,8 @@ export interface DbProductionMaterial {
   raw_material_id: string;
   consumption_quantity: number;
   created_at: string;
+  // Joined
+  raw_material?: Pick<DbRawMaterial, 'id' | 'code' | 'name' | 'uom'> | null;
 }
 
 export interface DbProductionResult {
@@ -176,6 +187,8 @@ export interface DbProductionResult {
   wip_quantity: number;
   yield_percentage?: number | null;
   created_at: string;
+  // Joined
+  product?: Pick<DbProduct, 'id' | 'sku' | 'name'> | null;
 }
 
 // ─────────────────────────────────────────────
@@ -201,8 +214,83 @@ export interface DbQcInspection {
   defect_type?: string | null;
   notes?: string | null;
   inspected_by?: string | null;
+  image_url?: string | null;
   inspection_date: string;
   created_at: string;
+  // Joined
+  inspector?: { id: string; name: string } | null;
+  production_order?: Pick<DbProductionOrder, 'id' | 'batch_number' | 'product_variant' | 'yield_percentage'> | null;
+}
+
+export interface QcParetoItem {
+  category: string;
+  count: number;
+  percentage: number;
+  cumulativePercentage: number;
+}
+
+// ─────────────────────────────────────────────
+// STANDARDS & FORECAST TYPES
+// ─────────────────────────────────────────────
+
+export interface BomRecipe {
+  product_name: string;
+  raw_mushroom_ratio: number;
+  premix_flour_ratio: number;
+  cooking_oil_ratio: number;
+  seasoning_ratio: number;
+}
+
+export interface ProductionStandardConfig {
+  min_yield_percentage: number;
+  warning_yield_percentage: number;
+  oil_temp_min: number;
+  oil_temp_max: number;
+  frying_duration_minutes: number;
+  spinning_duration_minutes: number;
+  bom_recipes: BomRecipe[];
+}
+
+export interface DefectCategoryConfig {
+  id: string;
+  name: string;
+  weight: number;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+}
+
+export interface QcStandardConfig {
+  max_defect_rate: number;
+  max_moisture_percentage: number;
+  min_sample_size: number;
+  defect_categories: DefectCategoryConfig[];
+}
+
+export interface MaterialForecastItem {
+  material_name: string;
+  uom: string;
+  historical_avg_weekly: number;
+  projected_demand: number;
+  safety_stock: number;
+  total_procurement_needed: number;
+  confidence: 'Tinggi' | 'Sedang' | 'Rendah';
+  notes: string;
+}
+
+export interface ForecastWeekProjection {
+  week: string;
+  date_label: string;
+  projected_kg: number;
+  confidence: 'Tinggi' | 'Sedang' | 'Rendah';
+  status_color: string;
+}
+
+export interface OperationalInsight {
+  id: string;
+  type: 'WARNING' | 'INFO' | 'SUCCESS';
+  title: string;
+  description: string;
+  recommendation: string;
+  metric?: string;
 }
 
 // ─────────────────────────────────────────────

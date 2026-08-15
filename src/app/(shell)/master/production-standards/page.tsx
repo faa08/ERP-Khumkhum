@@ -1,132 +1,271 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { DataTable } from '@/components/data-table/DataTable';
+import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { StatusBadge } from '@/components/ui/StatusBadge';
-import { Dropdown } from '@/components/ui/Dropdown';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Edit2, Ban, CheckCircle, Eye } from 'lucide-react';
-import type { ColumnDef } from '@tanstack/react-table';
+import {
+  Factory,
+  Save,
+  Flame,
+  Scale,
+  Sparkles,
+  Plus,
+  Trash2,
+  Sliders,
+} from 'lucide-react';
+import { getProductionStandards, saveProductionStandards } from '@/actions/standards';
+import type { ProductionStandardConfig, BomRecipe } from '@/types/database';
 
-interface Entity {
-  id: string;
-  name: string;
-  version: string;
-  isActive: boolean;
-}
+export default function ProductionStandardsPage() {
+  const [config, setConfig] = useState<ProductionStandardConfig>({
+    min_yield_percentage: 80.0,
+    warning_yield_percentage: 75.0,
+    oil_temp_min: 160,
+    oil_temp_max: 180,
+    frying_duration_minutes: 15,
+    spinning_duration_minutes: 5,
+    bom_recipes: [],
+  });
 
-const MOCK_DATA: Entity[] = [
-  { id: '1', name: 'Sample Name 1', version: 'Sample Version 1', isActive: true },
-  { id: '2', name: 'Sample Name 2', version: 'Sample Version 2', isActive: true },
-];
-
-export default function ProductionstandardsPage() {
-  const [data, setData] = useState<Entity[]>(MOCK_DATA);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [selectedItem, setSelectedItem] = useState<Entity | null>(null);
-  
-  const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean;
-    title: string;
-    description: string;
-    onConfirm: () => void;
-    variant: 'danger' | 'primary';
-  }>({ isOpen: false, title: '', description: '', onConfirm: () => {}, variant: 'primary' });
-
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const toast = useToast();
 
-  const handleCreate = () => { setSelectedItem(null); setDrawerOpen(true); };
-  const handleEdit = (item: Entity) => { setSelectedItem(item); setDrawerOpen(true); };
+  const loadStandards = useCallback(async () => {
+    setIsLoading(true);
+    const res = await getProductionStandards();
+    if (res.success && res.data) {
+      setConfig(res.data);
+    }
+    setIsLoading(false);
+  }, []);
 
-  const handleToggleStatus = (item: Entity) => {
-    const isActivating = !item.isActive;
-    setConfirmDialog({
-      isOpen: true,
-      title: isActivating ? 'Activate Production Standard' : 'Deactivate Production Standard',
-      description: `Are you sure you want to ${isActivating ? 'activate' : 'deactivate'} ${item.name}?`,
-      variant: isActivating ? 'primary' : 'danger',
-      onConfirm: async () => {
-        setData(data.map(d => d.id === item.id ? { ...d, isActive: isActivating } : d));
-        toast.success(`Production Standard ${isActivating ? 'activated' : 'deactivated'}`);
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-      }
-    });
+  useEffect(() => {
+    loadStandards();
+  }, [loadStandards]);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    const res = await saveProductionStandards(config);
+    if (res.success) {
+      toast.success('Standar parameter produksi & resep BOM berhasil disimpan');
+    } else {
+      toast.error(res.error || 'Gagal menyimpan konfigurasi standar');
+    }
+    setIsSaving(false);
   };
 
-  const columns = useMemo<ColumnDef<Entity>[]>(() => [
-    { accessorKey: 'name', header: 'Name' },
-    { accessorKey: 'version', header: 'Version' },
-    {
-      accessorKey: 'isActive',
-      header: 'Status',
-      cell: ({ row }) => (
-        <StatusBadge status={row.original.isActive ? 'active' : 'inactive'} label={row.original.isActive ? 'Active' : 'Inactive'} />
-      )
-    },
-    {
-      id: 'actions',
-      cell: ({ row }) => (
-        <Dropdown
-          trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
-          items={[
-            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} /> },
-            { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
-            { divider: true, id: 'div1', label: '' },
-            { 
-              id: 'toggle', 
-              label: row.original.isActive ? 'Deactivate' : 'Activate', 
-              icon: row.original.isActive ? <Ban size={14} /> : <CheckCircle size={14} />,
-              danger: row.original.isActive,
-              onClick: () => handleToggleStatus(row.original)
-            },
-          ]}
-        />
-      )
-    }
-  ], [data]);
+  const handleAddRecipe = () => {
+    const newRecipe: BomRecipe = {
+      product_name: 'Jamur Crispy Varian Baru',
+      raw_mushroom_ratio: 1.0,
+      premix_flour_ratio: 0.25,
+      cooking_oil_ratio: 0.30,
+      seasoning_ratio: 0.06,
+    };
+    setConfig({ ...config, bom_recipes: [...config.bom_recipes, newRecipe] });
+  };
+
+  const handleRemoveRecipe = (index: number) => {
+    const updated = config.bom_recipes.filter((_, i) => i !== index);
+    setConfig({ ...config, bom_recipes: updated });
+  };
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <PageHeader
-        title="Data Induk Standar Produksi"
-        description="Manage production standards and recipes."
-        breadcrumbs={[{ label: 'Data Induk' }, { label: 'Production Standards' }]}
-        actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Production Standard</Button>}
-      />
-      <DataTable columns={columns} data={data}  />
-
-      <Drawer
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        title={selectedItem ? 'Edit Production Standard' : 'Buat Production Standard'}
-        size="md"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setDrawerOpen(false); toast.success('Berhasil disimpan'); }}>Simpan</Button>
-          </>
+        title="Standar Manufaktur & Resep Formula (BOM)"
+        description="Konfigurasi target rendemen efisiensi wajan, suhu & durasi penggorengan, serta standar kebutuhan bahan per 1 kg jamur tiram segar."
+        breadcrumbs={[{ label: 'Data Induk' }, { label: 'Standar Produksi' }]}
+        actions={
+          <Button
+            variant="primary"
+            onClick={handleSave}
+            disabled={isSaving || isLoading}
+            leftIcon={<Save size={16} />}
+          >
+            {isSaving ? 'Menyimpan...' : 'Simpan Perubahan Standar'}
+          </Button>
         }
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <FormField label="Name" required><Input defaultValue={selectedItem?.name || ''} /></FormField>
-          <FormField label="Version" required><Input defaultValue={selectedItem?.version || ''} /></FormField>
-        </div>
-      </Drawer>
-
-      <ConfirmDialog
-        isOpen={confirmDialog.isOpen}
-        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmDialog.onConfirm}
-        title={confirmDialog.title}
-        description={confirmDialog.description}
-        variant={confirmDialog.variant}
       />
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'var(--space-4)' }}>
+        {/* 1. Rendemen Thresholds */}
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Scale size={18} color="var(--color-primary-600)" /> <strong>Ambang Batas Rendemen (%)</strong></div>}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <FormField label="Target Efisiensi Rendemen Minimum (%)" required>
+              <Input
+                type="number"
+                step="0.5"
+                value={config.min_yield_percentage}
+                onChange={(e) => setConfig({ ...config, min_yield_percentage: Number(e.target.value) })}
+              />
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                Rendemen di atas nilai ini ditandai Hijau (Optimal).
+              </span>
+            </FormField>
+
+            <FormField label="Batas Peringatan Rendemen Rendah / Warning (%)" required>
+              <Input
+                type="number"
+                step="0.5"
+                value={config.warning_yield_percentage}
+                onChange={(e) => setConfig({ ...config, warning_yield_percentage: Number(e.target.value) })}
+              />
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                Rendemen di bawah nilai ini wajib mengisi alasan anomali produksi.
+              </span>
+            </FormField>
+          </div>
+        </Card>
+
+        {/* 2. Frying Parameters */}
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Flame size={18} color="var(--color-warning-600)" /> <strong>Parameter Penggorengan & Penirisan</strong></div>}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+            <FormField label="Suhu Minyak Min (°C)">
+              <Input
+                type="number"
+                value={config.oil_temp_min}
+                onChange={(e) => setConfig({ ...config, oil_temp_min: Number(e.target.value) })}
+              />
+            </FormField>
+
+            <FormField label="Suhu Minyak Maks (°C)">
+              <Input
+                type="number"
+                value={config.oil_temp_max}
+                onChange={(e) => setConfig({ ...config, oil_temp_max: Number(e.target.value) })}
+              />
+            </FormField>
+
+            <FormField label="Durasi Goreng (Menit)">
+              <Input
+                type="number"
+                value={config.frying_duration_minutes}
+                onChange={(e) => setConfig({ ...config, frying_duration_minutes: Number(e.target.value) })}
+              />
+            </FormField>
+
+            <FormField label="Durasi Spinner Minyak (Menit)">
+              <Input
+                type="number"
+                value={config.spinning_duration_minutes}
+                onChange={(e) => setConfig({ ...config, spinning_duration_minutes: Number(e.target.value) })}
+              />
+            </FormField>
+          </div>
+        </Card>
+      </div>
+
+      {/* 3. BOM Recipes Configuration */}
+      <Card header={<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Factory size={18} color="var(--color-success-600)" /> <strong>Resep Bill of Materials (BOM) Standar per 1 kg Jamur Bersih</strong></div>
+        <Button variant="secondary" size="sm" onClick={handleAddRecipe} leftIcon={<Plus size={14} />}>Tambah Varian Resep</Button>
+      </div>}>
+        <p style={{ margin: 0, marginBottom: 'var(--space-3)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
+          Rasio kebutuhan bahan pembantu per 1.0 kg jamur tiram segar untuk estimasi kebutuhan bahan otomatis (MRP).
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          {config.bom_recipes.map((recipe, index) => (
+            <div
+              key={index}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
+                gap: 'var(--space-2)',
+                alignItems: 'center',
+                padding: 'var(--space-3)',
+                background: 'var(--bg-subtle)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <div>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Nama Produk / Varian</span>
+                <Input
+                  value={recipe.product_name}
+                  onChange={(e) => {
+                    const updated = [...config.bom_recipes];
+                    updated[index].product_name = e.target.value;
+                    setConfig({ ...config, bom_recipes: updated });
+                  }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Jamur (kg)</span>
+                <Input
+                  type="number"
+                  step="0.1"
+                  value={recipe.raw_mushroom_ratio}
+                  onChange={(e) => {
+                    const updated = [...config.bom_recipes];
+                    updated[index].raw_mushroom_ratio = Number(e.target.value);
+                    setConfig({ ...config, bom_recipes: updated });
+                  }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Premiks (kg)</span>
+                <Input
+                  type="number"
+                  step="0.05"
+                  value={recipe.premix_flour_ratio}
+                  onChange={(e) => {
+                    const updated = [...config.bom_recipes];
+                    updated[index].premix_flour_ratio = Number(e.target.value);
+                    setConfig({ ...config, bom_recipes: updated });
+                  }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Minyak (L)</span>
+                <Input
+                  type="number"
+                  step="0.05"
+                  value={recipe.cooking_oil_ratio}
+                  onChange={(e) => {
+                    const updated = [...config.bom_recipes];
+                    updated[index].cooking_oil_ratio = Number(e.target.value);
+                    setConfig({ ...config, bom_recipes: updated });
+                  }}
+                />
+              </div>
+
+              <div>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Bumbu (kg)</span>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={recipe.seasoning_ratio}
+                  onChange={(e) => {
+                    const updated = [...config.bom_recipes];
+                    updated[index].seasoning_ratio = Number(e.target.value);
+                    setConfig({ ...config, bom_recipes: updated });
+                  }}
+                />
+              </div>
+
+              <div style={{ paddingTop: '16px' }}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleRemoveRecipe(index)}
+                  style={{ color: 'var(--color-danger-600)' }}
+                >
+                  <Trash2 size={16} />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   );
 }

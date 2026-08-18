@@ -18,6 +18,7 @@ const PRESET_ACCOUNTS = [
   { label: 'Produksi', email: 'produksi@khumkhum.com', role: 'PRODUCTION', icon: '🔥' },
   { label: 'QC & Mutu', email: 'qc@khumkhum.com', role: 'QC', icon: '🔬' },
   { label: 'Direksi', email: 'management@khumkhum.com', role: 'MANAGEMENT', icon: '📊' },
+  { label: 'Sales', email: 'sales@khumkhum.com', role: 'SALES', icon: '🛒' },
 ];
 
 export default function LoginPage() {

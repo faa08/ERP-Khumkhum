@@ -11,7 +11,7 @@ export async function searchTraceability(keyword: string): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN', 'WAREHOUSE', 'QC', 'PRODUCTION']);
+    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN', 'WAREHOUSE', 'QC', 'PRODUCTION', 'SALES']);
 
     const kw = keyword.trim().toUpperCase();
     const isForward = kw.startsWith('RM-');

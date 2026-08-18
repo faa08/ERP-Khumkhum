@@ -272,7 +272,7 @@ export async function deleteRawMaterial(id: string): Promise<{ success: boolean;
 
 export async function getCustomers(): Promise<{ success: boolean; data?: DbCustomer[]; error?: string }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['SALES', 'SUPER_ADMIN', 'MANAGEMENT']);
     const { data, error } = await supabaseAdmin
       .from('customers')
       .select('*')
@@ -286,7 +286,7 @@ export async function getCustomers(): Promise<{ success: boolean; data?: DbCusto
 
 export async function createCustomer(input: Partial<DbCustomer>): Promise<{ success: boolean; data?: DbCustomer; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['SALES', 'SUPER_ADMIN']);
     const { data, error } = await supabaseAdmin
       .from('customers')
       .insert([input])
@@ -309,7 +309,7 @@ export async function createCustomer(input: Partial<DbCustomer>): Promise<{ succ
 
 export async function updateCustomer(id: string, input: Partial<DbCustomer>): Promise<{ success: boolean; data?: DbCustomer; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['SALES', 'SUPER_ADMIN']);
     const { data, error } = await supabaseAdmin
       .from('customers')
       .update({ ...input, updated_at: new Date().toISOString() })

@@ -10,7 +10,7 @@ export async function getInventorySummary(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'QC', 'PRODUCTION']);
+    await requireAuth(['WAREHOUSE', 'SALES', 'SUPER_ADMIN', 'MANAGEMENT', 'QC', 'PRODUCTION']);
 
     const { data, error } = await supabaseAdmin
       .from('inventory')
@@ -58,7 +58,7 @@ export async function getStockMovements(inventoryId?: string): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['WAREHOUSE', 'SALES', 'SUPER_ADMIN', 'MANAGEMENT']);
 
     let query = supabaseAdmin
       .from('stock_movements')

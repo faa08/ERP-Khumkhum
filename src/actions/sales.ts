@@ -19,7 +19,7 @@ export async function getSalesOrders(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['SALES', 'SUPER_ADMIN', 'MANAGEMENT']);
 
     const { data, error } = await supabaseAdmin
       .from('sales_orders')
@@ -55,7 +55,7 @@ export async function createSalesOrder(input: CreateSalesOrderInput): Promise<{
   error?: string;
 }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['SALES', 'SUPER_ADMIN']);
 
     const order_number = generateBatchNumber('SO');
     const total_amount = input.items.reduce(
@@ -116,7 +116,7 @@ export async function updateSalesOrderStatus(
   status: DbSalesOrder['status']
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['SALES', 'SUPER_ADMIN']);
 
     // If marking as SHIPPED, deduct stock from inventory
     if (status === 'SHIPPED') {

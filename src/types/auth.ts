@@ -16,6 +16,7 @@ export type UserRole =
   | 'WAREHOUSE'
   | 'PRODUCTION'
   | 'MANAGEMENT'
+  | 'SALES'
   | 'FARMER';
 
 export interface User {
@@ -49,6 +50,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   WAREHOUSE:   'Warehouse, Logistik & PPIC',
   PRODUCTION:  'Petugas Produksi',
   MANAGEMENT:  'Manajemen (Viewer)',
+  SALES:       'Sales & Pengiriman',
   FARMER:      'Petani Mitra',
 };
 
@@ -57,6 +59,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   QC:          ['dashboard', 'qc', 'standards', 'production', 'inventory', 'master', 'traceability', 'reports', 'forecast'],
   WAREHOUSE:   ['dashboard', 'master', 'receiving', 'sorting', 'inventory', 'ppic', 'traceability', 'reports', 'forecast'],
   PRODUCTION:  ['dashboard', 'production', 'ppic', 'inventory', 'traceability'],
-  MANAGEMENT:  ['dashboard', 'reports', 'traceability', 'master', 'production', 'inventory', 'qc', 'audit', 'forecast'],
+  MANAGEMENT:  ['dashboard', 'reports', 'traceability', 'master', 'production', 'inventory', 'qc', 'sales', 'audit', 'forecast'],
+  SALES:       ['dashboard', 'master', 'sales', 'inventory', 'traceability'],
   FARMER:      [], // Petani tidak login ke web — interaksi via WhatsApp
 };

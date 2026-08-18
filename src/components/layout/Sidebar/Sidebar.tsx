@@ -68,6 +68,7 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
       { id: 'production', label: 'Produksi & Rendemen', href: '/production', icon: 'Factory',       requiredPermission: 'production' },
       { id: 'qc',         label: 'Quality Control (QC)', href: '/quality-control', icon: 'ShieldCheck', requiredPermission: 'qc' },
       { id: 'inventory',  label: 'Inventaris & Mutasi',  href: '/inventory',  icon: 'Package',       requiredPermission: 'inventory' },
+      { id: 'sales',      label: 'Sales Order & Pengiriman', href: '/sales',  icon: 'ShoppingCart',  requiredPermission: 'sales' },
       { id: 'traceability', label: 'Ketertelusuran', href: '/traceability', icon: 'LineChart', requiredPermission: 'traceability' },
     ],
   },

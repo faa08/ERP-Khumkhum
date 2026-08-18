@@ -1,5 +1,5 @@
 # Product Requirements Document (PRD)
-## Spesifikasi Lengkap 6 Role, Alur Kerja, Input-Output & Strategi Implementasi Tim
+## Spesifikasi Lengkap 7 Role, Alur Kerja, Input-Output & Strategi Implementasi Tim
 ### Sistem ERP & Ketertelusuran Berbasis Data — KhumKhum Jamur Crispy (CV Khaira Buana Mas)
 
 **Nomor Dokumen:** PRD-KK-2026-002  
@@ -16,7 +16,7 @@
 ### 1.1 Latar Belakang & Tujuan Produk
 KhumKhum Jamur Crispy merupakan unit usaha IKM olahan pangan berbahan baku jamur tiram lokal di Kulon Progo dengan jaringan distribusi mencapai lebih dari 1.500 titik penjualan di 8 provinsi. Sistem ERP ini dirancang untuk mendigitalisasi seluruh rantai nilai pangan: dari penerimaan panen jamur segar petani, sortasi, penggorengan dan pembumbuan bertingkat, quality control, manajemen persediaan multi-gudang, sales order, hingga ketertelusuran produk (*two-way traceability*) dan integrasi gateway WhatsApp.
 
-Untuk memastikan sistem mudah dioperasikan di lantai pabrik IKM, hak akses pengguna dibagi ke dalam **6 Peran Pengguna Utama (*Core User Roles*)**. Dokumen ini merinci fungsi bisnis, daftar fitur lengkap, aturan input-output, serta panduan teknis implementasi tim 3 developer agar proses *coding* berjalan paralel tanpa hambatan tabrakan berkas (*merge conflict*).
+Untuk memastikan sistem mudah dioperasikan di lantai pabrik IKM, hak akses pengguna dibagi ke dalam **7 Peran Pengguna Utama (*Core User Roles*)**. Dokumen ini merinci fungsi bisnis, daftar fitur lengkap, aturan input-output, serta panduan teknis implementasi tim 3 developer agar proses *coding* berjalan paralel tanpa hambatan tabrakan berkas (*merge conflict*).
 
 ### 1.2 Prinsip Arsitektur RBAC (*Role-Based Access Control*)
 1. **Prinsip Hak Akses Minimum (*Least Privilege Access*):** Setiap peran hanya dapat membaca, menginput, dan memodifikasi modul yang relevan dengan fungsinya.
@@ -144,7 +144,7 @@ src/
 
 ---
 
-## 4. Spesifikasi Mendalam 6 Peran Pengguna (Fungsi, Fitur, Input & Output)
+## 4. Spesifikasi Mendalam 7 Peran Pengguna (Fungsi, Fitur, Input & Output)
 
 ---
 
@@ -381,7 +381,7 @@ src/
 
 ---
 
-### 4.6 Role 6: Petani Mitra (`ROLE_FARMER`)
+### 4.7 Role 6: Petani Mitra (`ROLE_FARMER`)
 * **Pengembang Bertanggung Jawab:** Developer 1 (Lead Web)
 * **Persona Pengguna:** Petani Jamur Tiram Lokal (Kulon Progo, DIY)
 * **Perangkat Akses:** Smartphone / Handphone Standar (**Aplikasi WhatsApp Saja**)
@@ -438,7 +438,7 @@ src/
 
 ---
 
-## 5. Matriks Komparasi Input & Output Antar 6 Role
+## 5. Matriks Komparasi Input & Output Antar 7 Role
 
 | ID Role | Nama Role | Input Utama (Form / Pesan) | Output Utama (Data / Hitungan / Dokumen) |
 |---|---|---|---|

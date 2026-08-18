@@ -118,6 +118,49 @@ export async function updateSalesOrderStatus(
   try {
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
 
+    // If marking as SHIPPED, deduct stock from inventory
+    if (status === 'SHIPPED') {
+      const { data: orderItems } = await supabaseAdmin
+        .from('sales_order_items')
+        .select('id, product_id, quantity')
+        .eq('sales_order_id', id);
+
+      const now = new Date().toISOString();
+
+      for (const item of (orderItems || [])) {
+        // Find inventory for this product
+        const { data: invItems } = await supabaseAdmin
+          .from('inventory')
+          .select('*')
+          .eq('item_type', 'PRODUCT')
+          .eq('item_id', item.product_id)
+          .order('quantity', { ascending: false })
+          .limit(1);
+
+        if (invItems && invItems.length > 0) {
+          const inv = invItems[0];
+          const newQty = Math.max(0, Number(inv.quantity) - Number(item.quantity));
+
+          await supabaseAdmin
+            .from('inventory')
+            .update({ quantity: newQty, last_updated_at: now })
+            .eq('id', inv.id);
+
+          // Record stock movement OUT
+          await supabaseAdmin.from('stock_movements').insert([{
+            inventory_id: inv.id,
+            movement_type: 'OUT',
+            quantity: item.quantity,
+            reference_id: id,
+            reference_type: 'SALES_ORDER_SHIPMENT',
+            notes: `Pengiriman sales order`,
+            movement_date: now,
+            created_by: user.userId,
+          }]);
+        }
+      }
+    }
+
     const { error } = await supabaseAdmin
       .from('sales_orders')
       .update({ status, updated_at: new Date().toISOString() })
@@ -132,6 +175,10 @@ export async function updateSalesOrderStatus(
       entityId: id,
       details: { new_status: status },
     });
+
+    const { revalidatePath } = await import('next/cache');
+    revalidatePath('/sales');
+    revalidatePath('/inventory');
 
     return { success: true };
   } catch (err: any) {

@@ -12,12 +12,9 @@ import { FormField } from '@/components/form/FormField';
 import { ROLE_LABELS, type UserRole, type User } from '@/types/auth';
 
 const userSchema = z.object({
-  employeeId: z.string().min(1, 'Employee ID is required'),
-  name: z.string().min(2, 'Name is required'),
-  email: z.string().email('Invalid email address'),
+  username: z.string().min(3, 'Username minimal 3 karakter'),
   password: z.string().optional(),
-  role: z.string().min(1, 'Role is required'),
-  department: z.string().min(1, 'Department is required'),
+  role: z.string().min(1, 'Role wajib diisi'),
 });
 
 type UserFormData = z.infer<typeof userSchema>;
@@ -36,12 +33,9 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<UserFormData>({
     resolver: zodResolver(userSchema),
     defaultValues: {
-      employeeId: '',
-      name: '',
-      email: '',
+      username: '',
       password: '',
       role: '',
-      department: '',
     }
   });
 
@@ -49,15 +43,12 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
     if (isOpen) {
       if (user) {
         reset({
-          employeeId: user.employeeId,
-          name: user.name,
-          email: user.email,
+          username: user.email, // Map existing email to username field
           password: '',
           role: user.role,
-          department: user.department,
         });
       } else {
-        reset({ employeeId: '', name: '', email: '', password: '', role: '', department: '' });
+        reset({ username: '', password: '', role: '' });
       }
     }
   }, [isOpen, user, reset]);
@@ -72,7 +63,18 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
   const handleFormSubmit = async (data: UserFormData) => {
     setIsSubmitting(true);
     try {
-      await onSubmit(data as Partial<User>);
+      const submitData: Partial<User> = {
+        email: data.username, // Map username back to email for DB compatibility
+        name: data.username,  // Fallback name to username
+        role: data.role as UserRole,
+      };
+      
+      // Inject password for creation
+      if (!isEditing && data.password) {
+        (submitData as any).password = data.password;
+      }
+      
+      await onSubmit(submitData);
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -96,16 +98,8 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
       }
     >
       <form onSubmit={handleSubmit(handleFormSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-        <FormField label="ID Karyawan" required error={errors.employeeId?.message}>
-          <Input fullWidth {...register('employeeId')} placeholder="misal: EMP-001" disabled={isEditing} />
-        </FormField>
-        
-        <FormField label="Nama Lengkap" required error={errors.name?.message}>
-          <Input fullWidth {...register('name')} placeholder="Masukkan nama lengkap" />
-        </FormField>
-        
-        <FormField label="Alamat Email" required error={errors.email?.message}>
-          <Input fullWidth type="email" {...register('email')} placeholder="email@khumkhum.id" />
+        <FormField label="Username" required error={errors.username?.message}>
+          <Input fullWidth {...register('username')} placeholder="Masukkan username" />
         </FormField>
         
         {!isEditing && (
@@ -121,10 +115,6 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
             onChange={(val) => setValue('role', val, { shouldValidate: true })}
             placeholder="Pilih peran..."
           />
-        </FormField>
-
-        <FormField label="Departemen" required error={errors.department?.message}>
-          <Input fullWidth {...register('department')} placeholder="misal: Produksi" />
         </FormField>
       </form>
     </Drawer>

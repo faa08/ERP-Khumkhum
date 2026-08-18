@@ -62,14 +62,14 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
     id: 'operations',
     label: 'Operasional',
     items: [
-      { id: 'receiving',  label: 'Inbound (Penerimaan)',  href: '/receiving',  icon: 'ClipboardList', requiredPermission: 'inventory' },
-      { id: 'sorting',    label: 'Sortasi & Grading',    href: '/sorting',    icon: 'Scale',         requiredPermission: 'production' },
-      { id: 'ppic',       label: 'PPIC & Jadwal',       href: '/ppic',       icon: 'CalendarDays',  requiredPermission: 'production' },
+      { id: 'receiving',  label: 'Inbound (Penerimaan)',  href: '/receiving',  icon: 'ClipboardList', requiredPermission: 'receiving' },
+      { id: 'sorting',    label: 'Sortasi & Grading',    href: '/sorting',    icon: 'Scale',         requiredPermission: 'sorting' },
+      { id: 'ppic',       label: 'PPIC & Jadwal',       href: '/ppic',       icon: 'CalendarDays',  requiredPermission: 'ppic' },
       { id: 'production', label: 'Produksi & Rendemen', href: '/production', icon: 'Factory',       requiredPermission: 'production' },
       { id: 'qc',         label: 'Quality Control (QC)', href: '/quality-control', icon: 'ShieldCheck', requiredPermission: 'qc' },
       { id: 'inventory',  label: 'Inventaris & Mutasi',  href: '/inventory',  icon: 'Package',       requiredPermission: 'inventory' },
       { id: 'sales',      label: 'Sales Order & Pengiriman',      href: '/sales',      icon: 'ShoppingCart',  requiredPermission: 'sales' },
-      { id: 'traceability', label: 'Ketertelusuran', href: '/traceability', icon: 'LineChart', requiredPermission: 'reports' },
+      { id: 'traceability', label: 'Ketertelusuran', href: '/traceability', icon: 'LineChart', requiredPermission: 'traceability' },
     ],
   },
   {
@@ -99,7 +99,7 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
     label: 'Manajemen',
     items: [
       { id: 'reports', label: 'Laporan', href: '/reports', icon: 'TrendingUp', requiredPermission: 'reports' },
-      { id: 'ai-forecast', label: 'AI Forecasting', href: '/ai-forecast', icon: 'LineChart', requiredPermission: 'reports' },
+      { id: 'ai-forecast', label: 'AI Forecasting', href: '/ai-forecast', icon: 'LineChart', requiredPermission: 'forecast' },
     ],
   },
   {
@@ -114,8 +114,14 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
         children: [
           { id: 'general', label: 'Konfigurasi Standar', href: '/settings' },
           { id: 'users', label: 'Manajemen Pengguna', href: '/settings/users' },
-          { id: 'audit', label: 'Audit Log & Sistem', href: '/settings/audit-log' },
         ],
+      },
+      {
+        id: 'audit-log',
+        label: 'Audit Log & Sistem',
+        href: '/settings/audit-log',
+        icon: 'ClipboardList',
+        requiredPermission: 'audit',
       },
     ],
   },

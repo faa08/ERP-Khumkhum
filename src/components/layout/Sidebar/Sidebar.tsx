@@ -86,9 +86,9 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
           { id: 'raw-materials', label: 'Bahan Baku', href: '/master/raw-materials' },
           { id: 'customers', label: 'Pelanggan', href: '/master/customers' },
           { id: 'warehouses', label: 'Gudang', href: '/master/warehouses' },
-          { id: 'prod-stds', label: 'Standar Produksi', href: '/master/production-standards' },
-          { id: 'sort-stds', label: 'Standar Sortasi', href: '/master/sorting-standards' },
-          { id: 'qc-stds', label: 'Standar QC', href: '/master/qc-standards' },
+          { id: 'prod-stds', label: 'Standar Produksi', href: '/master/production-standards', requiredPermission: 'production' },
+          { id: 'sort-stds', label: 'Standar Sortasi', href: '/master/sorting-standards', requiredPermission: 'qc' },
+          { id: 'qc-stds', label: 'Standar QC', href: '/master/qc-standards', requiredPermission: 'qc' },
         ],
       },
     ],
@@ -227,11 +227,18 @@ export function Sidebar() {
     const isSuperAdmin = userPermissions.includes('*');
 
     return NAV_GROUPS.map((group) => {
-      const filteredItems = group.items.filter((item) => {
-        if (isSuperAdmin) return true;
-        if (!item.requiredPermission) return true;
-        return userPermissions.includes(item.requiredPermission);
-      });
+      const filterItem = (item: typeof group.items[0]): typeof item | null => {
+        if (!isSuperAdmin && item.requiredPermission && !userPermissions.includes(item.requiredPermission)) {
+          return null;
+        }
+        if (item.children) {
+          const filteredChildren = item.children.map(filterItem).filter(Boolean) as typeof item.children;
+          return { ...item, children: filteredChildren };
+        }
+        return item;
+      };
+
+      const filteredItems = group.items.map(filterItem).filter(Boolean) as typeof group.items;
       return { ...group, items: filteredItems };
     }).filter((group) => group.items.length > 0);
   }, [user]);

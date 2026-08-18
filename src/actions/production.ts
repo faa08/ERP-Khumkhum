@@ -435,20 +435,27 @@ export async function recordProductionResult(input: RecordProductionResultInput)
       };
     }
 
-    // Cari product_id
     let productId = input.product_id;
+    let productVariant = '';
     if (!productId) {
       const { data: existingRes } = await supabaseAdmin
         .from('production_results')
-        .select('product_id')
+        .select('product_id, product:products(name)')
         .eq('production_order_id', input.production_order_id)
         .limit(1);
       productId = existingRes?.[0]?.product_id;
+      if (existingRes?.[0]?.product) {
+        productVariant = (existingRes[0].product as any).name;
+      }
     }
 
     if (!productId) {
-      const { data: anyProd } = await supabaseAdmin.from('products').select('id').limit(1).single();
+      const { data: anyProd } = await supabaseAdmin.from('products').select('id, name').limit(1).single();
       productId = anyProd?.id;
+      productVariant = anyProd?.name || '';
+    } else if (!productVariant) {
+      const { data: prodData } = await supabaseAdmin.from('products').select('name').eq('id', productId).single();
+      productVariant = prodData?.name || '';
     }
 
     const now = new Date().toISOString();
@@ -474,6 +481,13 @@ export async function recordProductionResult(input: RecordProductionResultInput)
         status: 'COMPLETED_WIP',
         end_date: now,
         updated_at: now,
+        input_weight: inputWeight,
+        output_weight: input.output_weight,
+        yield_percentage: yieldPercentage,
+        is_yield_compliant: isCompliant,
+        anomaly_reason: input.anomaly_reason || null,
+        product_id: productId,
+        product_variant: productVariant,
       })
       .eq('id', input.production_order_id);
 

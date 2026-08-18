@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import bcrypt from 'bcryptjs';
 
 const supabaseUrl = 'https://lkyoshivpvtggzrfruzd.supabase.co';
 const serviceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxreW9zaGl2cHZ0Z2d6cmZydXpkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjQ0OTk5OCwiZXhwIjoyMTAyMDI1OTk4fQ.0VAFkwI53yGZT1LBF9T_1h1n5zkEUk29UVURPBDYIfU';
@@ -11,6 +12,7 @@ async function seedComprehensiveMockData() {
   console.log('🚀 Memulai seeding data tiruan (Mock Data) komprehensif untuk ERP KhumKhum...\n');
 
   try {
+    const validPasswordHash = bcrypt.hashSync('password123', 10);
     // ─────────────────────────────────────────────
     // 1. USERS & OPERATORS
     // ─────────────────────────────────────────────
@@ -19,7 +21,7 @@ async function seedComprehensiveMockData() {
       {
         id: '23bd0f70-a263-4118-b1d4-4a81793cc0a0',
         email: 'admin@khumkhum.id',
-        password: '$2a$10$abcdefghijklmnopqrstuv', // hashed dummy
+        password: validPasswordHash,
         name: 'Super Administrator',
         role: 'SUPER_ADMIN',
         is_active: true,
@@ -27,7 +29,7 @@ async function seedComprehensiveMockData() {
       {
         id: 'a1111111-1111-1111-1111-111111111111',
         email: 'produksi@khumkhum.com',
-        password: '$2a$10$abcdefghijklmnopqrstuv',
+        password: validPasswordHash,
         name: 'Budi Santoso (Operator Produksi)',
         role: 'PRODUCTION',
         is_active: true,
@@ -35,7 +37,7 @@ async function seedComprehensiveMockData() {
       {
         id: 'b2222222-2222-2222-2222-222222222222',
         email: 'qc@khumkhum.com',
-        password: '$2a$10$abcdefghijklmnopqrstuv',
+        password: validPasswordHash,
         name: 'Dewi Lestari (Quality Assurance)',
         role: 'QC',
         is_active: true,
@@ -43,7 +45,7 @@ async function seedComprehensiveMockData() {
       {
         id: '2f89cec4-1a13-4dca-8a78-74dff1efe915',
         email: 'warehouse@khumkhum.com',
-        password: '$2a$10$abcdefghijklmnopqrstuv',
+        password: validPasswordHash,
         name: 'Rian Kurniawan (Kepala Gudang)',
         role: 'WAREHOUSE',
         is_active: true,
@@ -51,7 +53,7 @@ async function seedComprehensiveMockData() {
       {
         id: '437a1fec-e513-4605-91d3-59b767571e10',
         email: 'management@khumkhum.com',
-        password: '$2a$10$abcdefghijklmnopqrstuv',
+        password: validPasswordHash,
         name: 'H. Suryadi (Direksi CV Khaira Buana Mas)',
         role: 'MANAGEMENT',
         is_active: true,

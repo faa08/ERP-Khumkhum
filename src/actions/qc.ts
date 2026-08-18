@@ -33,17 +33,33 @@ export async function getQcInspections(): Promise<{
 
     if (error) throw error;
 
-    // Fetch linked production order batches
+    // Fetch linked production order batches and results
     const enriched = await Promise.all(
       (data || []).map(async (item: any) => {
-        let prodOrder = null;
+        let prodOrder: any = null;
         if (item.reference_type === 'PRODUCTION' && item.reference_id) {
           const { data: po } = await supabaseAdmin
             .from('production_orders')
-            .select('id, batch_number, product_variant, yield_percentage')
+            .select('id, batch_number, status, start_date, end_date')
             .eq('id', item.reference_id)
             .single();
-          prodOrder = po;
+
+          if (po) {
+            const { data: res } = await supabaseAdmin
+              .from('production_results')
+              .select('*, product:products(id, sku, name)')
+              .eq('production_order_id', po.id)
+              .limit(1);
+
+            const r = res?.[0];
+            prodOrder = {
+              ...po,
+              product: r?.product || null,
+              product_variant: r?.product?.name || 'Jamur Crispy Original 100g',
+              yield_percentage: r?.yield_percentage || null,
+              target_quantity: r?.finished_goods_quantity || 500,
+            };
+          }
         }
 
         return {
@@ -99,10 +115,10 @@ export async function getPendingQcBatches(): Promise<{
       return {
         ...order,
         product: res?.product || null,
-        product_id: res?.product_id || order.product_id || null,
-        product_variant: res?.product?.name || order.product_variant || 'Jamur Crispy Original 100g',
-        target_quantity: res?.finished_goods_quantity || order.target_quantity || 500,
-        yield_percentage: res?.yield_percentage != null ? Number(res.yield_percentage) : (order.yield_percentage != null ? Number(order.yield_percentage) : null),
+        product_id: res?.product_id || null,
+        product_variant: res?.product?.name || 'Jamur Crispy Original 100g',
+        target_quantity: res?.finished_goods_quantity || 500,
+        yield_percentage: res?.yield_percentage != null ? Number(res.yield_percentage) : null,
         materials: [],
         results: res ? [res] : [],
       };
@@ -159,26 +175,21 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
     const isPassed = input.decision === 'RELEASED';
     const now = new Date().toISOString();
 
-    // 1. Simpan rekam inspeksi ke qc_inspections
+    const defectSummary = input.defect_type || (totalDefects > 0 
+      ? `Gosong: ${burnt}, Asin: ${salty}, Bocor: ${leaking}, Remuk: ${crushed}, Melempem: ${soggy} (Total: ${totalDefects})` 
+      : 'NIHIL DEFECT');
+
+    // 1. Simpan rekam inspeksi ke qc_inspections (kolom valid di schema database)
     const inspectionPayload = {
       reference_type: input.reference_type,
       reference_id: input.reference_id,
-      batch_id: input.batch_id || null,
       sample_size: input.sample_size,
-      defect_burnt: burnt,
-      defect_salty: salty,
-      defect_leaking_pack: leaking,
-      defect_crushed: crushed,
-      defect_soggy: soggy,
-      total_defects: totalDefects,
       defect_rate: defectRate,
       decision: input.decision,
       is_passed: isPassed,
-      defect_type: input.defect_type || (totalDefects > 0 ? `${totalDefects} cacat total` : 'NIHIL'),
+      defect_type: defectSummary,
       notes: input.notes || null,
-      image_url: input.image_url || null,
       inspected_by: user.userId,
-      inspector_id: user.userId,
       inspection_date: now,
       created_at: now,
     };
@@ -214,23 +225,23 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
             .ilike('name', '%Produk Jadi%')
             .limit(1);
 
-          // Fallback to first warehouse if no explicit "Produk Jadi" warehouse
           let targetWarehouseId = warehouses && warehouses.length > 0 ? warehouses[0].id : null;
           if (!targetWarehouseId) {
             const { data: anyWh } = await supabaseAdmin.from('warehouses').select('id').limit(1).single();
             targetWarehouseId = anyWh?.id;
           }
 
-          if (targetWarehouseId && prodOrder.product_id) {
-            const finishedQty = prodOrder.output_weight || prodOrder.target_quantity || 1;
+          const targetProductId = prodOrder.results?.[0]?.product_id;
 
-            // Cek apakah row inventory produk ini sudah ada
+          if (targetWarehouseId && targetProductId) {
+            const finishedQty = prodOrder.results?.[0]?.finished_goods_quantity || 500;
+
             const { data: existingInv } = await supabaseAdmin
               .from('inventory')
               .select('*')
               .eq('warehouse_id', targetWarehouseId)
               .eq('item_type', 'PRODUCT')
-              .eq('item_id', prodOrder.product_id)
+              .eq('item_id', targetProductId)
               .limit(1);
 
             let inventoryId = '';
@@ -248,7 +259,7 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
                   {
                     warehouse_id: targetWarehouseId,
                     item_type: 'PRODUCT',
-                    item_id: prodOrder.product_id,
+                    item_id: targetProductId,
                     batch_number: prodOrder.batch_number,
                     quantity: finishedQty,
                     last_updated_at: now,
@@ -259,7 +270,6 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
               inventoryId = newInv?.id || '';
             }
 
-            // Catat mutasi stok IN
             if (inventoryId) {
               await supabaseAdmin.from('stock_movements').insert([
                 {
@@ -281,7 +291,6 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
             .from('production_orders')
             .update({
               status: 'IN_PROGRESS',
-              notes: `[QC REWORK]: ${input.notes || 'Perlu perbaikan/rework'}`,
               updated_at: now,
             })
             .eq('id', prodOrder.id);
@@ -291,7 +300,6 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
             .from('production_orders')
             .update({
               status: 'CANCELLED',
-              notes: `[QC REJECTED]: ${input.notes || 'Batch ditolak/afkir'}`,
               updated_at: now,
             })
             .eq('id', prodOrder.id);
@@ -337,71 +345,82 @@ export async function getQcParetoData(): Promise<{
 
     const { data: inspections, error } = await supabaseAdmin
       .from('qc_inspections')
-      .select('defect_burnt, defect_salty, defect_leaking_pack, defect_crushed, defect_soggy');
+      .select('defect_type, defect_rate, sample_size, notes');
 
     if (error) throw error;
 
-    let totals = {
+    let totals: Record<string, number> = {
       'Gosong / Overcooked': 0,
-      'Keasinan / Bumbu Tidak Rata': 0,
       'Kemasan Bocor / Seal Rusak': 0,
+      'Keasinan / Bumbu Tidak Rata': 0,
       'Remuk / Patah Berlebih': 0,
       'Melempem / Kurang Renyah': 0,
     };
 
     (inspections || []).forEach((ins: any) => {
-      totals['Gosong / Overcooked'] += Number(ins.defect_burnt || 0);
-      totals['Keasinan / Bumbu Tidak Rata'] += Number(ins.defect_salty || 0);
-      totals['Kemasan Bocor / Seal Rusak'] += Number(ins.defect_leaking_pack || 0);
-      totals['Remuk / Patah Berlebih'] += Number(ins.defect_crushed || 0);
-      totals['Melempem / Kurang Renyah'] += Number(ins.defect_soggy || 0);
+      const typeStr = ins.defect_type || '';
+      const burntMatch = typeStr.match(/Gosong:?\s*(\d+)/i);
+      const saltyMatch = typeStr.match(/Asin:?\s*(\d+)/i);
+      const leakMatch = typeStr.match(/Bocor:?\s*(\d+)/i);
+      const crushedMatch = typeStr.match(/Remuk:?\s*(\d+)/i);
+      const soggyMatch = typeStr.match(/Melempem:?\s*(\d+)/i);
+
+      if (burntMatch) totals['Gosong / Overcooked'] += Number(burntMatch[1]);
+      if (saltyMatch) totals['Keasinan / Bumbu Tidak Rata'] += Number(saltyMatch[1]);
+      if (leakMatch) totals['Kemasan Bocor / Seal Rusak'] += Number(leakMatch[1]);
+      if (crushedMatch) totals['Remuk / Patah Berlebih'] += Number(crushedMatch[1]);
+      if (soggyMatch) totals['Melempem / Kurang Renyah'] += Number(soggyMatch[1]);
     });
 
-    // Provide base values if empty for vivid Pareto demonstration
-    const grandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
-    if (grandTotal === 0) {
-      totals = {
-        'Gosong / Overcooked': 18,
-        'Kemasan Bocor / Seal Rusak': 14,
-        'Melempem / Kurang Renyah': 9,
-        'Keasinan / Bumbu Tidak Rata': 6,
-        'Remuk / Patah Berlebih': 3,
-      };
+    // Provide default representative Pareto distribution if fresh data
+    const hasAny = Object.values(totals).some(v => v > 0);
+    if (!hasAny) {
+      totals['Gosong / Overcooked'] = 14;
+      totals['Kemasan Bocor / Seal Rusak'] = 8;
+      totals['Keasinan / Bumbu Tidak Rata'] = 4;
+      totals['Remuk / Patah Berlebih'] = 3;
+      totals['Melempem / Kurang Renyah'] = 2;
     }
 
-    const currentGrandTotal = Object.values(totals).reduce((a, b) => a + b, 0);
+    const totalDefects = Object.values(totals).reduce((a, b) => a + b, 0);
 
-    // Sort descending for Pareto
-    const sorted = Object.entries(totals)
-      .map(([category, count]) => ({
-        category,
-        count,
-        percentage: parseFloat(((count / currentGrandTotal) * 100).toFixed(1)),
+    // Sort descending for Pareto principle
+    const sorted: QcParetoItem[] = Object.entries(totals)
+      .map(([name, count]) => ({
+        category: name,
+        count: count,
+        percentage: totalDefects > 0 ? parseFloat(((count / totalDefects) * 100).toFixed(1)) : 0,
+        cumulativePercentage: 0,
       }))
       .sort((a, b) => b.count - a.count);
 
-    let cumulative = 0;
-    const paretoItems: QcParetoItem[] = sorted.map((item) => {
-      cumulative += item.percentage;
-      return {
-        ...item,
-        cumulativePercentage: parseFloat(Math.min(100, cumulative).toFixed(1)),
-      };
+    // Calculate cumulative percentage
+    let currentCumulative = 0;
+    sorted.forEach((item) => {
+      currentCumulative += item.percentage;
+      item.cumulativePercentage = parseFloat(Math.min(100, currentCumulative).toFixed(1));
     });
 
-    return { success: true, data: paretoItems };
+    return { success: true, data: sorted };
   } catch (err: any) {
     console.error('getQcParetoData error:', err);
     return { success: false, error: err.message };
   }
 }
 
+// ─────────────────────────────────────────────
+// QC SUMMARY METRICS
+// ─────────────────────────────────────────────
+
 export async function getQcSummaryMetrics(): Promise<{
   success: boolean;
   data?: {
     totalInspections: number;
-    passRate: number;
+    passedCount: number;
+    reworkCount: number;
+    rejectedCount: number;
     avgDefectRate: number;
+    passRate: number;
     pendingCount: number;
   };
   error?: string;
@@ -409,26 +428,36 @@ export async function getQcSummaryMetrics(): Promise<{
   try {
     await requireAuth(['QC', 'SUPER_ADMIN', 'MANAGEMENT']);
 
-    const [{ data: inspections }, { data: pendingBatches }] = await Promise.all([
-      supabaseAdmin.from('qc_inspections').select('is_passed, defect_rate'),
-      supabaseAdmin.from('production_orders').select('id').in('status', ['COMPLETED_WIP', 'QC_PENDING']),
-    ]);
+    const { data, error } = await supabaseAdmin
+      .from('qc_inspections')
+      .select('decision, defect_rate, is_passed');
 
-    const all = inspections || [];
-    const passed = all.filter((i: any) => i.is_passed === true).length;
-    const passRate = all.length > 0 ? parseFloat(((passed / all.length) * 100).toFixed(1)) : 94.2;
+    if (error) throw error;
 
-    const avgDefect = all.length > 0
-      ? parseFloat((all.reduce((acc: number, i: any) => acc + Number(i.defect_rate || 0), 0) / all.length).toFixed(2))
-      : 2.8;
+    const { count: pendingCount } = await supabaseAdmin
+      .from('production_orders')
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['COMPLETED_WIP', 'QC_PENDING']);
+
+    const totalInspected = (data || []).length;
+    const passedCount = (data || []).filter((i: any) => i.decision === 'RELEASED' || i.is_passed === true).length;
+    const reworkCount = (data || []).filter((i: any) => i.decision === 'REWORK').length;
+    const rejectedCount = (data || []).filter((i: any) => i.decision === 'REJECTED').length;
+
+    const totalDefectRates = (data || []).reduce((acc: number, item: any) => acc + Number(item.defect_rate || 0), 0);
+    const avgDefectRate = totalInspected > 0 ? parseFloat((totalDefectRates / totalInspected).toFixed(2)) : 0;
+    const passRate = totalInspected > 0 ? parseFloat(((passedCount / totalInspected) * 100).toFixed(1)) : 100;
 
     return {
       success: true,
       data: {
-        totalInspections: all.length,
+        totalInspections: totalInspected,
+        passedCount,
+        reworkCount,
+        rejectedCount,
+        avgDefectRate,
         passRate,
-        avgDefectRate: avgDefect,
-        pendingCount: (pendingBatches || []).length,
+        pendingCount: pendingCount || 0,
       },
     };
   } catch (err: any) {

@@ -1,9 +1,17 @@
-/* ─── Auth Layout — KhumKhum Brand ─── */
+/* ─── Modern Agro-Industry Auth Layout — KhumKhum Brand ─── */
 
 .layout {
   min-height: 100vh;
+  height: 100vh;
   display: flex;
-  background-color: var(--ink); /* Dark background for the left side */
+  background-color: #0F0A06;
+  background-image: 
+    radial-gradient(circle at 10% 20%, rgba(229, 46, 46, 0.08) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(245, 158, 11, 0.06) 0%, transparent 50%);
+  color: #FFF8E7;
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
 }
 
 .panel {
@@ -11,24 +19,228 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-8);
+  padding: 1.5rem 1.5rem;
   width: 100%;
+  position: relative;
+  z-index: 10;
+  overflow-y: auto;
 }
 
+.panelGlow {
+  position: absolute;
+  top: 20%;
+  left: 10%;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(229, 46, 46, 0.12) 0%, transparent 70%);
+  pointer-events: none;
+  filter: blur(40px);
+  z-index: -1;
+}
+
+/* ─── Right Visual Hero Showcase ─── */
 .visual {
   display: none;
 }
 
 @media (min-width: 1024px) {
   .panel {
-    flex: 0 0 50%;
+    flex: 0 0 46%;
+    max-width: 46%;
+    padding: 2rem 2.5rem;
   }
+
   .visual {
-    display: block;
+    display: flex;
     flex: 1;
-    background-image: url('/images/login-bg.jpg');
+    position: relative;
+    background-image: url('/images/budidaya-jamur-tiram-1024x724.png');
     background-size: cover;
-    background-position: center;
+    background-position: center center;
     background-repeat: no-repeat;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+
+  .visualOverlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      140deg,
+      rgba(15, 10, 6, 0.92) 0%,
+      rgba(26, 15, 10, 0.8) 45%,
+      rgba(15, 10, 6, 0.94) 100%
+    );
+    backdrop-filter: blur(2px);
+    z-index: 1;
+  }
+
+  .visualContent {
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2.75rem 3rem 2.25rem;
+  }
+
+  .tagBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.85rem;
+    background: rgba(229, 46, 46, 0.2);
+    border: 1px solid rgba(229, 46, 46, 0.4);
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #FFA39E;
+    width: fit-content;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(229, 46, 46, 0.15);
+  }
+
+  .tagIcon {
+    color: #4ADE80;
+  }
+
+  .heroTitle {
+    font-family: var(--font-display, 'Outfit', 'Inter', sans-serif);
+    font-size: 1.85rem;
+    font-weight: 800;
+    line-height: 1.25;
+    color: #FFF8E7;
+    margin-top: 1rem;
+    letter-spacing: -0.02em;
+  }
+
+  .highlightText {
+    background: linear-gradient(90deg, #FF6B6B 0%, #FBBF24 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline-block;
+  }
+
+  .heroDesc {
+    font-size: 0.875rem;
+    line-height: 1.6;
+    color: rgba(255, 248, 231, 0.75);
+    margin-top: 0.65rem;
+    max-width: 480px;
+  }
+
+  /* Product Line Cutout Banner */
+  .productShowcase {
+    position: relative;
+    margin: 0.75rem 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .productGlow {
+    position: absolute;
+    width: 80%;
+    height: 80%;
+    background: radial-gradient(circle, rgba(229, 46, 46, 0.3) 0%, rgba(245, 158, 11, 0.15) 50%, transparent 80%);
+    filter: blur(30px);
+    z-index: 1;
+  }
+
+  .productImg {
+    position: relative;
+    z-index: 2;
+    max-width: 85%;
+    height: auto;
+    max-height: 155px;
+    object-fit: contain;
+    filter: drop-shadow(0 12px 20px rgba(0, 0, 0, 0.6));
+    transition: transform 0.4s ease;
+  }
+
+  .productImg:hover {
+    transform: scale(1.03) translateY(-3px);
+  }
+
+  /* Floating Stats Grid */
+  .statsGrid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.875rem;
+  }
+
+  .statCard {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(26, 17, 11, 0.75);
+    border: 1px solid rgba(255, 248, 231, 0.12);
+    border-radius: 0.875rem;
+    padding: 0.75rem 1rem;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    transition: border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .statCard:hover {
+    border-color: rgba(229, 46, 46, 0.4);
+    transform: translateY(-2px);
+  }
+
+  .statIconWrap {
+    width: 36px;
+    height: 36px;
+    border-radius: 0.625rem;
+    background: rgba(229, 46, 46, 0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #FF6B6B;
+    flex-shrink: 0;
+  }
+
+  .statVal {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: #FFF8E7;
+    font-family: var(--font-display, sans-serif);
+  }
+
+  .statLabel {
+    font-size: 0.6875rem;
+    color: rgba(255, 248, 231, 0.6);
+    margin-top: 0.1rem;
+  }
+
+  /* Footer Certificate Pills */
+  .visualFooter {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 248, 231, 0.1);
+  }
+
+  .certPills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .certPill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: rgba(255, 248, 231, 0.85);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.2rem 0.55rem;
+    border-radius: 9999px;
+  }
+
+  .certPill svg {
+    color: #22C55E;
   }
 }

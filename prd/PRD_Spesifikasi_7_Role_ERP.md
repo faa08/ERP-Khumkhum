@@ -609,3 +609,35 @@ CREATE TABLE audit_logs (
 ## 8. Kesimpulan & Penutup
 
 Dokumen PRD ini menjadi pedoman resmi arsitektur dan eksekusi teknis untuk seluruh tim pengembang aplikasi ERP KhumKhum Jamur Crispy. Dengan pembagian 3 developer yang terisolasi, skema database PostgreSQL Supabase yang terpadu, dan spesifikasi input-output yang baku, proses pengembangan dapat diselesaikan secara cepat, konsisten, dan memenuhi seluruh kriteria program Startup for Industry 2026 Kementerian Perindustrian RI.
+
+---
+
+### 4.8 Role 7: Sales & Pengiriman (ROLE_SALES)
+* **Pengembang Bertanggung Jawab:** Developer 2
+* **Persona Pengguna:** Staf Admin Penjualan / Ekspedisi
+* **Perangkat Akses:** PC Desktop / Laptop
+
+`
+┌─────────────────────────────────────────────────────────────────────────────────────────┐
+│ FUNGSI UTAMA:                                                                           │
+│ Mencatat pesanan dari pelanggan/reseller, mengelola data pelanggan, dan mengatur        │
+│ pengiriman barang jadi (Fulfillment) yang otomatis memotong stok di gudang.             │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
+`
+
+#### A. Rincian Fitur Lengkap
+1. **Manajemen Pelanggan:** Menyimpan data nama toko, nomor HP, dan alamat pengiriman.
+2. **Input Sales Order (SO):** Memasukkan daftar pesanan (SKU Jamur, kuantitas) dan tanggal pengiriman.
+3. **Fulfillment (Pengiriman Barang):** Mengubah status pesanan menjadi "Shipped" yang otomatis mengurangi stok produk jadi dari sistem Inventory.
+4. **Surat Jalan:** Mencetak dokumen pengiriman barang untuk kurir atau distributor.
+
+#### B. Spesifikasi Input & Validasi
+* **Pilih Pelanggan:** Dropdown master data pelanggan.
+* **Detail Pesanan:** Multi-select produk jadi dengan batasan stok_tersedia >= qty_pesan.
+* **Status Order:** Enum (PENDING, SHIPPED, CANCELLED).
+
+#### C. Spesifikasi Output & Efek Samping
+* **Stok Berkurang:** Ketika status diubah menjadi SHIPPED, tabel persediaan otomatis di-decrement.
+* **Nota Penjualan:** PDF Surat Jalan siap cetak.
+* **Integrasi Traceability:** Pengiriman tersambung dalam rantai ketertelusuran produk.
+

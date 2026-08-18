@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
         replyMessage = `Maaf, nomor WhatsApp ini belum terdaftar sebagai Petani Mitra di sistem pabrik KhumKhum. Mohon hubungi staf Gudang untuk pendaftaran.`;
         
         await logAuditEvent({
-          action: 'ERROR',
+          action: 'REJECT',
           entityType: 'whatsapp_harvest_bot',
           details: { senderPhone: sender, reason: 'Unregistered number' },
         });

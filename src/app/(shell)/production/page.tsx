@@ -29,9 +29,12 @@ import {
   Clock,
   Send,
   Sparkles,
+  Calendar,
+  Filter,
+  RotateCcw,
 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { format } from 'date-fns';
+import { format, isToday, isThisMonth, isThisYear, startOfDay, endOfDay } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import {
   getProductionOrders,
@@ -65,16 +68,24 @@ export default function ProductionPage() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<DbProductionOrder | null>(null);
 
+  // Filter states
+  const [periodPreset, setPeriodPreset] = useState<'ALL' | 'TODAY' | 'THIS_MONTH' | 'THIS_YEAR' | 'CUSTOM'>('ALL');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+
   // Form states - Create SPK
   const [spkForm, setSpkForm] = useState<{
     productId: string;
     productVariant: string;
     targetQuantity: string;
+    startDate: string;
     notes: string;
   }>({
     productId: '',
     productVariant: 'Jamur Crispy Original 100g',
     targetQuantity: '500',
+    startDate: format(new Date(), 'yyyy-MM-dd'),
     notes: '',
   });
 
@@ -136,12 +147,46 @@ export default function ProductionPage() {
     loadData();
   }, [loadData]);
 
+  // Filtered Orders Computation
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      // 1. Status Filter
+      if (statusFilter !== 'ALL' && order.status !== statusFilter) {
+        return false;
+      }
+
+      // 2. Date / Period Filter
+      const rawDate = order.start_date || order.created_at;
+      if (!rawDate) return true;
+      const orderDate = new Date(rawDate);
+
+      if (periodPreset === 'TODAY') {
+        return isToday(orderDate);
+      } else if (periodPreset === 'THIS_MONTH') {
+        return isThisMonth(orderDate);
+      } else if (periodPreset === 'THIS_YEAR') {
+        return isThisYear(orderDate);
+      } else if (periodPreset === 'CUSTOM') {
+        if (filterStartDate) {
+          const start = startOfDay(new Date(filterStartDate));
+          if (orderDate < start) return false;
+        }
+        if (filterEndDate) {
+          const end = endOfDay(new Date(filterEndDate));
+          if (orderDate > end) return false;
+        }
+      }
+      return true;
+    });
+  }, [orders, periodPreset, filterStartDate, filterEndDate, statusFilter]);
+
   // Handlers
   const handleOpenCreate = () => {
     setSpkForm({
       productId: products[0]?.id || '',
       productVariant: products[0]?.name || 'Jamur Crispy Original 100g',
       targetQuantity: '500',
+      startDate: format(new Date(), 'yyyy-MM-dd'),
       notes: '',
     });
     setCreateDrawerOpen(true);
@@ -157,6 +202,7 @@ export default function ProductionPage() {
       product_id: spkForm.productId || undefined,
       product_variant: spkForm.productVariant,
       target_quantity: Number(spkForm.targetQuantity),
+      start_date: spkForm.startDate ? new Date(spkForm.startDate).toISOString() : undefined,
       notes: spkForm.notes,
     };
 
@@ -293,10 +339,28 @@ export default function ProductionPage() {
             {row.original.batch_number}
           </strong>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            {row.original.created_at ? format(new Date(row.original.created_at), 'dd MMM yyyy, HH:mm', { locale: idLocale }) : '-'}
+            Oleh: {row.original.creator?.name || 'Operator'}
           </div>
         </div>
       ),
+    },
+    {
+      accessorKey: 'start_date',
+      header: 'Tanggal SPK',
+      cell: ({ row }) => {
+        const d = row.original.start_date || row.original.created_at;
+        return (
+          <div>
+            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-sm)' }}>
+              <Calendar size={14} style={{ color: 'var(--color-primary-600)' }} />
+              {d ? format(new Date(d), 'dd MMM yyyy', { locale: idLocale }) : '-'}
+            </div>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', paddingLeft: '20px' }}>
+              {d ? format(new Date(d), 'HH:mm') : ''}
+            </div>
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'product_variant',
@@ -522,8 +586,105 @@ export default function ProductionPage() {
         </Card>
       </div>
 
+      {/* Filter & Periode Toolbar */}
+      <Card>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Preset Buttons */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-2)', alignItems: 'center' }}>
+            <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', marginRight: 'var(--space-1)' }}>
+              <Filter size={14} /> Filter Periode SPK:
+            </span>
+            {(
+              [
+                { key: 'ALL', label: 'Semua Periode' },
+                { key: 'TODAY', label: 'Hari Ini' },
+                { key: 'THIS_MONTH', label: 'Bulan Ini' },
+                { key: 'THIS_YEAR', label: 'Tahun Ini' },
+                { key: 'CUSTOM', label: 'Rentang Kustom' },
+              ] as const
+            ).map((preset) => (
+              <Button
+                key={preset.key}
+                size="sm"
+                variant={periodPreset === preset.key ? 'primary' : 'secondary'}
+                onClick={() => setPeriodPreset(preset.key)}
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+
+          {/* Status Filter Dropdown */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600 }}>Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{
+                height: '32px',
+                padding: '0 var(--space-2)',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-default)',
+                background: 'var(--bg-default)',
+                color: 'var(--text-primary)',
+                fontSize: 'var(--text-xs)',
+              }}
+            >
+              <option value="ALL">Semua Status</option>
+              <option value="DRAFT">Draft SPK</option>
+              <option value="IN_PROGRESS">Proses Masak</option>
+              <option value="COMPLETED_WIP">Menunggu QC</option>
+              <option value="COMPLETED">Selesai & Lolos</option>
+              <option value="CANCELLED">Dibatalkan</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Custom Date Range Inputs (Visible when CUSTOM or dates are picked) */}
+        {periodPreset === 'CUSTOM' && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', alignItems: 'center', marginTop: 'var(--space-3)', paddingTop: 'var(--space-3)', borderTop: '1px dashed var(--border-subtle)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600 }}>Dari Tanggal:</span>
+              <Input
+                type="date"
+                value={filterStartDate}
+                onChange={(e) => setFilterStartDate(e.target.value)}
+                style={{ width: '160px', height: '32px', fontSize: 'var(--text-xs)' }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 600 }}>Sampai Tanggal:</span>
+              <Input
+                type="date"
+                value={filterEndDate}
+                onChange={(e) => setFilterEndDate(e.target.value)}
+                style={{ width: '160px', height: '32px', fontSize: 'var(--text-xs)' }}
+              />
+            </div>
+            {(filterStartDate || filterEndDate) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                leftIcon={<RotateCcw size={13} />}
+                onClick={() => {
+                  setFilterStartDate('');
+                  setFilterEndDate('');
+                }}
+              >
+                Reset Tanggal
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Counter summary */}
+        <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+          Menampilkan <strong>{filteredOrders.length}</strong> dari <strong>{orders.length}</strong> total batch SPK produksi.
+        </div>
+      </Card>
+
       {/* Main Data Table */}
-      <DataTable columns={columns} data={orders} />
+      <DataTable columns={columns} data={filteredOrders} />
 
       {/* ───────────────────────────────────────────── */}
       {/* 1. MODAL (POP UP): BUAT SPK PRODUKSI BARU     */}
@@ -547,32 +708,47 @@ export default function ProductionPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <div style={{ padding: 'var(--space-3)', background: 'var(--color-primary-50)', borderRadius: 'var(--radius-md)', color: 'var(--color-primary-800)', fontSize: 'var(--text-sm)' }}>
             <strong>Format Nomor Batch Otomatis:</strong> <code>PRD-YYYYMMDD-XXXX</code>
-            <br />Nomor batch unik akan diterbitkan sistem sebagai identitas pelacakan ketertelusuran 2-arah.
+            <br />Nomor batch unik akan diterbitkan sistem secara realtime sesuai tanggal penerbitan sebagai identitas pelacakan ketertelusuran 2-arah.
           </div>
 
-          <FormField label="Pilih Produk Jadi (SKU)" required>
-            <Select
-              options={
-                products.length > 0
-                  ? products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` }))
-                  : [
-                      { value: '1', label: 'Jamur Crispy Original 100g' },
-                      { value: '2', label: 'Jamur Crispy Balado Pedas 100g' },
-                      { value: '3', label: 'Jamur Crispy BBQ Smoked 100g' },
-                    ]
-              }
-              value={spkForm.productId}
-              onChange={(e) => {
-                const val = e.target.value;
-                const found = products.find((p) => p.id === val);
-                setSpkForm((prev) => ({
-                  ...prev,
-                  productId: val,
-                  productVariant: found?.name || prev.productVariant,
-                }));
-              }}
-            />
-          </FormField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+            <FormField label="Pilih Produk Jadi (SKU)" required>
+              <Select
+                options={
+                  products.length > 0
+                    ? products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` }))
+                    : [
+                        { value: '1', label: 'Jamur Crispy Original 100g' },
+                        { value: '2', label: 'Jamur Crispy Balado Pedas 100g' },
+                        { value: '3', label: 'Jamur Crispy BBQ Smoked 100g' },
+                      ]
+                }
+                value={spkForm.productId}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const found = products.find((p) => p.id === val);
+                  setSpkForm((prev) => ({
+                    ...prev,
+                    productId: val,
+                    productVariant: found?.name || prev.productVariant,
+                  }));
+                }}
+              />
+            </FormField>
+
+            <FormField
+              label="Tanggal Penerbitan SPK"
+              required
+              helperText="Bisa memilih tanggal lampau/historis jika menginput arsip SPK lama"
+            >
+              <Input
+                type="date"
+                value={spkForm.startDate}
+                onChange={(e) => setSpkForm({ ...spkForm, startDate: e.target.value })}
+                required
+              />
+            </FormField>
+          </div>
 
           <FormField label="Varian Rasa Produk" required>
             <Input

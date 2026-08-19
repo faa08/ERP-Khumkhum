@@ -28,6 +28,7 @@ export default function InventoryPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [opnameDrawerOpen, setOpnameDrawerOpen] = useState(false);
   const [physicalInputs, setPhysicalInputs] = useState<Record<string, string>>({});
+  
 
   const toast = useToast();
 
@@ -43,6 +44,8 @@ export default function InventoryPage() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+
 
   // ── Aggregate stok per kategori ────────────────────────────────
   const categoryTotals = useMemo(() => {
@@ -262,6 +265,8 @@ export default function InventoryPage() {
       </Card>
     </div>
   );
+
+
 
   return (
     <div>

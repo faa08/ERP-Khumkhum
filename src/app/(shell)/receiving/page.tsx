@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { Drawer } from '@/components/ui/Drawer';
+import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
@@ -189,7 +189,7 @@ export default function ReceivingPage() {
       <DataTable columns={columns} data={data} />
 
       {/* ── CREATE DRAWER ── */}
-      <Drawer
+      <Modal
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         title="Catat Penerimaan Bahan Baku"
@@ -341,10 +341,10 @@ export default function ReceivingPage() {
             Nota timbangan akan otomatis terkirim ke WhatsApp petani setelah disimpan.
           </div>
         </div>
-      </Drawer>
+      </Modal>
 
       {/* ── VIEW DRAWER ── */}
-      <Drawer
+      <Modal
         isOpen={viewOpen}
         onClose={() => setViewOpen(false)}
         title={`Detail Penerimaan — ${viewItem?.batch_number}`}
@@ -372,7 +372,7 @@ export default function ReceivingPage() {
             ))}
           </div>
         )}
-      </Drawer>
+      </Modal>
 
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}

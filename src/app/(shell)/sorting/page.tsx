@@ -6,7 +6,7 @@ import { DataTable } from '@/components/data-table/DataTable';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Dropdown } from '@/components/ui/Dropdown';
-import { Drawer } from '@/components/ui/Drawer';
+import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
@@ -230,12 +230,12 @@ export default function SortingPage() {
 
       <DataTable columns={columns} data={data} />
 
-      {/* ── CREATE DRAWER ── */}
-      <Drawer
+      {/* ── CREATE MODAL (POP UP) ── */}
+      <Modal
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title="Input Hasil Sortasi & Grading"
-        size="md"
+        title="Form Input Hasil Sortasi & Grading"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Batal</Button>
@@ -323,10 +323,10 @@ export default function SortingPage() {
             Info hasil sortasi akan otomatis terkirim ke WhatsApp petani.
           </div>
         </div>
-      </Drawer>
+      </Modal>
 
-      {/* ── VIEW DRAWER ── */}
-      <Drawer
+      {/* ── VIEW MODAL (POP UP) ── */}
+      <Modal
         isOpen={viewOpen}
         onClose={() => setViewOpen(false)}
         title="Detail Sortasi"
@@ -352,10 +352,10 @@ export default function SortingPage() {
             ))}
           </div>
         )}
-      </Drawer>
+      </Modal>
 
-      {/* ── EDIT / KOREKSI DRAWER ── */}
-      <Drawer
+      {/* ── EDIT / KOREKSI MODAL (POP UP) ── */}
+      <Modal
         isOpen={editOpen}
         onClose={() => setEditOpen(false)}
         title="Koreksi / Edit Hasil Sortasi"
@@ -438,7 +438,7 @@ export default function SortingPage() {
             </div>
           </div>
         )}
-      </Drawer>
+      </Modal>
     </div>
   );
 }

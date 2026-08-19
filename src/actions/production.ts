@@ -619,7 +619,7 @@ export async function getProductionFormOptions(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE']);
+    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE', 'MANAGEMENT']);
 
     const [{ data: products }, { data: rawMaterials }, { data: inventory }] = await Promise.all([
       supabaseAdmin.from('products').select('*').order('name'),

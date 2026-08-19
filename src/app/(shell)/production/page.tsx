@@ -40,7 +40,11 @@ import {
   recordMaterialConsumption,
   recordProductionResult,
   updateProductionOrderStatus,
-import { getProductionOverviewMetrics, getProductionFormOptions, type CreateProductionOrderInput, type MaterialConsumptionItem } from '@/actions/production';
+  getProductionOverviewMetrics,
+  getProductionFormOptions,
+  type CreateProductionOrderInput,
+  type MaterialConsumptionItem,
+} from '@/actions/production';
 import { getPpicData } from '@/actions/ppic';
 import type { DbProductionOrder, DbProduct, DbRawMaterial } from '@/types/database';
 

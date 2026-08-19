@@ -12,7 +12,7 @@ export async function getPpicData(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
 
     // Coba ambil dari tabel farmer_harvest_estimates jika ada
     const { data, error } = await supabaseAdmin

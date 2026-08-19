@@ -5,44 +5,26 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import Link from 'next/link';
-import { Eye, EyeOff, LogIn, Mail, Lock, Shield, Sparkles, UserCheck } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { loginSchema, type LoginFormData } from '@/lib/validations';
 import { ROUTES } from '@/lib/constants';
 import { Alert } from '@/components/ui/Alert';
 import styles from './login.module.css';
 
-const PRESET_ACCOUNTS = [
-  { label: 'Super Admin', email: 'admin@khumkhum.id', role: 'SUPER_ADMIN', icon: '👑' },
-  { label: 'Gudang', email: 'warehouse@khumkhum.com', role: 'WAREHOUSE', icon: '🏢' },
-  { label: 'Produksi', email: 'produksi@khumkhum.com', role: 'PRODUCTION', icon: '🔥' },
-  { label: 'QC & Mutu', email: 'qc@khumkhum.com', role: 'QC', icon: '🔬' },
-  { label: 'Direksi', email: 'management@khumkhum.com', role: 'MANAGEMENT', icon: '📊' },
-  { label: 'Sales', email: 'sales@khumkhum.com', role: 'SALES', icon: '🛒' },
-];
-
 export default function LoginPage() {
   const router = useRouter();
   const { login, isLoading, error, clearError } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
-  const [activePreset, setActivePreset] = useState<string | null>(null);
 
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: { username: '', password: '', rememberMe: false },
   });
-
-  const handleSelectPreset = (email: string) => {
-    setActivePreset(email);
-    setValue('username', email, { shouldValidate: true });
-    setValue('password', 'password123', { shouldValidate: true });
-    clearError();
-  };
 
   const onSubmit = async (data: LoginFormData) => {
     clearError();
@@ -64,35 +46,10 @@ export default function LoginPage() {
           />
           <span className={styles.erpBadge}>ERP SYSTEM</span>
         </div>
-        <h1 className={styles.title}>Selamat Datang</h1>
+        <h1 className={styles.title}>Selamat Datang!</h1>
         <p className={styles.subtitle}>
-          Masuk ke portal terintegrasi rantai pasok, produksi, & kendali mutu
+          Masuk ke portal operasional & manajemen KhumKhum
         </p>
-      </div>
-
-      {/* Quick Role Selector for Testing */}
-      <div className={styles.quickLoginWrap}>
-        <div className={styles.quickLoginHeader}>
-          <span>Pilih Akun Demo / Role Cepat:</span>
-          <Sparkles size={12} color="#FBBF24" />
-        </div>
-        <div className={styles.quickChips}>
-          {PRESET_ACCOUNTS.map((item) => {
-            const isSelected = activePreset === item.email;
-            return (
-              <button
-                key={item.email}
-                type="button"
-                className={`${styles.quickChip} ${isSelected ? styles.quickChipActive : ''}`}
-                onClick={() => handleSelectPreset(item.email)}
-                title={`Login cepat sebagai ${item.label} (${item.email})`}
-              >
-                <span>{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* Error Alert */}
@@ -105,20 +62,18 @@ export default function LoginPage() {
         {/* Email / Username Input */}
         <div className={styles.inputGroup}>
           <label htmlFor="username" className={styles.label}>
-            Alamat Email / Username <span style={{ color: '#E52E2E' }}>*</span>
+            Email atau Username <span style={{ color: '#D31F26' }}>*</span>
           </label>
           <div className={styles.inputWrap}>
-            <Mail size={16} className={styles.inputIcon} />
+            <Mail size={17} className={styles.inputIcon} />
             <input
               id="username"
               type="text"
-              placeholder="nama@khumkhum.com"
+              placeholder="Masukkan email atau username"
               autoComplete="username"
               autoFocus
               className={`${styles.inputField} ${errors.username ? styles.inputError : ''}`}
-              {...register('username', {
-                onChange: () => setActivePreset(null),
-              })}
+              {...register('username')}
             />
           </div>
           {errors.username && (
@@ -129,10 +84,10 @@ export default function LoginPage() {
         {/* Password Input */}
         <div className={styles.inputGroup}>
           <label htmlFor="password" className={styles.label}>
-            Kata Sandi <span style={{ color: '#E52E2E' }}>*</span>
+            Kata Sandi <span style={{ color: '#D31F26' }}>*</span>
           </label>
           <div className={styles.inputWrap}>
-            <Lock size={16} className={styles.inputIcon} />
+            <Lock size={17} className={styles.inputIcon} />
             <input
               id="password"
               type={showPassword ? 'text' : 'password'}
@@ -164,7 +119,7 @@ export default function LoginPage() {
               className={styles.checkbox}
               {...register('rememberMe')}
             />
-            <span>Ingat sesi saya</span>
+            <span>Ingat saya</span>
           </label>
           <Link href={ROUTES.FORGOT_PASSWORD} className={styles.forgotLink}>
             Lupa kata sandi?
@@ -178,21 +133,15 @@ export default function LoginPage() {
           className={styles.submitBtn}
         >
           {isLoading ? (
-            <span>Memverifikasi Akun...</span>
+            <span>Sedang Masuk...</span>
           ) : (
             <>
               <LogIn size={18} />
-              <span>Masuk ke Dashboard</span>
+              <span>Masuk ke Akun</span>
             </>
           )}
         </button>
       </form>
-
-      {/* Security Footer Note */}
-      <div className={styles.footerSec}>
-        <Shield size={14} className={styles.secIcon} />
-        <span>Enkripsi Sesi Aman & Proteksi Hak Akses Berbasis Peran (RBAC)</span>
-      </div>
     </div>
   );
 }

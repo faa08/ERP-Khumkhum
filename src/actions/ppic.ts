@@ -7,7 +7,7 @@ import type { DbFarmerHarvestEstimate } from '@/types/database';
 
 export async function getPpicData(weekString?: string): Promise<{
   success: boolean;
-  estimates?: DbFarmerHarvestEstimate[];
+  estimates?: any[];
   weeklyTotal?: number;
   historicalData?: number[];
   error?: string;
@@ -37,21 +37,22 @@ export async function getPpicData(weekString?: string): Promise<{
       endDateStr = format(endDate, 'yyyy-MM-dd');
     }
 
-    // Coba ambil dari tabel farmer_harvest_estimates jika ada
-    let query = supabaseAdmin
-      .from('farmer_harvest_estimates')
+    let sortQuery = supabaseAdmin
+      .from('sortings')
       .select(`
         *,
-        farmer:farmers(id, name, phone_number)
+        receiving:receivings(
+          farmer:farmers(id, name, phone_number)
+        )
       `)
-      .gte('expected_date', startDateStr);
+      .gte('sorting_date', startDateStr);
       
     if (endDateStr) {
-      query = query.lte('expected_date', endDateStr);
+      sortQuery = sortQuery.lte('sorting_date', endDateStr);
     }
 
-    const { data, error } = await query
-      .order('expected_date', { ascending: true })
+    const { data: sortingsData } = await sortQuery
+      .order('sorting_date', { ascending: false })
       .limit(50);
 
     // Fetch historical data for the last 7 weeks (49 days) for forecasting
@@ -59,10 +60,10 @@ export async function getPpicData(weekString?: string): Promise<{
     sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
     
     const { data: historicalRows } = await supabaseAdmin
-      .from('farmer_harvest_estimates')
-      .select('expected_date, estimated_kg')
-      .lt('expected_date', new Date().toISOString().split('T')[0])
-      .gte('expected_date', format(sevenWeeksAgo, 'yyyy-MM-dd'));
+      .from('sortings')
+      .select('sorting_date, leaf_weight')
+      .lt('sorting_date', new Date().toISOString().split('T')[0])
+      .gte('sorting_date', format(sevenWeeksAgo, 'yyyy-MM-dd'));
       
     let historicalData = Array(7).fill(0); // Default to zeros
     
@@ -70,23 +71,20 @@ export async function getPpicData(weekString?: string): Promise<{
       // Bucket into 7 weeks
       const buckets = Array(7).fill(0);
       historicalRows.forEach(row => {
-        const d = new Date(row.expected_date);
+        const d = new Date(row.sorting_date);
         const diffTime = Math.abs(new Date().getTime() - d.getTime());
         const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
         const weekIndex = 6 - Math.floor(diffDays / 7); // 6 is the most recent week, 0 is 7 weeks ago
         if (weekIndex >= 0 && weekIndex < 7) {
-          buckets[weekIndex] += (row.estimated_kg || 0);
+          buckets[weekIndex] += (row.leaf_weight || 0);
         }
       });
       historicalData = buckets;
     }
 
-    if (error) {
-      return { success: true, estimates: [], weeklyTotal: 0, historicalData };
-    }
-
-    const weeklyTotal = (data || []).reduce((sum: number, e: any) => sum + (e.estimated_kg || 0), 0);
-    return { success: true, estimates: (data || []) as DbFarmerHarvestEstimate[], weeklyTotal, historicalData };
+    const weeklyTotal = (sortingsData || []).reduce((acc: number, curr: any) => acc + (curr.leaf_weight || 0), 0);
+    
+    return { success: true, estimates: sortingsData || [], weeklyTotal, historicalData };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

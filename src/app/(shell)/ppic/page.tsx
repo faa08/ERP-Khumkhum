@@ -15,7 +15,7 @@ import { format, addDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { getPpicData } from '@/actions/ppic';
 import { getInventorySummary, getInventoryForecasting } from '@/actions/inventory';
-import type { DbFarmerHarvestEstimate, DbInventory } from '@/types/database';
+import type { DbInventory, DbFarmerHarvestEstimate } from '@/types/database';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Double Exponential Smoothing (Holt's Linear Trend)
@@ -41,17 +41,17 @@ function doubleExponentialSmoothing(data: number[], alpha = 0.3, beta = 0.2, per
 }
 
 export default function PpicPage() {
-  const [estimates, setEstimates] = useState<DbFarmerHarvestEstimate[]>([]);
+  const [sortings, setSortings] = useState<any[]>([]);
   const [weeklyTotal, setWeeklyTotal] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
   
   // Forecast states
   const [products, setProducts] = useState<DbInventory[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<string>('');
+  const [selectedEstimateWeek, setSelectedEstimateWeek] = useState('');
   const [forecastData, setForecastData] = useState<any[]>([]);
   const [forecastMetrics, setForecastMetrics] = useState<any>(null);
   const [isForecasting, setIsForecasting] = useState(false);
-  const [selectedEstimateWeek, setSelectedEstimateWeek] = useState('');
 
   // Global Forecast State
   const [historicalData, setHistoricalData] = useState<number[]>(Array(7).fill(0));
@@ -73,7 +73,7 @@ export default function PpicPage() {
     ]);
     
     if (ppicRes.success) {
-      setEstimates(ppicRes.estimates || []);
+      setSortings(ppicRes.estimates || []);
       setWeeklyTotal(ppicRes.weeklyTotal || 0);
       if (ppicRes.historicalData) {
         setHistoricalData(ppicRes.historicalData);
@@ -111,46 +111,49 @@ export default function PpicPage() {
     loadForecast();
   }, [selectedProduct, toast]);
 
-
-  // ── Estimate columns ───────────────────────────────────────────
-  const estColumns: ColumnDef<DbFarmerHarvestEstimate>[] = [
+  // ── Sortings columns ───────────────────────────────────────────
+  const sortColumns: ColumnDef<any>[] = [
     {
       id: 'farmer',
       header: 'Petani',
-      cell: ({ row }) => row.original.farmer?.name || row.original.farmer_id,
-    },
-    {
-      id: 'phone',
-      header: 'No. HP',
-      cell: ({ row }) => row.original.farmer?.phone_number || '-',
-    },
-    {
-      id: 'date',
-      header: 'Tanggal Panen',
-      cell: ({ row }) => format(new Date(row.original.expected_date), 'EEEE, dd MMM yyyy', { locale: idLocale }),
-    },
-    {
-      accessorKey: 'estimated_kg',
-      header: 'Estimasi (kg)',
       cell: ({ row }) => (
-        <strong style={{ color: 'var(--color-primary-600)' }}>
-          {row.original.estimated_kg.toLocaleString('id-ID')} kg
-        </strong>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--color-primary-100)', color: 'var(--color-primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 }}>
+            {row.original.receiving?.farmer?.name?.[0] || '?'}
+          </div>
+          <span style={{ fontWeight: 500 }}>{row.original.receiving?.farmer?.name || 'Unknown'}</span>
+        </div>
       ),
     },
     {
-      accessorKey: 'source',
-      header: 'Sumber',
+      accessorKey: 'receiving.farmer.phone_number',
+      header: 'No. HP',
+      cell: ({ row }) => <span style={{ color: 'var(--text-secondary)' }}>{row.original.receiving?.farmer?.phone_number || '-'}</span>,
+    },
+    {
+      accessorKey: 'sorting_date',
+      header: 'Tanggal Sortir',
+      cell: ({ row }) => format(new Date(row.original.sorting_date), 'EEEE, dd MMM yyyy', { locale: idLocale }),
+    },
+    {
+      accessorKey: 'leaf_weight',
+      header: 'Daun (Kg)',
       cell: ({ row }) => (
-        <span style={{
-          padding: '2px 8px', borderRadius: '999px', fontSize: 'var(--text-xs)', fontWeight: 600,
-          background: row.original.source === 'WA_BOT' ? 'var(--color-success-100)' : 'var(--color-primary-100)',
-          color: row.original.source === 'WA_BOT' ? 'var(--color-success-700)' : 'var(--color-primary-700)',
+        <span style={{ fontWeight: 700, color: 'var(--color-primary-600)' }}>
+          {row.original.leaf_weight} kg
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'quality_grade',
+      header: 'Grade',
+      cell: ({ row }) => (
+        <span style={{ 
+          padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600,
+          backgroundColor: row.original.quality_grade === 'A' ? 'var(--color-success-100)' : row.original.quality_grade === 'B' ? 'var(--color-warning-100)' : 'var(--color-danger-100)',
+          color: row.original.quality_grade === 'A' ? 'var(--color-success-700)' : row.original.quality_grade === 'B' ? 'var(--color-warning-700)' : 'var(--color-danger-700)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            {row.original.source === 'WA_BOT' ? <MessageSquare size={12} /> : <PenTool size={12} />}
-            {row.original.source === 'WA_BOT' ? 'WA Bot' : 'Manual'}
-          </div>
+          Grade {row.original.quality_grade || '-'}
         </span>
       ),
     },
@@ -158,27 +161,15 @@ export default function PpicPage() {
 
   const forecastColumns: ColumnDef<any>[] = [
     { accessorKey: 'date', header: 'Tanggal' },
-    { 
-      accessorKey: 'actualOut', 
-      header: 'Demand Aktual (kg)', 
-      cell: ({ row }) => row.original.actualOut !== null ? <strong style={{ color: 'var(--color-primary-600)' }}>{row.original.actualOut}</strong> : '-' 
-    },
-    { 
-      accessorKey: 'forecastOut', 
-      header: 'Prediksi Demand (kg)', 
-      cell: ({ row }) => row.original.forecastOut !== null ? <span style={{ color: 'var(--color-warning-600)' }}>{row.original.forecastOut}</span> : '-' 
-    },
-    { 
-      accessorKey: 'projectedStock', 
-      header: 'Proyeksi Sisa Stok (kg)', 
-      cell: ({ row }) => row.original.projectedStock !== null ? <strong style={{ color: 'var(--color-success-600)' }}>{row.original.projectedStock}</strong> : '-' 
-    },
+    { accessorKey: 'actualOut', header: 'Aktual (kg)' },
+    { accessorKey: 'forecastOut', header: 'Prediksi (kg)' },
+    { accessorKey: 'projectedStock', header: 'Stok Sisa' },
   ];
 
-  const EstimatesTab = (
+  const SortingsTab = (
     <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>Estimasi Panen</h3>
+        <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600 }}>Data Daun Jamur (Hasil Sortasi)</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
           <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Pilih Minggu:</span>
           <Input type="week" value={selectedEstimateWeek} onChange={e => setSelectedEstimateWeek(e.target.value)} style={{ width: '200px' }} />
@@ -189,12 +180,12 @@ export default function PpicPage() {
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
             <CalendarDays size={20} color="var(--color-primary-600)" />
-            <span style={{ fontWeight: 600 }}>Total Estimasi Minggu Ini</span>
+            <span style={{ fontWeight: 600 }}>Total Daun Jamur Minggu Ini</span>
           </div>
           <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-primary-600)' }}>
             {weeklyTotal.toLocaleString('id-ID')} <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>kg</span>
           </div>
-          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>dari {estimates.length} petani</div>
+          <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>dari {sortings.length} pencatatan</div>
         </Card>
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
@@ -218,14 +209,15 @@ export default function PpicPage() {
         </Card>
       </div>
 
-      <DataTable columns={estColumns} data={estimates} />
+      <DataTable columns={sortColumns} data={sortings} />
     </div>
   );
 
+  // ── Forecast JSX ───────────────────────────────────────────────
   const ForecastTab = (
     <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {/* 1. ORIGINAL PPIC FORECAST (GLOBAL) */}
-      <Card header={<strong>Proyeksi Permintaan 4 Minggu (Global - Double Exponential Smoothing)</strong>}>
+      <Card header={<strong>Proyeksi Ketersediaan Daun Jamur Siap Masak (4 Minggu - Holt's Linear Trend)</strong>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
           {forecastWeeks.map((fw, i) => (
             <div key={i} style={{
@@ -246,7 +238,7 @@ export default function PpicPage() {
         <div style={{ padding: 'var(--space-3)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
           <strong>Metode:</strong> Holt's Linear Trend (Double Exponential Smoothing) (α = 0.3, β = 0.2)
           <br />
-          Data historis mingguan: {historicalData.join(', ')} kg
+          Data historis (aktual) daun jamur per minggu: {historicalData.join(', ')} kg
         </div>
       </Card>
 
@@ -401,17 +393,26 @@ export default function PpicPage() {
   return (
     <div>
       <PageHeader
-        title="Perencanaan Produksi (PPIC)"
-        description="Monitor estimasi panen petani via WA bot, proyeksi permintaan, dan Material Requirement Planning."
-        breadcrumbs={[{ label: 'Operasional' }, { label: 'PPIC & Forecasting' }]}
+        title="PPIC & Peramalan (Forecasting)"
+        description="Analisis tren, manajemen proyeksi ketersediaan bahan baku, dan MRP."
+        breadcrumbs={[{ label: 'Operasional' }, { label: 'PPIC' }]}
+        actions={
+          <Button variant="outline" onClick={loadData}>
+            Refresh Data
+          </Button>
+        }
       />
 
-      <Tabs
-        tabs={[
-          { id: 'estimates', label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Sprout size={16} /> Estimasi Panen Petani</span>, content: EstimatesTab },
-          { id: 'forecast', label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><LineChartIcon size={16} /> Forecasting & MRP</span>, content: ForecastTab },
-        ]}
-      />
+      {isLoading ? (
+        <div style={{ padding: 'var(--space-8)', textAlign: 'center', color: 'var(--text-secondary)' }}>Memuat data PPIC...</div>
+      ) : (
+        <Tabs
+          tabs={[
+            { id: 'forecast', label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><LineChartIcon size={16} /> Dashboard Forecasting & MRP</span>, content: ForecastTab },
+            { id: 'sortings', label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Sprout size={16} /> Data Daun Jamur (Sortasi)</span>, content: SortingsTab },
+          ]}
+        />
+      )}
     </div>
   );
 }

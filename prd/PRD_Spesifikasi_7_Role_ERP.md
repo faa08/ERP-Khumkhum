@@ -254,8 +254,11 @@ src/
 ```
 
 #### A. Rincian Fitur Lengkap
-1. **Modul Penerimaan Bahan Baku Jamur (`RM-YYYYMMDD-XXX`):**
-   - Memilih Petani Mitra dan menginput Berat Kirim ($W_{kirim}$) serta Berat Timbang Aktual ($W_{terima}$).
+1. **Modul Penerimaan Bahan Baku Jamur (Inbound):**
+   - Terbagi menjadi dua ruangan utama (*tabs*):
+     1. **Menunggu Kedatangan (*In Transit*):** Daftar estimasi pasokan harian yang masuk otomatis dari balasan *chat* WhatsApp bot Petani (sebelum barang tiba).
+     2. **Selesai Dicatat (*Received*):** Daftar riwayat penerimaan barang (`RM-YYYYMMDD-XXX`) yang sudah selesai dibongkar.
+   - Memproses data kedatangan dengan menginput Berat Kirim ($W_{kirim}$) serta Berat Timbang Aktual ($W_{terima}$).
    - Mengunggah foto timbangan digital dan validasi selisih timbangan ($\pm 2\%$).
 2. **Modul Sortasi & Grading Bahan Baku:**
    - Memisahkan Berat Daun ($W_{daun}$) dan Berat Batang ($W_{batang}$).
@@ -271,8 +274,9 @@ src/
 6. **Modul Sales Order & Pengiriman Distributor (`SO-YYYYMMDD-XXX`):**
    - Mencatat pesanan distributor/toko, alokasi stok otomatis, update status pengiriman, dan cetak Surat Jalan PDF.
 7. **Modul PPIC & Peramalan Permintaan (Forecasting Engine):**
-   - Algoritma *Exponential Smoothing (Holt-Winters)* untuk proyeksi permintaan 1-4 minggu ke depan.
-   - Material Requirement Planning (MRP) dan monitoring estimasi panen petani dari bot WA.
+   - Algoritma *Exponential Smoothing (Holt-Winters)* untuk proyeksi ketersediaan bahan baku 1-4 minggu ke depan.
+   - **Catatan Penting Workflow:** PPIC melakukan peramalan (*forecasting*) dan pembuatan target produksi (SPK) murni berdasarkan berat aktual **Daun Jamur** yang telah lolos proses Sortasi di gudang (bukan berdasarkan estimasi kotor petani dari Inbound).
+   - Material Requirement Planning (MRP) untuk pengadaan bahan pembantu (minyak, tepung, dll).
 
 #### B. Spesifikasi Input & Validasi
 * **ID Petani Mitra:** Dropdown reference (petani aktif).
@@ -404,7 +408,7 @@ src/
    - Petani membalas pesan teks:
      * Format Setor: `SETOR [JUMLAH_KG]` (Contoh: `SETOR 35` atau `SETOR 40 KG`).
      * Format Libur: `LIBUR` atau `TIDAK PANEN`.
-   - Bot otomatis mencatat data ke database PPIC pabrik dan membalas konfirmasi sukses.
+   - Bot otomatis mencatat data rencana pasokan ke modul **Inbound (Tab: Menunggu Kedatangan)** dan membalas konfirmasi sukses.
 
 #### B. Spesifikasi Input (Pesan WhatsApp Petani)
 * **Pesan Balasan Panen:** Format teks `SETOR 40` (Regex parser: mengekstrak float `40.0`).

@@ -11,12 +11,12 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle } from 'lucide-react';
+import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import { getReceivings, createReceiving } from '@/actions/receiving';
+import { id as idLocale } from 'date-fns/locale';
+import { getReceivings, createReceiving, getInboundEstimates } from '@/actions/receiving';
 import { getFarmers, getRawMaterials } from '@/actions/master';
-import { getPpicData } from '@/actions/ppic';
 import type { DbReceiving, DbFarmerHarvestEstimate } from '@/types/database';
 
 interface FormState {
@@ -39,8 +39,9 @@ export default function ReceivingPage() {
   const [data, setData] = useState<DbReceiving[]>([]);
   const [farmers, setFarmers] = useState<{ id: string; name: string; phone_number?: string | null }[]>([]);
   const [rawMaterials, setRawMaterials] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [ppicEstimates, setPpicEstimates] = useState<DbFarmerHarvestEstimate[]>([]);
+  const [inboundEstimates, setInboundEstimates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'menunggu' | 'selesai'>('menunggu');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -63,16 +64,16 @@ export default function ReceivingPage() {
   // ── Load data ───────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [recRes, farmRes, rmRes, ppicRes] = await Promise.all([
+    const [recRes, farmRes, rmRes, estRes] = await Promise.all([
       getReceivings(),
       getFarmers(),
       getRawMaterials(),
-      getPpicData(),
+      getInboundEstimates(),
     ]);
     if (recRes.success && recRes.data) setData(recRes.data);
     if (farmRes.success) setFarmers(farmRes.data as any);
     if (rmRes.success) setRawMaterials(rmRes.data as any);
-    if (ppicRes.success && ppicRes.estimates) setPpicEstimates(ppicRes.estimates);
+    if (estRes.success && estRes.estimates) setInboundEstimates(estRes.estimates);
     setIsLoading(false);
   }, []);
 
@@ -173,20 +174,113 @@ export default function ReceivingPage() {
     },
   ], []);
 
+  const estimateColumns = useMemo<ColumnDef<any>[]>(() => [
+    {
+      id: 'farmer_name',
+      header: 'Petani Mitra',
+      cell: ({ row }) => row.original.farmer?.name || row.original.farmer_id || '-',
+    },
+    {
+      accessorKey: 'expected_date',
+      header: 'Rencana Kedatangan',
+      cell: ({ row }) => format(new Date(row.original.expected_date), 'dd MMM yyyy', { locale: idLocale }),
+    },
+    {
+      accessorKey: 'estimated_kg',
+      header: 'Estimasi Kiriman',
+      cell: ({ row }) => <strong>{row.original.estimated_kg} kg</strong>,
+    },
+    {
+      accessorKey: 'source',
+      header: 'Sumber',
+      cell: ({ row }) => <StatusBadge status={row.original.source === 'WA_BOT' ? 'success' : 'info'} text={row.original.source === 'WA_BOT' ? 'WhatsApp' : 'Manual'} />,
+    },
+    {
+      id: 'actions',
+      header: 'Aksi',
+      cell: ({ row }) => (
+        <Button 
+          variant="primary" 
+          size="sm" 
+          onClick={() => {
+            setForm(f => ({
+              ...f,
+              farmer_id: row.original.farmer_id,
+              weight_sent: String(row.original.estimated_kg),
+            }));
+            toast.info(`Data otomatis diisi untuk ${row.original.farmer?.name || 'Petani'}`);
+            setDrawerOpen(true);
+          }}
+        >
+          Terima Barang
+        </Button>
+      ),
+    },
+  ], [toast]);
+
   return (
     <div>
       <PageHeader
         title="Penerimaan Bahan Baku"
         description="Catat penerimaan jamur dari petani mitra. Nota timbangan otomatis terkirim via WhatsApp."
         breadcrumbs={[{ label: 'Operasional' }, { label: 'Penerimaan BB' }]}
-        actions={
-          <Button variant="primary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
-            Catat Penerimaan
-          </Button>
-        }
       />
 
-      <DataTable columns={columns} data={data} />
+      <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-2)' }}>
+        <button
+          onClick={() => setActiveTab('menunggu')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            background: 'none', border: 'none', cursor: 'pointer',
+            padding: 'var(--space-2) var(--space-4)',
+            fontSize: 'var(--text-md)', fontWeight: 600,
+            color: activeTab === 'menunggu' ? 'var(--color-primary-600)' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'menunggu' ? '2px solid var(--color-primary-600)' : '2px solid transparent',
+            marginBottom: '-17px' // overlapping border
+          }}
+        >
+          <Sprout size={18} />
+          Menunggu Kedatangan
+        </button>
+        <button
+          onClick={() => setActiveTab('selesai')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            background: 'none', border: 'none', cursor: 'pointer',
+            padding: 'var(--space-2) var(--space-4)',
+            fontSize: 'var(--text-md)', fontWeight: 600,
+            color: activeTab === 'selesai' ? 'var(--color-primary-600)' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'selesai' ? '2px solid var(--color-primary-600)' : '2px solid transparent',
+            marginBottom: '-17px'
+          }}
+        >
+          <ClipboardCheck size={18} />
+          Selesai Dicatat
+        </button>
+      </div>
+
+      {activeTab === 'menunggu' && (
+        <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Rencana Pasokan Hari Ini</h3>
+            <Button variant="outline" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
+              Catat Penerimaan Manual
+            </Button>
+          </div>
+          <DataTable columns={estimateColumns} data={inboundEstimates} />
+        </div>
+      )}
+
+      {activeTab === 'selesai' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button variant="primary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
+              Catat Penerimaan Manual
+            </Button>
+          </div>
+          <DataTable columns={columns} data={data} />
+        </div>
+      )}
 
       {/* ── CREATE DRAWER ── */}
       <Modal
@@ -204,38 +298,7 @@ export default function ReceivingPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {ppicEstimates.length > 0 && (
-            <div style={{ padding: 'var(--space-3)', background: 'var(--color-info-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-info-200)' }}>
-              <FormField label="Tarik Data Estimasi PPIC (Opsional)">
-                <select
-                  onChange={e => {
-                    const est = ppicEstimates.find(x => x.id === e.target.value);
-                    if (est) {
-                      setForm(f => ({
-                        ...f,
-                        farmer_id: est.farmer_id,
-                        weight_sent: String(est.estimated_kg),
-                      }));
-                      toast.info(`Data otomatis diisi dari estimasi PPIC (${est.estimated_kg} kg)`);
-                    }
-                  }}
-                  style={{
-                    width: '100%', padding: 'var(--space-2) var(--space-3)',
-                    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-default)', color: 'var(--text-primary)',
-                    fontSize: 'var(--text-sm)',
-                  }}
-                >
-                  <option value="">-- Pilih Estimasi Hari Ini --</option>
-                  {ppicEstimates.map(est => (
-                    <option key={est.id} value={est.id}>
-                      {est.farmer?.name || est.farmer_id} - {est.estimated_kg} kg ({est.source === 'WA_BOT' ? 'WA' : 'Manual'})
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-            </div>
-          )}
+          {/* Selection removed, handled directly via button on row */}
 
           <FormField label="Petani Mitra" required>
             <select

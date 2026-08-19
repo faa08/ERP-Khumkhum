@@ -41,6 +41,32 @@ export async function getReceivings(): Promise<{
   }
 }
 
+export async function getInboundEstimates(): Promise<{
+  success: boolean;
+  estimates?: any[];
+  error?: string;
+}> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+
+    const { data, error } = await supabaseAdmin
+      .from('farmer_harvest_estimates')
+      .select(`
+        *,
+        farmer:farmers(id, name, phone_number)
+      `)
+      .gte('expected_date', format(new Date(), 'yyyy-MM-dd'))
+      .order('expected_date', { ascending: true });
+
+    if (error) throw error;
+
+    return { success: true, estimates: data || [] };
+  } catch (err: any) {
+    console.error('getInboundEstimates error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export interface CreateReceivingInput {
   farmer_id: string;
   raw_material_id: string;

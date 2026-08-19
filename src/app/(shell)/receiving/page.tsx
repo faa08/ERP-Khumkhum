@@ -193,7 +193,7 @@ export default function ReceivingPage() {
     {
       accessorKey: 'source',
       header: 'Sumber',
-      cell: ({ row }) => <StatusBadge status={row.original.source === 'WA_BOT' ? 'success' : 'info'} text={row.original.source === 'WA_BOT' ? 'WhatsApp' : 'Manual'} />,
+      cell: ({ row }) => <StatusBadge status={row.original.source === 'WA_BOT' ? 'success' : 'info'} label={row.original.source === 'WA_BOT' ? 'WhatsApp' : 'Manual'} />,
     },
     {
       id: 'actions',
@@ -263,7 +263,7 @@ export default function ReceivingPage() {
         <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
             <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Rencana Pasokan Hari Ini</h3>
-            <Button variant="outline" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
+            <Button variant="secondary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
               Catat Penerimaan Manual
             </Button>
           </div>

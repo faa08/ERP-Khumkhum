@@ -12,6 +12,7 @@ export type UserRole =
   | 'WAREHOUSE'
   | 'PRODUCTION'
   | 'MANAGEMENT'
+  | 'SALES'
   | 'FARMER';
 
 export interface DbUser {

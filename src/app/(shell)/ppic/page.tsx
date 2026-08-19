@@ -397,7 +397,7 @@ export default function PpicPage() {
         description="Analisis tren, manajemen proyeksi ketersediaan bahan baku, dan MRP."
         breadcrumbs={[{ label: 'Operasional' }, { label: 'PPIC' }]}
         actions={
-          <Button variant="outline" onClick={loadData}>
+          <Button variant="secondary" onClick={loadData}>
             Refresh Data
           </Button>
         }

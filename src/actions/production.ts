@@ -17,9 +17,9 @@ import type {
 // HELPERS
 // ─────────────────────────────────────────────
 
-function generateProductionBatchNumber(): string {
-  const now = new Date();
-  const date = format(now, 'yyyyMMdd');
+function generateProductionBatchNumber(customDate?: string): string {
+  const d = customDate ? new Date(customDate) : new Date();
+  const date = format(d, 'yyyyMMdd');
   const rand = Math.floor(Math.random() * 9000) + 1000;
   return `PRD-${date}-${rand}`;
 }
@@ -186,15 +186,16 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
       return { success: false, error: 'Varian produk dan target kuantitas (> 0) wajib diisi' };
     }
 
-    const batch_number = generateProductionBatchNumber();
+    const issueDate = input.start_date ? new Date(input.start_date).toISOString() : new Date().toISOString();
+    const batch_number = generateProductionBatchNumber(input.start_date);
     const now = new Date().toISOString();
 
     const payload = {
       batch_number,
       status: 'DRAFT',
-      start_date: input.start_date || now,
+      start_date: issueDate,
       created_by: user.userId,
-      created_at: now,
+      created_at: issueDate,
       updated_at: now,
     };
 

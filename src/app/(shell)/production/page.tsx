@@ -44,11 +44,32 @@ import {
   updateProductionOrderStatus,
   getProductionOverviewMetrics,
   getProductionFormOptions,
+  getSpkSuggestions,
   type CreateProductionOrderInput,
   type MaterialConsumptionItem,
+  type SpkSuggestion,
 } from '@/actions/production';
 import { getPpicData } from '@/actions/ppic';
 import type { DbProductionOrder, DbProduct, DbRawMaterial } from '@/types/database';
+
+const recalculateBomFromProductKg = (productKg: number, productName: string) => {
+  const match = productName.match(/(\d+)g/i);
+  const packWeightGrams = match ? parseInt(match[1]) : 50;
+  const packWeightKg = packWeightGrams / 1000;
+  
+  const targetPcs = Math.ceil(productKg / packWeightKg);
+  const daunNeeded = parseFloat((productKg * 1.3).toFixed(1));
+  
+  return {
+    target_pcs: targetPcs,
+    bom: [
+      { material: 'Jamur Tiram Segar (Daun)', needed_kg: daunNeeded, note: 'Estimasi rendemen 75% (1.3kg daun basah/kg produk)' },
+      { material: 'Minyak Goreng', needed_kg: parseFloat((productKg * 0.3).toFixed(1)), note: '30% serapan & sirkulasi wajan' },
+      { material: 'Tepung Bumbu', needed_kg: parseFloat((productKg * 0.08).toFixed(1)), note: '8% rasio adonan tepung' },
+      { material: `Kemasan Pouch ${packWeightGrams}g`, needed_kg: targetPcs, note: `${targetPcs} pcs kemasan @${packWeightGrams}g` },
+    ]
+  };
+};
 
 export default function ProductionPage() {
   const [orders, setOrders] = useState<DbProductionOrder[]>([]);
@@ -61,22 +82,22 @@ export default function ProductionPage() {
   const [products, setProducts] = useState<DbProduct[]>([]);
   const [rawMaterials, setRawMaterials] = useState<(DbRawMaterial & { available_stock?: number })[]>([]);
   const [ppicWeeklyTotal, setPpicWeeklyTotal] = useState<number>(0);
+  const [spkSuggestions, setSpkSuggestions] = useState<SpkSuggestion[]>([]);
+  const [checkedSpk, setCheckedSpk] = useState<Set<string>>(new Set());
+  const [isCreatingSpk, setIsCreatingSpk] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Drawers & Modals state
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [consumptionModalOpen, setConsumptionModalOpen] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<DbProductionOrder | null>(null);
 
-  // Filter states
   const [periodPreset, setPeriodPreset] = useState<'ALL' | 'TODAY' | 'THIS_MONTH' | 'THIS_YEAR' | 'CUSTOM'>('ALL');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
-  // Form states - Create SPK
   const [spkForm, setSpkForm] = useState<{
     productId: string;
     productVariant: string;
@@ -91,12 +112,10 @@ export default function ProductionPage() {
     notes: '',
   });
 
-  // Form states - Material Consumption
   const [consumedMaterials, setConsumedMaterials] = useState<MaterialConsumptionItem[]>([
     { raw_material_id: '', consumption_quantity: 0 },
   ]);
 
-  // Form states - Production Result & Live Yield
   const [resultForm, setResultForm] = useState<{
     outputWeight: string;
     finishedGoodsQty: string;
@@ -107,7 +126,6 @@ export default function ProductionPage() {
     anomalyReason: '',
   });
 
-  // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     title: string;
@@ -118,15 +136,33 @@ export default function ProductionPage() {
 
   const toast = useToast();
 
-  // Load Data
+  const totalDaunNeeded = useMemo(() => {
+    return Array.from(checkedSpk).reduce((sum, id) => {
+      const s = spkSuggestions.find(x => x.id === id);
+      if (!s) return sum;
+      const daunBom = s.bom.find(b => b.material.includes('Daun'));
+      return sum + (daunBom ? daunBom.needed_kg : 0);
+    }, 0);
+  }, [checkedSpk, spkSuggestions]);
+  
+  const totalTargetPcs = useMemo(() => {
+    return Array.from(checkedSpk).reduce((sum, id) => {
+      const s = spkSuggestions.find(x => x.id === id);
+      return sum + (s ? s.target_pcs : 0);
+    }, 0);
+  }, [checkedSpk, spkSuggestions]);
+
+  const isDaunValid = checkedSpk.size === 0 || Math.abs(totalDaunNeeded - ppicWeeklyTotal) < 0.5;
+
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [ordersRes, metricsRes, optionsRes, ppicRes] = await Promise.all([
+      const [ordersRes, metricsRes, optionsRes, ppicRes, spkRes] = await Promise.all([
         getProductionOrders(),
         getProductionOverviewMetrics(),
         getProductionFormOptions(),
         getPpicData(),
+        getSpkSuggestions(),
       ]);
 
       if (ordersRes.success && ordersRes.data) {
@@ -142,6 +178,9 @@ export default function ProductionPage() {
       if (ppicRes.success && ppicRes.weeklyTotal !== undefined) {
         setPpicWeeklyTotal(ppicRes.weeklyTotal);
       }
+      if (spkRes.success && spkRes.suggestions) {
+        setSpkSuggestions(spkRes.suggestions);
+      }
     } catch (err: any) {
       console.error('Gagal memuat data lini produksi:', err);
     } finally {
@@ -153,15 +192,11 @@ export default function ProductionPage() {
     loadData();
   }, [loadData]);
 
-  // Filtered Orders Computation
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      // 1. Status Filter
       if (statusFilter !== 'ALL' && order.status !== statusFilter) {
         return false;
       }
-
-      // 2. Date / Period Filter
       const rawDate = order.start_date || order.created_at;
       if (!rawDate) return true;
       const orderDate = new Date(rawDate);
@@ -689,6 +724,7 @@ export default function ProductionPage() {
         </div>
       </Card>
 
+
       {/* Main Data Table */}
       <DataTable columns={columns} data={filteredOrders} />
 
@@ -697,77 +733,216 @@ export default function ProductionPage() {
       {/* ───────────────────────────────────────────── */}
       <Modal
         isOpen={createDrawerOpen}
-        onClose={() => setCreateDrawerOpen(false)}
+        onClose={() => { setCreateDrawerOpen(false); setCheckedSpk(new Set()); }}
         title="Penerbitan Surat Perintah Kerja (SPK) Baru"
         size="lg"
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setCreateDrawerOpen(false)}>
-              Batal
-            </Button>
-            <Button variant="primary" onClick={handleSaveSpk} leftIcon={<Send size={16} />}>
-              Terbitkan SPK
-            </Button>
-          </>
+          checkedSpk.size > 0 ? (
+            <>
+              <Button variant="secondary" onClick={() => setCheckedSpk(new Set())}>
+                Batal Pilih
+              </Button>
+              <Button
+                variant="primary"
+                leftIcon={<Factory size={16} />}
+                disabled={isCreatingSpk || !isDaunValid}
+                onClick={async () => {
+                  setIsCreatingSpk(true);
+                  let createdCount = 0;
+                  for (const sid of Array.from(checkedSpk)) {
+                    const suggestion = spkSuggestions.find(s => s.id === sid);
+                    if (!suggestion) continue;
+                    const res = await createProductionOrder({
+                      product_id: suggestion.product_id,
+                      product_variant: suggestion.product_name,
+                      target_quantity: suggestion.target_pcs,
+                      start_date: spkForm.startDate ? new Date(spkForm.startDate).toISOString() : new Date().toISOString(),
+                      notes: (spkForm.notes ? `${spkForm.notes}\n\n` : '') + `SPK otomatis dari rekomendasi warehouse. Target: ${suggestion.target_kg} kg (${suggestion.target_pcs} pcs). Basis: rata-rata ${suggestion.avg_weekly_kg} kg/minggu dari ${suggestion.weeks_of_data} batch data historis.`,
+                    });
+                    if (res.success) createdCount++;
+                  }
+                  setIsCreatingSpk(false);
+                  setCheckedSpk(new Set());
+                  if (createdCount > 0) {
+                    toast.success(`${createdCount} SPK berhasil diterbitkan! Batch siap dieksekusi.`);
+                    setCreateDrawerOpen(false);
+                    loadData();
+                  } else {
+                    toast.error('Gagal membuat SPK. Silakan coba lagi.');
+                  }
+                }}
+              >
+                {isCreatingSpk ? 'Memproses...' : `Mulai Produksi (${checkedSpk.size} SPK)`}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={() => setCreateDrawerOpen(false)}>
+                Batal
+              </Button>
+              <Button variant="primary" onClick={handleSaveSpk} leftIcon={<Send size={16} />}>
+                Terbitkan SPK Manual
+              </Button>
+            </>
+          )
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <div style={{ padding: 'var(--space-3)', background: 'var(--color-primary-50)', borderRadius: 'var(--radius-md)', color: 'var(--color-primary-800)', fontSize: 'var(--text-sm)' }}>
-            <strong>Format Nomor Batch Otomatis:</strong> <code>PRD-YYYYMMDD-XXXX</code>
-            <br />Nomor batch unik akan diterbitkan sistem secara realtime sesuai tanggal penerbitan sebagai identitas pelacakan ketertelusuran 2-arah.
+          {/* ── SECTION 1: Rekomendasi dari History Warehouse ── */}
+          <div style={{ padding: 'var(--space-3)', background: 'var(--color-warning-50)', borderRadius: 'var(--radius-md)', color: 'var(--color-warning-900)', fontSize: 'var(--text-sm)', border: '1px solid var(--color-warning-200)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, marginBottom: '4px' }}>
+              <Sparkles size={16} /> Rekomendasi Target dari History Warehouse
+            </div>
+            Centang produk di bawah untuk membuat SPK otomatis berdasarkan data historis produksi. Atau scroll ke bawah untuk input manual.
           </div>
 
-          {ppicWeeklyTotal > 0 && (
-            <div style={{ padding: 'var(--space-3)', background: 'var(--color-success-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-success-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <strong style={{ color: 'var(--color-success-800)' }}>💡 Rekomendasi Target PPIC</strong>
-                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-success-700)', marginTop: '4px' }}>
-                  Berdasarkan estimasi panen <strong>{ppicWeeklyTotal} kg</strong> minggu ini,<br/>kebutuhan produksi adalah <strong>{Math.ceil(ppicWeeklyTotal * 0.75 / 0.05)} kemasan (pcs)</strong>.
-                </div>
-              </div>
-              <Button 
-                variant="secondary" 
-                size="sm" 
-                onClick={() => {
-                  setSpkForm(f => ({ ...f, targetQuantity: String(Math.ceil(ppicWeeklyTotal * 0.75 / 0.05)) }));
-                  toast.success('Target Output disesuaikan dengan rekomendasi PPIC');
-                }}
-              >
-                Gunakan Angka Ini
-              </Button>
+          {spkSuggestions.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              {spkSuggestions.map((s) => {
+                const isChecked = checkedSpk.has(s.id);
+                return (
+                  <div
+                    key={s.id}
+                    style={{
+                      border: `2px solid ${isChecked ? 'var(--color-primary-500)' : 'var(--border-default)'}`,
+                      borderRadius: 'var(--radius-lg)',
+                      padding: 'var(--space-3)',
+                      backgroundColor: isChecked ? 'var(--color-primary-50)' : 'var(--bg-default)',
+                      transition: 'all 0.2s ease',
+                      cursor: 'pointer',
+                    }}
+                    onClick={() => {
+                      setCheckedSpk(prev => {
+                        const next = new Set(prev);
+                        if (next.has(s.id)) next.delete(s.id);
+                        else next.add(s.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    {/* Header row */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                      <div style={{
+                        width: '22px', height: '22px', borderRadius: 'var(--radius-sm)',
+                        border: `2px solid ${isChecked ? 'var(--color-primary-600)' : 'var(--border-default)'}`,
+                        backgroundColor: isChecked ? 'var(--color-primary-600)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0, transition: 'all 0.15s ease',
+                      }}>
+                        {isChecked && <CheckCircle2 size={14} color="white" />}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)' }}>{s.product_name}</div>
+                        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                          SKU: {s.product_sku} • {s.avg_weekly_kg} kg/minggu
+                          {s.weeks_of_data > 0 ? ` (${s.weeks_of_data} batch)` : ' (estimasi)'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 'var(--space-2)', flexShrink: 0, alignItems: 'center' }}>
+                        <input
+                          type="number"
+                          value={s.target_kg}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value) || 0;
+                            const updated = recalculateBomFromProductKg(val, s.product_name);
+                            setSpkSuggestions(prev => prev.map(item => item.id === s.id ? { ...item, target_kg: val, target_pcs: updated.target_pcs, bom: updated.bom } : item));
+                          }}
+                          style={{
+                            width: '70px', padding: '4px', borderRadius: 'var(--radius-md)',
+                            border: '1px solid var(--color-primary-300)', backgroundColor: 'white', color: 'var(--color-primary-800)',
+                            fontWeight: 700, fontSize: 'var(--text-xs)', textAlign: 'center'
+                          }}
+                        />
+                        <span style={{ fontSize: '12px', fontWeight: 'bold', color: 'var(--color-primary-800)' }}>kg</span>
+                        <span style={{ padding: '4px 10px', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--color-success-100)', color: 'var(--color-success-800)', fontWeight: 700, fontSize: 'var(--text-xs)' }}>
+                          {s.target_pcs.toLocaleString('id-ID')} pcs
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Expanded BOM */}
+                    {isChecked && (
+                      <div style={{ marginTop: 'var(--space-2)', paddingTop: 'var(--space-2)', borderTop: '1px dashed var(--border-subtle)' }}>
+                        <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 'var(--space-1)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Flame size={12} /> BOM — Kebutuhan Bahan
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'var(--space-1)' }}>
+                          {s.bom.map((b, idx) => (
+                            <div key={idx} style={{ padding: '4px 8px', backgroundColor: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--text-xs)' }}>
+                              <span>{b.material}</span>
+                              <strong style={{ color: 'var(--color-primary-700)' }}>
+                                {b.material.includes('Kemasan') ? `${b.needed_kg.toLocaleString('id-ID')} pcs` : `${b.needed_kg} kg`}
+                              </strong>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-            <FormField label="Pilih Produk Jadi (SKU)" required>
-              <Select
-                options={
-                  products.length > 0
-                    ? products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` }))
-                    : [
-                        { value: '1', label: 'Jamur Crispy Original 100g' },
-                        { value: '2', label: 'Jamur Crispy Balado Pedas 100g' },
-                        { value: '3', label: 'Jamur Crispy BBQ Smoked 100g' },
-                      ]
-                }
-                value={spkForm.productId}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const found = products.find((p) => p.id === val);
-                  setSpkForm((prev) => ({
-                    ...prev,
-                    productId: val,
-                    productVariant: found?.name || prev.productVariant,
-                  }));
-                }}
-              />
-            </FormField>
+          {spkSuggestions.length > 0 && checkedSpk.size > 0 && (
+            <div style={{
+              padding: 'var(--space-3)',
+              borderRadius: 'var(--radius-md)',
+              background: isDaunValid ? 'var(--color-success-50)' : 'var(--color-danger-50)',
+              border: `1px solid ${isDaunValid ? 'var(--color-success-200)' : 'var(--color-danger-200)'}`,
+              marginTop: 'var(--space-1)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 'var(--text-sm)', color: isDaunValid ? 'var(--color-success-800)' : 'var(--color-danger-800)' }}>
+                <span>Total Kebutuhan Daun Jamur (SPK Terpilih):</span>
+                <span>{totalDaunNeeded.toFixed(1)} kg / {ppicWeeklyTotal.toFixed(1)} kg (Tersedia)</span>
+              </div>
+              {!isDaunValid && (
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-700)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <AlertTriangle size={14} /> Total kebutuhan daun tidak boleh kurang atau lebih dari persediaan batch (selisih maks 0.5 kg). Sesuaikan target (kg) tiap produk di atas.
+                </div>
+              )}
+            </div>
+          )}
 
-            <FormField
-              label="Tanggal Penerbitan SPK"
-              required
-              helperText="Bisa memilih tanggal lampau/historis jika menginput arsip SPK lama"
-            >
+          {/* ── DIVIDER ── */}
+          {checkedSpk.size === 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', margin: 'var(--space-1) 0' }}>
+              <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-default)' }} />
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontWeight: 600 }}>ATAU INPUT MANUAL</span>
+              <div style={{ flex: 1, height: '1px', backgroundColor: 'var(--border-default)' }} />
+            </div>
+          )}
+
+          {/* ── SECTION 2: Form Manual (existing) ── */}
+          <div style={{ display: 'grid', gridTemplateColumns: checkedSpk.size > 0 ? '1fr' : '1fr 1fr', gap: 'var(--space-4)' }}>
+            {checkedSpk.size === 0 && (
+              <FormField label="Pilih Produk Jadi (SKU)" required>
+                <Select
+                  options={
+                    products.length > 0
+                      ? products.map((p) => ({ value: p.id, label: `${p.name} (${p.sku})` }))
+                      : [
+                          { value: '1', label: 'Jamur Crispy Original 100g' },
+                          { value: '2', label: 'Jamur Crispy Balado Pedas 100g' },
+                          { value: '3', label: 'Jamur Crispy BBQ Smoked 100g' },
+                        ]
+                  }
+                  value={spkForm.productId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const found = products.find((p) => p.id === val);
+                    setSpkForm((prev) => ({
+                      ...prev,
+                      productId: val,
+                      productVariant: found?.name || prev.productVariant,
+                    }));
+                  }}
+                />
+              </FormField>
+            )}
+
+            <FormField label="Tanggal Penerbitan SPK" required>
               <Input
                 type="date"
                 value={spkForm.startDate}
@@ -777,26 +952,20 @@ export default function ProductionPage() {
             </FormField>
           </div>
 
-          <FormField label="Varian Rasa Produk" required>
-            <Input
-              value={spkForm.productVariant}
-              onChange={(e) => setSpkForm({ ...spkForm, productVariant: e.target.value })}
-              placeholder="Contoh: Jamur Crispy Original 100g"
-            />
-          </FormField>
-
-          <FormField label="Target Output Produksi (pcs kemasan)" required>
+          <FormField label={checkedSpk.size > 0 ? "Total Target Output Produksi (pcs kemasan dari SPK terpilih)" : "Target Output Produksi (pcs kemasan)"} required>
             <Input
               type="number"
-              value={spkForm.targetQuantity}
+              value={checkedSpk.size > 0 ? totalTargetPcs : spkForm.targetQuantity}
               onChange={(e) => setSpkForm({ ...spkForm, targetQuantity: e.target.value })}
               placeholder="500"
+              readOnly={checkedSpk.size > 0}
+              style={{ backgroundColor: checkedSpk.size > 0 ? 'var(--bg-subtle)' : 'var(--bg-default)' }}
             />
           </FormField>
 
           <FormField label="Catatan / Instruksi Khusus Operator">
             <Textarea
-              rows={3}
+              rows={2}
               value={spkForm.notes}
               onChange={(e) => setSpkForm({ ...spkForm, notes: e.target.value })}
               placeholder="Contoh: Wajan #2, gunakan bumbu racikan baru..."

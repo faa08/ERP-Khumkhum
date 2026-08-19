@@ -648,3 +648,151 @@ export async function getProductionFormOptions(): Promise<{
     return { success: false, error: err.message };
   }
 }
+
+// ─────────────────────────────────────────────
+// SPK SUGGESTIONS (Auto-generated from History)
+// ─────────────────────────────────────────────
+
+export interface SpkSuggestion {
+  id: string;
+  product_id: string;
+  product_name: string;
+  product_sku: string;
+  target_kg: number;
+  target_pcs: number;
+  avg_weekly_kg: number;
+  total_historical_kg: number;
+  weeks_of_data: number;
+  bom: {
+    material: string;
+    needed_kg: number;
+    note: string;
+  }[];
+}
+
+export async function getSpkSuggestions(): Promise<{
+  success: boolean;
+  suggestions?: SpkSuggestion[];
+  error?: string;
+}> {
+  try {
+    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE', 'MANAGEMENT']);
+
+    // 1. Get all products
+    const { data: products } = await supabaseAdmin
+      .from('products')
+      .select('id, name, sku')
+      .order('name');
+
+    if (!products || products.length === 0) {
+      return { success: true, suggestions: [] };
+    }
+
+    // 2. Get historical production data (up to 3 years = ~156 weeks)
+    const threeYearsAgo = new Date();
+    threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
+
+    const { data: historicalOrders } = await supabaseAdmin
+      .from('production_orders')
+      .select('product_id, product_variant, output_weight, created_at, status')
+      .in('status', ['COMPLETED', 'RELEASED', 'COMPLETED_WIP'])
+      .gte('created_at', threeYearsAgo.toISOString());
+
+    // 3. Also check stock_movements OUT for sales velocity
+    const { data: salesMovements } = await supabaseAdmin
+      .from('stock_movements')
+      .select('quantity, movement_date')
+      .eq('movement_type', 'OUT')
+      .gte('movement_date', threeYearsAgo.toISOString());
+
+    // 4. Calculate average production per product per week
+    const now = new Date();
+    const totalWeeks = Math.max(1, Math.ceil(
+      (now.getTime() - threeYearsAgo.getTime()) / (7 * 24 * 60 * 60 * 1000)
+    ));
+
+    // Aggregate production by product
+    const productionByProduct: Record<string, { totalKg: number; count: number }> = {};
+    (historicalOrders || []).forEach((order: any) => {
+      const pid = order.product_id || 'unknown';
+      if (!productionByProduct[pid]) {
+        productionByProduct[pid] = { totalKg: 0, count: 0 };
+      }
+      productionByProduct[pid].totalKg += Number(order.output_weight || 0);
+      productionByProduct[pid].count += 1;
+    });
+
+    // Total sales velocity as fallback
+    const totalSalesKg = (salesMovements || []).reduce(
+      (acc: number, m: any) => acc + Number(m.quantity || 0), 0
+    );
+    const avgWeeklySales = totalSalesKg / totalWeeks;
+
+    // 5. Generate suggestions per product
+    const suggestions: SpkSuggestion[] = products.map((product: any) => {
+      const history = productionByProduct[product.id];
+      
+      // Use historical production average, or fall back to even split of sales
+      let avgWeeklyKg: number;
+      let totalHistoricalKg: number;
+      let weeksOfData: number;
+
+      if (history && history.totalKg > 0) {
+        totalHistoricalKg = history.totalKg;
+        weeksOfData = Math.min(totalWeeks, Math.max(1, history.count));
+        avgWeeklyKg = totalHistoricalKg / weeksOfData;
+      } else {
+        // Fallback: distribute average sales evenly across products
+        totalHistoricalKg = 0;
+        weeksOfData = 0;
+        avgWeeklyKg = products.length > 0 ? avgWeeklySales / products.length : 10;
+      }
+
+      // Round up to reasonable numbers
+      const targetKg = Math.max(5, parseFloat(avgWeeklyKg.toFixed(1)));
+      const targetPcs = Math.ceil((targetKg * 0.75) / 0.05); // rendemen 75%, pack 50g
+
+      // BOM calculation
+      const bom = [
+        {
+          material: 'Jamur Tiram Segar (Daun)',
+          needed_kg: parseFloat((targetKg * 1.3).toFixed(1)),
+          note: 'Estimasi rendemen 75% (1.3kg daun basah/kg produk)',
+        },
+        {
+          material: 'Minyak Goreng',
+          needed_kg: parseFloat((targetKg * 0.3).toFixed(1)),
+          note: '30% serapan & sirkulasi wajan',
+        },
+        {
+          material: 'Tepung Bumbu',
+          needed_kg: parseFloat((targetKg * 0.08).toFixed(1)),
+          note: '8% rasio adonan tepung',
+        },
+        {
+          material: 'Kemasan Pouch 50g',
+          needed_kg: targetPcs,
+          note: `${targetPcs} pcs kemasan @50g`,
+        },
+      ];
+
+      return {
+        id: `suggestion-${product.id}`,
+        product_id: product.id,
+        product_name: product.name,
+        product_sku: product.sku || '-',
+        target_kg: targetKg,
+        target_pcs: targetPcs,
+        avg_weekly_kg: parseFloat(avgWeeklyKg.toFixed(2)),
+        total_historical_kg: parseFloat(totalHistoricalKg.toFixed(1)),
+        weeks_of_data: weeksOfData,
+        bom,
+      };
+    });
+
+    return { success: true, suggestions };
+  } catch (err: any) {
+    console.error('getSpkSuggestions error:', err);
+    return { success: false, error: err.message };
+  }
+}

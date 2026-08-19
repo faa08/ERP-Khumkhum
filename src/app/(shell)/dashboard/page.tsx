@@ -200,11 +200,11 @@ function ExecutiveDashboard() {
         <Card header={<strong style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Package size={18} /> Ringkasan Kapasitas Gudang</strong>}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {[
-              { name: 'Jamur Bersih', pct: 72, color: 'var(--color-success-600)' },
-              { name: 'Minyak & Tepung', pct: 45, color: 'var(--color-warning-600)' },
-              { name: 'Bumbu', pct: 58, color: 'var(--color-primary-600)' },
-              { name: 'Kemasan', pct: 88, color: 'var(--color-danger-600)' },
-              { name: 'Produk Jadi', pct: 63, color: 'var(--color-info-600)' },
+              { name: 'Jamur Bersih', pct: 0, color: 'var(--color-success-600)' },
+              { name: 'Minyak & Tepung', pct: 0, color: 'var(--color-warning-600)' },
+              { name: 'Bumbu', pct: 0, color: 'var(--color-primary-600)' },
+              { name: 'Kemasan', pct: 0, color: 'var(--color-danger-600)' },
+              { name: 'Produk Jadi', pct: 0, color: 'var(--color-info-600)' },
             ].map(wh => (
               <div key={wh.name}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>

@@ -5,51 +5,88 @@ import { requireAuth } from '@/lib/auth-guard';
 import { format } from 'date-fns';
 import type { DbFarmerHarvestEstimate } from '@/types/database';
 
-export async function getPpicData(): Promise<{
+export async function getPpicData(weekString?: string): Promise<{
   success: boolean;
   estimates?: DbFarmerHarvestEstimate[];
   weeklyTotal?: number;
+  historicalData?: number[];
   error?: string;
 }> {
   try {
     await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
 
+    let startDateStr = new Date().toISOString().split('T')[0];
+    let endDateStr = '';
+
+    if (weekString) {
+      const [y, w] = weekString.split('-W');
+      const year = parseInt(y, 10);
+      const week = parseInt(w, 10);
+
+      const jan4 = new Date(year, 0, 4);
+      const startOfJan4Week = new Date(jan4);
+      startOfJan4Week.setDate(jan4.getDate() - (jan4.getDay() || 7) + 1); 
+
+      const startDate = new Date(startOfJan4Week);
+      startDate.setDate(startDate.getDate() + (week - 1) * 7);
+
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + 6);
+
+      startDateStr = format(startDate, 'yyyy-MM-dd');
+      endDateStr = format(endDate, 'yyyy-MM-dd');
+    }
+
     // Coba ambil dari tabel farmer_harvest_estimates jika ada
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('farmer_harvest_estimates')
       .select(`
         *,
         farmer:farmers(id, name, phone_number)
       `)
-      .gte('expected_date', new Date().toISOString().split('T')[0])
+      .gte('expected_date', startDateStr);
+      
+    if (endDateStr) {
+      query = query.lte('expected_date', endDateStr);
+    }
+
+    const { data, error } = await query
       .order('expected_date', { ascending: true })
       .limit(50);
 
-    // Jika tabel belum ada, gunakan fallback data
+    // Fetch historical data for the last 7 weeks (49 days) for forecasting
+    const sevenWeeksAgo = new Date();
+    sevenWeeksAgo.setDate(sevenWeeksAgo.getDate() - 49);
+    
+    const { data: historicalRows } = await supabaseAdmin
+      .from('farmer_harvest_estimates')
+      .select('expected_date, estimated_kg')
+      .lt('expected_date', new Date().toISOString().split('T')[0])
+      .gte('expected_date', format(sevenWeeksAgo, 'yyyy-MM-dd'));
+      
+    let historicalData = Array(7).fill(0); // Default to zeros
+    
+    if (historicalRows && historicalRows.length > 0) {
+      // Bucket into 7 weeks
+      const buckets = Array(7).fill(0);
+      historicalRows.forEach(row => {
+        const d = new Date(row.expected_date);
+        const diffTime = Math.abs(new Date().getTime() - d.getTime());
+        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+        const weekIndex = 6 - Math.floor(diffDays / 7); // 6 is the most recent week, 0 is 7 weeks ago
+        if (weekIndex >= 0 && weekIndex < 7) {
+          buckets[weekIndex] += (row.estimated_kg || 0);
+        }
+      });
+      historicalData = buckets;
+    }
+
     if (error) {
-      const mockEstimates: DbFarmerHarvestEstimate[] = [
-        {
-          id: '1', farmer_id: 'f1', expected_date: format(new Date(), 'yyyy-MM-dd'),
-          estimated_kg: 45, source: 'WA_BOT', created_at: new Date().toISOString(),
-          farmer: { id: 'f1', name: 'Pak Sugeng', phone_number: '08123456789' },
-        },
-        {
-          id: '2', farmer_id: 'f2', expected_date: format(new Date(Date.now() + 86400000), 'yyyy-MM-dd'),
-          estimated_kg: 30, source: 'WA_BOT', created_at: new Date().toISOString(),
-          farmer: { id: 'f2', name: 'Pak Harto', phone_number: '08234567890' },
-        },
-        {
-          id: '3', farmer_id: 'f3', expected_date: format(new Date(Date.now() + 172800000), 'yyyy-MM-dd'),
-          estimated_kg: 55, source: 'MANUAL', created_at: new Date().toISOString(),
-          farmer: { id: 'f3', name: 'Bu Siti', phone_number: '08345678901' },
-        },
-      ];
-      const weeklyTotal = mockEstimates.reduce((s, e) => s + e.estimated_kg, 0);
-      return { success: true, estimates: mockEstimates, weeklyTotal };
+      return { success: true, estimates: [], weeklyTotal: 0, historicalData };
     }
 
     const weeklyTotal = (data || []).reduce((sum: number, e: any) => sum + (e.estimated_kg || 0), 0);
-    return { success: true, estimates: (data || []) as DbFarmerHarvestEstimate[], weeklyTotal };
+    return { success: true, estimates: (data || []) as DbFarmerHarvestEstimate[], weeklyTotal, historicalData };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

@@ -11,11 +11,8 @@ import { Select } from '@/components/ui/Select';
 import { Download, Printer, Filter, TrendingUp, Package, Factory, FileText } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
-// Mock report data
-const MOCK_REPORT_DATA = [
-  { id: '1', date: '2026-08-01', reference: 'PRD-045', details: 'Dried Mushrooms Premium', metric: '67.5 kg' },
-  { id: '2', date: '2026-08-02', reference: 'PRD-046', details: 'Mushroom Powder', metric: '200 kg' },
-];
+// Mock report data removed, defaulting to empty state
+const MOCK_REPORT_DATA: any[] = [];
 
 export default function ReportsPage() {
   const [reportType, setReportType] = useState('production');

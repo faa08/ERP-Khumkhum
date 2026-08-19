@@ -18,14 +18,26 @@ import { getInventorySummary, getInventoryForecasting } from '@/actions/inventor
 import type { DbFarmerHarvestEstimate, DbInventory } from '@/types/database';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// Simple Exponential Smoothing (alpha = 0.3)
-function exponentialSmoothing(data: number[], alpha = 0.3, periods = 4): number[] {
+// Double Exponential Smoothing (Holt's Linear Trend)
+function doubleExponentialSmoothing(data: number[], alpha = 0.3, beta = 0.2, periods = 4): number[] {
   if (data.length === 0) return Array(periods).fill(0);
-  let smoothed = data[0];
+  if (data.length === 1) return Array(periods).fill(data[0]);
+
+  let level = data[0];
+  let trend = data[1] - data[0];
+
   for (let i = 1; i < data.length; i++) {
-    smoothed = alpha * data[i] + (1 - alpha) * smoothed;
+    const prevLevel = level;
+    level = alpha * data[i] + (1 - alpha) * (level + trend);
+    trend = beta * (level - prevLevel) + (1 - beta) * trend;
   }
-  return Array(periods).fill(parseFloat(smoothed.toFixed(2)));
+
+  const forecasts = [];
+  for (let i = 1; i <= periods; i++) {
+    const f = level + i * trend;
+    forecasts.push(parseFloat(Math.max(0, f).toFixed(2))); // Prevent negative forecasts
+  }
+  return forecasts;
 }
 
 export default function PpicPage() {
@@ -41,9 +53,9 @@ export default function PpicPage() {
   const [isForecasting, setIsForecasting] = useState(false);
   const [selectedEstimateWeek, setSelectedEstimateWeek] = useState('');
 
-  // Global Forecast Mock Data
-  const historicalData = [45, 52, 38, 60, 48, 55, 42]; // mock historical weekly supply
-  const forecast = exponentialSmoothing(historicalData, 0.3, 4);
+  // Global Forecast State
+  const [historicalData, setHistoricalData] = useState<number[]>(Array(7).fill(0));
+  const forecast = doubleExponentialSmoothing(historicalData, 0.3, 0.2, 4);
   const forecastWeeks = forecast.map((kg, i) => ({
     week: `Minggu ${i + 1} (${format(addDays(new Date(), i * 7), 'd MMM', { locale: idLocale })})`,
     forecast_kg: kg,
@@ -56,13 +68,16 @@ export default function PpicPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     const [ppicRes, invRes] = await Promise.all([
-      getPpicData(),
+      getPpicData(selectedEstimateWeek),
       getInventorySummary()
     ]);
     
     if (ppicRes.success) {
       setEstimates(ppicRes.estimates || []);
       setWeeklyTotal(ppicRes.weeklyTotal || 0);
+      if (ppicRes.historicalData) {
+        setHistoricalData(ppicRes.historicalData);
+      }
     }
     
     if (invRes.success && invRes.data) {
@@ -71,7 +86,7 @@ export default function PpicPage() {
     }
     
     setIsLoading(false);
-  }, []);
+  }, [selectedEstimateWeek]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -210,7 +225,7 @@ export default function PpicPage() {
   const ForecastTab = (
     <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {/* 1. ORIGINAL PPIC FORECAST (GLOBAL) */}
-      <Card header={<strong>Proyeksi Permintaan 4 Minggu (Global - Exponential Smoothing α=0.3)</strong>}>
+      <Card header={<strong>Proyeksi Permintaan 4 Minggu (Global - Double Exponential Smoothing)</strong>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
           {forecastWeeks.map((fw, i) => (
             <div key={i} style={{
@@ -229,7 +244,7 @@ export default function PpicPage() {
           ))}
         </div>
         <div style={{ padding: 'var(--space-3)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-          <strong>Formula:</strong> F(t) = α × D(t-1) + (1-α) × F(t-1) di mana α = 0.3
+          <strong>Metode:</strong> Holt's Linear Trend (Double Exponential Smoothing) (α = 0.3, β = 0.2)
           <br />
           Data historis mingguan: {historicalData.join(', ')} kg
         </div>

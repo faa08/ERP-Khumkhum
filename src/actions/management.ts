@@ -136,16 +136,16 @@ export async function getKpiMetrics(filter: KpiFilter = { range: 'month' }): Pro
     return { success: true, data: metrics };
   } catch (err: any) {
     console.error('getKpiMetrics error:', err);
-    // Fallback mock untuk demonstrasi
+    // Removed fallback mock
     return {
       success: true,
       data: {
-        total_supply_kg: 3420,
-        avg_yield_percentage: 82.5,
-        overall_defect_rate: 3.2,
-        stock_accuracy_percentage: 98.7,
-        total_sales_revenue: 45750000,
-        total_production_batches: 24,
+        total_supply_kg: 0,
+        avg_yield_percentage: 0,
+        overall_defect_rate: 0,
+        stock_accuracy_percentage: 0,
+        total_sales_revenue: 0,
+        total_production_batches: 0,
         period_from: subDays(new Date(), 30).toISOString(),
         period_to: new Date().toISOString(),
       },
@@ -491,15 +491,10 @@ export async function getFarmerRanking(): Promise<{
     return { success: true, data: ranking };
   } catch (err: any) {
     console.error('getFarmerRanking error:', err);
-    // Fallback mock
+    // Removed fallback mock
     return {
       success: true,
-      data: [
-        { rank: 1, farmer_id: 'f1', farmer_name: 'Pak Sugeng', total_supply_kg: 1250, avg_leaf_percentage: 82.3, delivery_count: 28, grade_a_count: 24 },
-        { rank: 2, farmer_id: 'f2', farmer_name: 'Bu Siti', total_supply_kg: 980, avg_leaf_percentage: 79.5, delivery_count: 21, grade_a_count: 16 },
-        { rank: 3, farmer_id: 'f3', farmer_name: 'Pak Harto', total_supply_kg: 820, avg_leaf_percentage: 77.1, delivery_count: 18, grade_a_count: 12 },
-        { rank: 4, farmer_id: 'f4', farmer_name: 'Pak Joko', total_supply_kg: 650, avg_leaf_percentage: 75.8, delivery_count: 14, grade_a_count: 9 },
-      ],
+      data: [],
     };
   }
 }

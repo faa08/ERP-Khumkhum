@@ -22,10 +22,7 @@ interface Entity {
   isActive: boolean;
 }
 
-const MOCK_DATA: Entity[] = [
-  { id: '1', name: 'Sample Name 1', criteria: 'Sample Criteria 1', isActive: true },
-  { id: '2', name: 'Sample Name 2', criteria: 'Sample Criteria 2', isActive: true },
-];
+const MOCK_DATA: Entity[] = [];
 
 export default function SortingstandardsPage() {
   const { user } = useAuth();

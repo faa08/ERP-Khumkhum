@@ -89,3 +89,69 @@ export async function getPpicData(weekString?: string): Promise<{
     return { success: false, error: err.message };
   }
 }
+
+export async function addManualHistoricalSorting(date: string, weight: number, farmerId: string, grade: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
+
+    if (!farmerId) {
+      return { success: false, error: 'Petani harus dipilih.' };
+    }
+
+    // Cari bahan baku jamur
+    const { data: rawJamur } = await supabaseAdmin
+      .from('raw_materials')
+      .select('id')
+      .ilike('name', '%jamur%')
+      .limit(1)
+      .single();
+
+    if (!rawJamur) {
+      return { success: false, error: 'Data master bahan baku (jamur) tidak ditemukan.' };
+    }
+
+    // 1. Create a mock receiving
+    const batchNumber = `MOCK-RCV-${Date.now()}`;
+    const { data: receiving, error: rcvErr } = await supabaseAdmin
+      .from('receivings')
+      .insert([{
+        farmer_id: farmerId,
+        raw_material_id: rawJamur.id,
+        batch_number: batchNumber,
+        weight: weight,
+        status: 'SORTED',
+        received_by: user.userId,
+      }])
+      .select('id')
+      .single();
+
+    if (rcvErr || !receiving) throw rcvErr || new Error('Gagal membuat data receiving dummy');
+
+    // 2. Create the sorting record
+    const { error: sortErr } = await supabaseAdmin
+      .from('sortings')
+      .insert([{
+        receiving_id: receiving.id,
+        leaf_weight: weight,
+        stem_weight: 0,
+        leaf_percentage: grade === 'A' ? 100 : grade === 'B' ? 75 : 50,
+        quality_grade: grade,
+        is_standard_compliant: grade === 'A' || grade === 'B',
+        accepted_quantity: weight,
+        rejected_quantity: 0,
+        waste: 0,
+        sorted_by: user.userId,
+        sorting_date: new Date(date).toISOString(),
+      }]);
+
+    if (sortErr) throw sortErr;
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('addManualHistoricalSorting error:', err);
+    return { success: false, error: err.message };
+  }
+}

@@ -13,9 +13,10 @@ import { CalendarDays, TrendingUp, AlertCircle, Plus, MessageSquare, PenTool, Sp
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, addDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { getPpicData } from '@/actions/ppic';
+import { getPpicData, addManualHistoricalSorting } from '@/actions/ppic';
 import { getInventorySummary, getInventoryForecasting } from '@/actions/inventory';
-import type { DbInventory, DbFarmerHarvestEstimate } from '@/types/database';
+import { getFarmers } from '@/actions/master';
+import type { DbInventory, DbFarmerHarvestEstimate, DbFarmer } from '@/types/database';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // Double Exponential Smoothing (Holt's Linear Trend)
@@ -44,6 +45,14 @@ export default function PpicPage() {
   const [sortings, setSortings] = useState<any[]>([]);
   const [weeklyTotal, setWeeklyTotal] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Manual Input states
+  const [manualDate, setManualDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [manualWeight, setManualWeight] = useState('');
+  const [manualFarmerId, setManualFarmerId] = useState('');
+  const [manualGrade, setManualGrade] = useState('A');
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
+  const [farmersList, setFarmersList] = useState<DbFarmer[]>([]);
   
   // Forecast states
   const [products, setProducts] = useState<DbInventory[]>([]);
@@ -67,9 +76,10 @@ export default function PpicPage() {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [ppicRes, invRes] = await Promise.all([
+    const [ppicRes, invRes, farmersRes] = await Promise.all([
       getPpicData(selectedEstimateWeek),
-      getInventorySummary()
+      getInventorySummary(),
+      getFarmers()
     ]);
     
     if (ppicRes.success) {
@@ -83,6 +93,10 @@ export default function PpicPage() {
     if (invRes.success && invRes.data) {
       // Only get products for MRP per-product forecast
       setProducts(invRes.data.filter(i => i.item_type === 'PRODUCT'));
+    }
+    
+    if (farmersRes.success && farmersRes.data) {
+      setFarmersList(farmersRes.data);
     }
     
     setIsLoading(false);
@@ -110,6 +124,21 @@ export default function PpicPage() {
     };
     loadForecast();
   }, [selectedProduct, toast]);
+
+  const handleAddManualSorting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualWeight || isNaN(Number(manualWeight)) || !manualFarmerId) return;
+    setIsSubmittingManual(true);
+    const res = await addManualHistoricalSorting(manualDate, Number(manualWeight), manualFarmerId, manualGrade);
+    setIsSubmittingManual(false);
+    if (res.success) {
+      toast.success('Data historis berhasil ditambahkan');
+      setManualWeight('');
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal menambahkan data');
+    }
+  };
 
   // ── Sortings columns ───────────────────────────────────────────
   const sortColumns: ColumnDef<any>[] = [
@@ -175,6 +204,49 @@ export default function PpicPage() {
           <Input type="week" value={selectedEstimateWeek} onChange={e => setSelectedEstimateWeek(e.target.value)} style={{ width: '200px' }} />
         </div>
       </div>
+
+      <Card>
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>Input Manual Data Historis (Bypass)</h4>
+          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Gunakan form ini untuk menambahkan data historis berat daun jamur (hasil sortasi) secara manual untuk keperluan forecasting.</p>
+        </div>
+        <form onSubmit={handleAddManualSorting} style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <FormField label="Petani">
+            <select
+              value={manualFarmerId}
+              onChange={e => setManualFarmerId(e.target.value)}
+              style={{ padding: '8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}
+              required
+            >
+              <option value="">-- Pilih Petani --</option>
+              {farmersList.map(f => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Tanggal Sortasi">
+            <Input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} required />
+          </FormField>
+          <FormField label="Berat Daun (kg)">
+            <Input type="number" step="0.1" value={manualWeight} onChange={e => setManualWeight(e.target.value)} placeholder="Misal: 45.5" style={{ width: '120px' }} required />
+          </FormField>
+          <FormField label="Grade">
+            <select
+              value={manualGrade}
+              onChange={e => setManualGrade(e.target.value)}
+              style={{ padding: '8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}
+            >
+              <option value="A">Grade A</option>
+              <option value="B">Grade B</option>
+              <option value="C">Grade C</option>
+            </select>
+          </FormField>
+          <Button type="submit" disabled={isSubmittingManual || !manualWeight || !manualFarmerId}>
+            {isSubmittingManual ? 'Menyimpan...' : 'Simpan Data'}
+          </Button>
+        </form>
+      </Card>
+
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
         <Card>

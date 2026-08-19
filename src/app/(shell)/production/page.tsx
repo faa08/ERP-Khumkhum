@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { Drawer } from '@/components/ui/Drawer';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
@@ -527,13 +526,13 @@ export default function ProductionPage() {
       <DataTable columns={columns} data={orders} />
 
       {/* ───────────────────────────────────────────── */}
-      {/* 1. DRAWER: BUAT SPK PRODUKSI BARU             */}
+      {/* 1. MODAL (POP UP): BUAT SPK PRODUKSI BARU     */}
       {/* ───────────────────────────────────────────── */}
-      <Drawer
+      <Modal
         isOpen={createDrawerOpen}
         onClose={() => setCreateDrawerOpen(false)}
         title="Penerbitan Surat Perintah Kerja (SPK) Baru"
-        size="md"
+        size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setCreateDrawerOpen(false)}>
@@ -601,7 +600,7 @@ export default function ProductionPage() {
             />
           </FormField>
         </div>
-      </Drawer>
+      </Modal>
 
       {/* ───────────────────────────────────────────── */}
       {/* 2. MODAL: CATAT KONSUMSI BAHAN BAKU (BOM)     */}

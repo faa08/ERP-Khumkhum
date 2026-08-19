@@ -2,7 +2,6 @@ import React from 'react';
 import type { Metadata } from 'next';
 import styles from './auth.module.css';
 import '../globals.css';
-import { ShieldCheck, Sprout, TrendingUp, CheckCircle2 } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'Masuk — KhumKhum ERP Agroindustri Jamur',
@@ -11,77 +10,43 @@ export const metadata: Metadata = {
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className={styles.layout} data-theme="dark">
+    <div className={styles.layout}>
       {/* Left Login Form Panel */}
       <main className={styles.panel}>
-        <div className={styles.panelGlow} aria-hidden="true" />
         {children}
       </main>
 
-      {/* Right Visual Hero Agroindustry Showcase */}
+      {/* Right Visual Hero Showcase (Clean & Simple Landing Theme) */}
       <aside className={styles.visual} aria-label="KhumKhum Agroindustry Showcase">
-        <div className={styles.visualOverlay} />
-        <div className={styles.visualContent}>
-          {/* Top Brand Tag */}
-          <div>
-            <div className={styles.tagBadge}>
-              <Sprout size={16} className={styles.tagIcon} />
-              <span>Agroindustri Jamur Tiram Modern</span>
-            </div>
+        <div className={styles.visualPattern} />
+        <div className={styles.visualCard}>
+          {/* Eyebrow */}
+          <span className={styles.eyebrow}>Oleh-oleh Khas Kulon Progo</span>
 
-            {/* Hero Headline */}
-            <h2 className={styles.heroTitle}>
-              Dari Kumbung Petani <br />
-              Hingga <span className={styles.highlightText}>Snack Jamur Crispy</span> Berkualitas
-            </h2>
+          {/* Headline */}
+          <h2 className={styles.heroTitle}>
+            Kriuk yang bikin <span className={styles.heroHighlight}>nagih</span>, dari jamur tiram pilihan.
+          </h2>
 
-            <p className={styles.heroDesc}>
-              Platform ERP cerdas yang mengintegrasikan rantai pasok jamur tiram: pencatatan panen petani binaan, sortasi otomatis, rendemen wajan produksi, hingga kepatuhan standar mutu pangan.
-            </p>
-          </div>
+          <p className={styles.heroDesc}>
+            KhumKhum Jamur Crispy diracik dari jamur tiram segar petani lokal, digoreng kering tanpa MSG, dan terintegrasi dari hulu hingga hilir.
+          </p>
 
-          {/* Product Line Cutout Banner */}
-          <div className={styles.productShowcase}>
-            <div className={styles.productGlow} />
+          {/* Product Line Showcase */}
+          <div className={styles.productImgWrap}>
             <img
               src="/No-Background-KhumKhum-1536x864.webp"
-              alt="Lini Produk KhumKhum Jamur Crispy"
+              alt="KhumKhum Jamur Crispy 5 Varian Rasa"
               className={styles.productImg}
             />
           </div>
 
-          {/* Bottom Floating Stats & Certifications */}
-          <div>
-            <div className={styles.statsGrid}>
-              <div className={styles.statCard}>
-                <div className={styles.statIconWrap}>
-                  <ShieldCheck size={20} className={styles.statIcon} />
-                </div>
-                <div>
-                  <div className={styles.statVal}>100% Terlacak</div>
-                  <div className={styles.statLabel}>Silsilah Batch Panen ke QC</div>
-                </div>
-              </div>
-
-              <div className={styles.statCard}>
-                <div className={styles.statIconWrap}>
-                  <TrendingUp size={20} className={styles.statIcon} />
-                </div>
-                <div>
-                  <div className={styles.statVal}>&ge; 80% Rendemen</div>
-                  <div className={styles.statLabel}>Standar Penggorengan Presisi</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quality Standard Badges */}
-            <div className={styles.visualFooter}>
-              <div className={styles.certPills}>
-                <span className={styles.certPill}><CheckCircle2 size={13} /> Sertifikasi Halal</span>
-                <span className={styles.certPill}><CheckCircle2 size={13} /> P-IRT Resmi BPOM</span>
-                <span className={styles.certPill}><CheckCircle2 size={13} /> Jogja Mark Certified</span>
-              </div>
-            </div>
+          {/* Trust markers */}
+          <div className={styles.trustPills}>
+            <span className={styles.trustPill}>Halal LPPOM MUI</span>
+            <span className={styles.trustPill}>P-IRT Terdaftar</span>
+            <span className={styles.trustPill}>Tanpa MSG</span>
+            <span className={styles.trustPill}>Merek Terdaftar</span>
           </div>
         </div>
       </aside>

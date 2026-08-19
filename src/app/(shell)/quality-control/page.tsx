@@ -14,6 +14,7 @@ import { Select } from '@/components/ui/Select';
 import { Radio } from '@/components/ui/Radio';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -42,6 +43,9 @@ import {
 import type { DbQcInspection, DbProductionOrder, QcParetoItem } from '@/types/database';
 
 export default function QualityControlPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [inspections, setInspections] = useState<DbQcInspection[]>([]);
   const [pendingBatches, setPendingBatches] = useState<DbProductionOrder[]>([]);
   const [paretoData, setParetoData] = useState<QcParetoItem[]>([]);
@@ -215,18 +219,21 @@ export default function QualityControlPage() {
     {
       id: 'action',
       header: '',
-      cell: ({ row }) => (
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={() => handleOpenInspection(row.original)}
-          leftIcon={<ShieldCheck size={14} />}
-        >
-          Uji Mutu Sampling
-        </Button>
-      ),
+      cell: ({ row }) => {
+        if (isManagement) return null;
+        return (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => handleOpenInspection(row.original)}
+            leftIcon={<ShieldCheck size={14} />}
+          >
+            Uji Mutu Sampling
+          </Button>
+        );
+      },
     },
-  ], [pendingBatches]);
+  ], [pendingBatches, isManagement]);
 
   // Columns: History Inspections
   const historyColumns = useMemo<ColumnDef<DbQcInspection>[]>(() => [
@@ -382,9 +389,11 @@ export default function QualityControlPage() {
         description="Inspeksi mutu sampling organoleptik & fisik, penetapan keputusan rilis produk jadi, analisis pareto defect, dan penerbitan sertifikat kelayakan mutu."
         breadcrumbs={[{ label: 'Operasional' }, { label: 'Quality Control' }]}
         actions={
-          <Button variant="primary" onClick={() => handleOpenInspection()} leftIcon={<Plus size={16} />}>
-            Catat Inspeksi Baru
-          </Button>
+          !isManagement ? (
+            <Button variant="primary" onClick={() => handleOpenInspection()} leftIcon={<Plus size={16} />}>
+              Catat Inspeksi Baru
+            </Button>
+          ) : undefined
         }
       />
 

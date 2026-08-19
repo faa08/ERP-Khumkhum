@@ -11,12 +11,16 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { Plus, MoreVertical, Edit2, Ban, CheckCircle, Eye, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { getFarmers, createFarmer, updateFarmer, deleteFarmer } from '@/actions/master';
 import type { DbFarmer } from '@/types/database';
 
 export default function FarmersPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [data, setData] = useState<DbFarmer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -120,9 +124,9 @@ export default function FarmersPage() {
     { accessorKey: 'contact', header: 'Contact Person' },
     { accessorKey: 'phone_number', header: 'Phone' },
     { accessorKey: 'address', header: 'Address' },
-    {
+    ...(isManagement ? [] : [{
       id: 'actions',
-      cell: ({ row }) => (
+      cell: ({ row }: { row: any }) => (
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
@@ -138,8 +142,8 @@ export default function FarmersPage() {
           ]}
         />
       )
-    }
-  ], []);
+    }])
+  ], [isManagement]);
 
   return (
     <div>
@@ -147,7 +151,7 @@ export default function FarmersPage() {
         title="Data Induk Petani"
         description="Manage farmer partners and suppliers."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Farmers' }]}
-        actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Farmer</Button>}
+        actions={!isManagement ? <Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Farmer</Button> : undefined}
       />
       <DataTable columns={columns} data={data} />
 

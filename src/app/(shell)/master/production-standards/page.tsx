@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Factory,
   Save,
@@ -21,6 +22,9 @@ import { getProductionStandards, saveProductionStandards } from '@/actions/stand
 import type { ProductionStandardConfig, BomRecipe } from '@/types/database';
 
 export default function ProductionStandardsPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [config, setConfig] = useState<ProductionStandardConfig>({
     min_yield_percentage: 80.0,
     warning_yield_percentage: 75.0,
@@ -82,14 +86,16 @@ export default function ProductionStandardsPage() {
         description="Konfigurasi target rendemen efisiensi wajan, suhu & durasi penggorengan, serta standar kebutuhan bahan per 1 kg jamur tiram segar."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Standar Produksi' }]}
         actions={
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            disabled={isSaving || isLoading}
-            leftIcon={<Save size={16} />}
-          >
-            {isSaving ? 'Menyimpan...' : 'Simpan Perubahan Standar'}
-          </Button>
+          !isManagement ? (
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={isSaving || isLoading}
+              leftIcon={<Save size={16} />}
+            >
+              {isSaving ? 'Menyimpan...' : 'Simpan Perubahan Standar'}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -98,7 +104,7 @@ export default function ProductionStandardsPage() {
         <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Scale size={18} color="var(--color-primary-600)" /> <strong>Ambang Batas Rendemen (%)</strong></div>}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             <FormField label="Target Efisiensi Rendemen Minimum (%)" required>
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 step="0.5"
                 value={config.min_yield_percentage}
@@ -110,7 +116,7 @@ export default function ProductionStandardsPage() {
             </FormField>
 
             <FormField label="Batas Peringatan Rendemen Rendah / Warning (%)" required>
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 step="0.5"
                 value={config.warning_yield_percentage}
@@ -127,7 +133,7 @@ export default function ProductionStandardsPage() {
         <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Flame size={18} color="var(--color-warning-600)" /> <strong>Parameter Penggorengan & Penirisan</strong></div>}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
             <FormField label="Suhu Minyak Min (°C)">
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 value={config.oil_temp_min}
                 onChange={(e) => setConfig({ ...config, oil_temp_min: Number(e.target.value) })}
@@ -135,7 +141,7 @@ export default function ProductionStandardsPage() {
             </FormField>
 
             <FormField label="Suhu Minyak Maks (°C)">
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 value={config.oil_temp_max}
                 onChange={(e) => setConfig({ ...config, oil_temp_max: Number(e.target.value) })}
@@ -143,7 +149,7 @@ export default function ProductionStandardsPage() {
             </FormField>
 
             <FormField label="Durasi Goreng (Menit)">
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 value={config.frying_duration_minutes}
                 onChange={(e) => setConfig({ ...config, frying_duration_minutes: Number(e.target.value) })}
@@ -151,7 +157,7 @@ export default function ProductionStandardsPage() {
             </FormField>
 
             <FormField label="Durasi Spinner Minyak (Menit)">
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 value={config.spinning_duration_minutes}
                 onChange={(e) => setConfig({ ...config, spinning_duration_minutes: Number(e.target.value) })}
@@ -164,7 +170,7 @@ export default function ProductionStandardsPage() {
       {/* 3. BOM Recipes Configuration */}
       <Card header={<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Factory size={18} color="var(--color-success-600)" /> <strong>Resep Bill of Materials (BOM) Standar per 1 kg Jamur Bersih</strong></div>
-        <Button variant="secondary" size="sm" onClick={handleAddRecipe} leftIcon={<Plus size={14} />}>Tambah Varian Resep</Button>
+        {!isManagement && <Button variant="secondary" size="sm" onClick={handleAddRecipe} leftIcon={<Plus size={14} />}>Tambah Varian Resep</Button>}
       </div>}>
         <p style={{ margin: 0, marginBottom: 'var(--space-3)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
           Rasio kebutuhan bahan pembantu per 1.0 kg jamur tiram segar untuk estimasi kebutuhan bahan otomatis (MRP).
@@ -186,7 +192,7 @@ export default function ProductionStandardsPage() {
             >
               <div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Nama Produk / Varian</span>
-                <Input
+                <Input disabled={isManagement}
                   value={recipe.product_name}
                   onChange={(e) => {
                     const updated = [...config.bom_recipes];
@@ -198,7 +204,7 @@ export default function ProductionStandardsPage() {
 
               <div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Jamur (kg)</span>
-                <Input
+                <Input disabled={isManagement}
                   type="number"
                   step="0.1"
                   value={recipe.raw_mushroom_ratio}
@@ -212,7 +218,7 @@ export default function ProductionStandardsPage() {
 
               <div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Premiks (kg)</span>
-                <Input
+                <Input disabled={isManagement}
                   type="number"
                   step="0.05"
                   value={recipe.premix_flour_ratio}
@@ -226,7 +232,7 @@ export default function ProductionStandardsPage() {
 
               <div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Minyak (L)</span>
-                <Input
+                <Input disabled={isManagement}
                   type="number"
                   step="0.05"
                   value={recipe.cooking_oil_ratio}
@@ -240,7 +246,7 @@ export default function ProductionStandardsPage() {
 
               <div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Bumbu (kg)</span>
-                <Input
+                <Input disabled={isManagement}
                   type="number"
                   step="0.01"
                   value={recipe.seasoning_ratio}
@@ -253,14 +259,16 @@ export default function ProductionStandardsPage() {
               </div>
 
               <div style={{ paddingTop: '16px' }}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRemoveRecipe(index)}
-                  style={{ color: 'var(--color-danger-600)' }}
-                >
-                  <Trash2 size={16} />
-                </Button>
+                {!isManagement && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveRecipe(index)}
+                    style={{ color: 'var(--color-danger-600)' }}
+                  >
+                    <Trash2 size={16} />
+                  </Button>
+                )}
               </div>
             </div>
           ))}

@@ -10,12 +10,16 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { getCustomers, createCustomer, updateCustomer, deleteCustomer } from '@/actions/master';
 import type { DbCustomer } from '@/types/database';
 
 export default function CustomersPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [data, setData] = useState<DbCustomer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -117,9 +121,9 @@ export default function CustomersPage() {
     { accessorKey: 'name', header: 'Name' },
     { accessorKey: 'contact', header: 'Contact Person' },
     { accessorKey: 'address', header: 'Address' },
-    {
+    ...(isManagement ? [] : [{
       id: 'actions',
-      cell: ({ row }) => (
+      cell: ({ row }: { row: any }) => (
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
@@ -135,8 +139,8 @@ export default function CustomersPage() {
           ]}
         />
       )
-    }
-  ], []);
+    }])
+  ], [isManagement]);
 
   return (
     <div>
@@ -144,7 +148,7 @@ export default function CustomersPage() {
         title="Data Induk Pelanggan"
         description="Manage customer data."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Customers' }]}
-        actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Customer</Button>}
+        actions={!isManagement ? <Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Customer</Button> : undefined}
       />
       <DataTable columns={columns} data={data} />
 

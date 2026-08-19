@@ -10,12 +10,16 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse } from '@/actions/master';
 import type { DbWarehouse } from '@/types/database';
 
 export default function WarehousesPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [data, setData] = useState<DbWarehouse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -115,9 +119,9 @@ export default function WarehousesPage() {
   const columns = useMemo<ColumnDef<DbWarehouse>[]>(() => [
     { accessorKey: 'name', header: 'Name' },
     { accessorKey: 'location', header: 'Location' },
-    {
+    ...(isManagement ? [] : [{
       id: 'actions',
-      cell: ({ row }) => (
+      cell: ({ row }: { row: any }) => (
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
@@ -133,8 +137,8 @@ export default function WarehousesPage() {
           ]}
         />
       )
-    }
-  ], []);
+    }])
+  ], [isManagement]);
 
   return (
     <div>
@@ -142,7 +146,7 @@ export default function WarehousesPage() {
         title="Data Induk Gudang"
         description="Manage warehouse locations."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Warehouses' }]}
-        actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Warehouse</Button>}
+        actions={!isManagement ? <Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Warehouse</Button> : undefined}
       />
       <DataTable columns={columns} data={data} />
 

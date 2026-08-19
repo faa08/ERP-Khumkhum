@@ -40,11 +40,8 @@ import {
   recordMaterialConsumption,
   recordProductionResult,
   updateProductionOrderStatus,
-  getProductionOverviewMetrics,
-  getProductionFormOptions,
-  type CreateProductionOrderInput,
-  type MaterialConsumptionItem,
-} from '@/actions/production';
+import { getProductionOverviewMetrics, getProductionFormOptions, type CreateProductionOrderInput, type MaterialConsumptionItem } from '@/actions/production';
+import { getPpicData } from '@/actions/ppic';
 import type { DbProductionOrder, DbProduct, DbRawMaterial } from '@/types/database';
 
 export default function ProductionPage() {
@@ -57,6 +54,7 @@ export default function ProductionPage() {
   });
   const [products, setProducts] = useState<DbProduct[]>([]);
   const [rawMaterials, setRawMaterials] = useState<(DbRawMaterial & { available_stock?: number })[]>([]);
+  const [ppicWeeklyTotal, setPpicWeeklyTotal] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(true);
 
   // Drawers & Modals state
@@ -110,10 +108,11 @@ export default function ProductionPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [ordersRes, metricsRes, optionsRes] = await Promise.all([
+      const [ordersRes, metricsRes, optionsRes, ppicRes] = await Promise.all([
         getProductionOrders(),
         getProductionOverviewMetrics(),
         getProductionFormOptions(),
+        getPpicData(),
       ]);
 
       if (ordersRes.success && ordersRes.data) {
@@ -125,6 +124,9 @@ export default function ProductionPage() {
       if (optionsRes.success) {
         if (optionsRes.products) setProducts(optionsRes.products);
         if (optionsRes.rawMaterials) setRawMaterials(optionsRes.rawMaterials);
+      }
+      if (ppicRes.success && ppicRes.weeklyTotal !== undefined) {
+        setPpicWeeklyTotal(ppicRes.weeklyTotal);
       }
     } catch (err: any) {
       console.error('Gagal memuat data lini produksi:', err);
@@ -550,6 +552,27 @@ export default function ProductionPage() {
             <strong>Format Nomor Batch Otomatis:</strong> <code>PRD-YYYYMMDD-XXXX</code>
             <br />Nomor batch unik akan diterbitkan sistem sebagai identitas pelacakan ketertelusuran 2-arah.
           </div>
+
+          {ppicWeeklyTotal > 0 && (
+            <div style={{ padding: 'var(--space-3)', background: 'var(--color-success-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-success-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <strong style={{ color: 'var(--color-success-800)' }}>💡 Rekomendasi Target PPIC</strong>
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-success-700)', marginTop: '4px' }}>
+                  Berdasarkan estimasi panen <strong>{ppicWeeklyTotal} kg</strong> minggu ini,<br/>kebutuhan produksi adalah <strong>{Math.ceil(ppicWeeklyTotal * 0.75 / 0.05)} kemasan (pcs)</strong>.
+                </div>
+              </div>
+              <Button 
+                variant="secondary" 
+                size="sm" 
+                onClick={() => {
+                  setSpkForm(f => ({ ...f, targetQuantity: String(Math.ceil(ppicWeeklyTotal * 0.75 / 0.05)) }));
+                  toast.success('Target Output disesuaikan dengan rekomendasi PPIC');
+                }}
+              >
+                Gunakan Angka Ini
+              </Button>
+            </div>
+          )}
 
           <FormField label="Pilih Produk Jadi (SKU)" required>
             <Select

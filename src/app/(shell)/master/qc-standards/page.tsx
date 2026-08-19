@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import {
   ShieldCheck,
   Save,
@@ -21,6 +22,9 @@ import { getQcStandards, saveQcStandards } from '@/actions/standards';
 import type { QcStandardConfig, DefectCategoryConfig } from '@/types/database';
 
 export default function QcStandardsPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [config, setConfig] = useState<QcStandardConfig>({
     max_defect_rate: 5.0,
     max_moisture_percentage: 12.0,
@@ -78,14 +82,16 @@ export default function QcStandardsPage() {
         description="Konfigurasi batas toleransi cacat produk jadi pangan, batas kadar air maksimum, ukuran sampling minimum, dan klasifikasi tingkat keparahan cacat."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Standar QC' }]}
         actions={
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            disabled={isSaving || isLoading}
-            leftIcon={<Save size={16} />}
-          >
-            {isSaving ? 'Menyimpan...' : 'Simpan Perubahan Standar'}
-          </Button>
+          !isManagement ? (
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={isSaving || isLoading}
+              leftIcon={<Save size={16} />}
+            >
+              {isSaving ? 'Menyimpan...' : 'Simpan Perubahan Standar'}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -94,7 +100,7 @@ export default function QcStandardsPage() {
         <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><ShieldCheck size={18} color="var(--color-primary-600)" /> <strong>Batas Ambang Mutu & Sampling</strong></div>}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             <FormField label="Maksimal Batas Cacat Toleransi / Defect Rate (%)" required>
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 step="0.5"
                 value={config.max_defect_rate}
@@ -106,7 +112,7 @@ export default function QcStandardsPage() {
             </FormField>
 
             <FormField label="Maksimal Kadar Air Jamur Crispy Matang (%)" required>
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 step="0.5"
                 value={config.max_moisture_percentage}
@@ -118,7 +124,7 @@ export default function QcStandardsPage() {
             </FormField>
 
             <FormField label="Ukuran Sampel Minimum per Batch (pcs kemasan)" required>
-              <Input
+              <Input disabled={isManagement}
                 type="number"
                 value={config.min_sample_size}
                 onChange={(e) => setConfig({ ...config, min_sample_size: Number(e.target.value) })}
@@ -149,7 +155,7 @@ export default function QcStandardsPage() {
       {/* 3. Defect Categories Configuration */}
       <Card header={<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><AlertTriangle size={18} color="var(--color-warning-600)" /> <strong>Master Klasifikasi Jenis Cacat Mutu</strong></div>
-        <Button variant="secondary" size="sm" onClick={handleAddCategory} leftIcon={<Plus size={14} />}>Tambah Jenis Cacat</Button>
+        {!isManagement && <Button variant="secondary" size="sm" onClick={handleAddCategory} leftIcon={<Plus size={14} />}>Tambah Jenis Cacat</Button>}
       </div>}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {config.defect_categories.map((cat, index) => (
@@ -167,7 +173,7 @@ export default function QcStandardsPage() {
             >
               <div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Deskripsi Cacat</span>
-                <Input
+                <Input disabled={isManagement}
                   value={cat.name}
                   onChange={(e) => {
                     const updated = [...config.defect_categories];
@@ -179,7 +185,7 @@ export default function QcStandardsPage() {
 
               <div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Tingkat Keparahan</span>
-                <Select
+                <Select disabled={isManagement}
                   options={[
                     { value: 'CRITICAL', label: 'Kritis (Critical)' },
                     { value: 'HIGH', label: 'Tinggi (High)' },
@@ -197,7 +203,7 @@ export default function QcStandardsPage() {
 
               <div>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Bobot Penalti</span>
-                <Input
+                <Input disabled={isManagement}
                   type="number"
                   step="0.1"
                   value={cat.weight}
@@ -210,14 +216,16 @@ export default function QcStandardsPage() {
               </div>
 
               <div style={{ paddingTop: '16px' }}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleRemoveCategory(index)}
-                  style={{ color: 'var(--color-danger-600)' }}
-                >
-                  <Trash2 size={16} />
-                </Button>
+                {!isManagement && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveCategory(index)}
+                    style={{ color: 'var(--color-danger-600)' }}
+                  >
+                    <Trash2 size={16} />
+                  </Button>
+                )}
               </div>
             </div>
           ))}

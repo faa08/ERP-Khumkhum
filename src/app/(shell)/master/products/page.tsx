@@ -10,12 +10,16 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { getProducts, createProduct, updateProduct, deleteProduct } from '@/actions/master';
 import type { DbProduct } from '@/types/database';
 
 export default function ProductsPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [data, setData] = useState<DbProduct[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -117,9 +121,9 @@ export default function ProductsPage() {
     { accessorKey: 'sku', header: 'SKU' },
     { accessorKey: 'name', header: 'Name' },
     { accessorKey: 'description', header: 'Description' },
-    {
+    ...(isManagement ? [] : [{
       id: 'actions',
-      cell: ({ row }) => (
+      cell: ({ row }: { row: any }) => (
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
@@ -135,8 +139,8 @@ export default function ProductsPage() {
           ]}
         />
       )
-    }
-  ], []);
+    }])
+  ], [isManagement]);
 
   return (
     <div>
@@ -144,7 +148,7 @@ export default function ProductsPage() {
         title="Data Induk Produk"
         description="Manage finished products catalog."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Products' }]}
-        actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Product</Button>}
+        actions={!isManagement ? <Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Product</Button> : undefined}
       />
       <DataTable columns={columns} data={data} />
 

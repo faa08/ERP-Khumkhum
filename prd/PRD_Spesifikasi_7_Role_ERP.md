@@ -570,7 +570,8 @@ CREATE TABLE farmer_harvest_estimates (
     expected_date DATE NOT NULL,
     estimated_kg DECIMAL(10,2) NOT NULL,
     source VARCHAR(20) DEFAULT 'WA_BOT',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    CONSTRAINT unique_farmer_date UNIQUE(farmer_id, expected_date)
 );
 
 -- 10. Tabel Audit Logs

@@ -16,7 +16,8 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { getReceivings, createReceiving } from '@/actions/receiving';
 import { getFarmers, getRawMaterials } from '@/actions/master';
-import type { DbReceiving } from '@/types/database';
+import { getPpicData } from '@/actions/ppic';
+import type { DbReceiving, DbFarmerHarvestEstimate } from '@/types/database';
 
 interface FormState {
   farmer_id: string;
@@ -38,6 +39,7 @@ export default function ReceivingPage() {
   const [data, setData] = useState<DbReceiving[]>([]);
   const [farmers, setFarmers] = useState<{ id: string; name: string; phone_number?: string | null }[]>([]);
   const [rawMaterials, setRawMaterials] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [ppicEstimates, setPpicEstimates] = useState<DbFarmerHarvestEstimate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -61,14 +63,16 @@ export default function ReceivingPage() {
   // ── Load data ───────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [recRes, farmRes, rmRes] = await Promise.all([
+    const [recRes, farmRes, rmRes, ppicRes] = await Promise.all([
       getReceivings(),
       getFarmers(),
       getRawMaterials(),
+      getPpicData(),
     ]);
     if (recRes.success && recRes.data) setData(recRes.data);
     if (farmRes.success) setFarmers(farmRes.data as any);
     if (rmRes.success) setRawMaterials(rmRes.data as any);
+    if (ppicRes.success && ppicRes.estimates) setPpicEstimates(ppicRes.estimates);
     setIsLoading(false);
   }, []);
 
@@ -200,6 +204,39 @@ export default function ReceivingPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {ppicEstimates.length > 0 && (
+            <div style={{ padding: 'var(--space-3)', background: 'var(--color-info-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-info-200)' }}>
+              <FormField label="Tarik Data Estimasi PPIC (Opsional)">
+                <select
+                  onChange={e => {
+                    const est = ppicEstimates.find(x => x.id === e.target.value);
+                    if (est) {
+                      setForm(f => ({
+                        ...f,
+                        farmer_id: est.farmer_id,
+                        weight_sent: String(est.estimated_kg),
+                      }));
+                      toast.info(`Data otomatis diisi dari estimasi PPIC (${est.estimated_kg} kg)`);
+                    }
+                  }}
+                  style={{
+                    width: '100%', padding: 'var(--space-2) var(--space-3)',
+                    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+                    background: 'var(--bg-default)', color: 'var(--text-primary)',
+                    fontSize: 'var(--text-sm)',
+                  }}
+                >
+                  <option value="">-- Pilih Estimasi Hari Ini --</option>
+                  {ppicEstimates.map(est => (
+                    <option key={est.id} value={est.id}>
+                      {est.farmer?.name || est.farmer_id} - {est.estimated_kg} kg ({est.source === 'WA_BOT' ? 'WA' : 'Manual'})
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
+          )}
+
           <FormField label="Petani Mitra" required>
             <select
               value={form.farmer_id}

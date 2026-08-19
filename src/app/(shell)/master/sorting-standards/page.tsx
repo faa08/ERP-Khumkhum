@@ -11,6 +11,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { Plus, MoreVertical, Edit2, Ban, CheckCircle, Eye } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 
@@ -27,6 +28,9 @@ const MOCK_DATA: Entity[] = [
 ];
 
 export default function SortingstandardsPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [data, setData] = useState<Entity[]>(MOCK_DATA);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Entity | null>(null);
@@ -71,25 +75,27 @@ export default function SortingstandardsPage() {
     },
     {
       id: 'actions',
-      cell: ({ row }) => (
+      cell: ({ row }: { row: any }) => (
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
             { id: 'view', label: 'View Details', icon: <Eye size={14} /> },
-            { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
-            { divider: true, id: 'div1', label: '' },
-            { 
-              id: 'toggle', 
-              label: row.original.isActive ? 'Deactivate' : 'Activate', 
-              icon: row.original.isActive ? <Ban size={14} /> : <CheckCircle size={14} />,
-              danger: row.original.isActive,
-              onClick: () => handleToggleStatus(row.original)
-            },
+            ...(!isManagement ? [
+              { id: 'edit', label: 'Edit', icon: <Edit2 size={14} />, onClick: () => handleEdit(row.original) },
+              { divider: true, id: 'div1', label: '' },
+              { 
+                id: 'toggle', 
+                label: row.original.isActive ? 'Deactivate' : 'Activate', 
+                icon: row.original.isActive ? <Ban size={14} /> : <CheckCircle size={14} />,
+                danger: row.original.isActive,
+                onClick: () => handleToggleStatus(row.original)
+              },
+            ] : [])
           ]}
         />
       )
     }
-  ], [data]);
+  ], [data, isManagement]);
 
   return (
     <div>
@@ -97,7 +103,7 @@ export default function SortingstandardsPage() {
         title="Data Induk Standar Sortasi"
         description="Manage sorting standards and criteria."
         breadcrumbs={[{ label: 'Master Data' }, { label: 'Sorting Standards' }]}
-        actions={<Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Sorting Standard</Button>}
+        actions={!isManagement ? <Button variant="primary" onClick={handleCreate} leftIcon={<Plus size={16} />}>Create Sorting Standard</Button> : undefined}
       />
       <DataTable columns={columns} data={data}  />
 

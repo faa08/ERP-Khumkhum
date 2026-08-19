@@ -6,7 +6,7 @@ import { DataTable } from '@/components/data-table/DataTable';
 import { Button } from '@/components/ui/Button';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { Drawer } from '@/components/ui/Drawer';
+import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
@@ -18,7 +18,7 @@ import type { DbWarehouse } from '@/types/database';
 export default function WarehousesPage() {
   const [data, setData] = useState<DbWarehouse[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DbWarehouse | null>(null);
   
   const [form, setForm] = useState({ name: '', location: '' });
@@ -52,7 +52,7 @@ export default function WarehousesPage() {
   const handleCreate = () => {
     setSelectedItem(null);
     setForm({ name: '', location: '' });
-    setDrawerOpen(true);
+    setModalOpen(true);
   };
 
   const handleEdit = (item: DbWarehouse) => {
@@ -61,7 +61,7 @@ export default function WarehousesPage() {
       name: item.name || '',
       location: item.location || ''
     });
-    setDrawerOpen(true);
+    setModalOpen(true);
   };
 
   const handleSave = async () => {
@@ -75,7 +75,7 @@ export default function WarehousesPage() {
       const res = await updateWarehouse(selectedItem.id, form);
       if (res.success) {
         toast.success('Warehouse updated successfully');
-        setDrawerOpen(false);
+        setModalOpen(false);
         loadData();
       } else {
         toast.error(res.error || 'Failed to update warehouse');
@@ -84,7 +84,7 @@ export default function WarehousesPage() {
       const res = await createWarehouse(form);
       if (res.success) {
         toast.success('Warehouse created successfully');
-        setDrawerOpen(false);
+        setModalOpen(false);
         loadData();
       } else {
         toast.error(res.error || 'Failed to create warehouse');
@@ -146,14 +146,14 @@ export default function WarehousesPage() {
       />
       <DataTable columns={columns} data={data} />
 
-      <Drawer
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+      <Modal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
         title={selectedItem ? 'Edit Warehouse' : 'Buat Warehouse'}
         size="md"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button>
             <Button variant="primary" onClick={handleSave} loading={isSaving}>Simpan</Button>
           </>
         }
@@ -174,7 +174,7 @@ export default function WarehousesPage() {
             />
           </FormField>
         </div>
-      </Drawer>
+      </Modal>
 
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}

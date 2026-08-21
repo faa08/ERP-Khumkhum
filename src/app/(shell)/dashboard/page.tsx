@@ -270,8 +270,15 @@ function OperationalDashboard() {
         </ul>
       </Card>
 
-      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><AlertTriangle size={18} /><strong>Antrean Tindakan</strong></div>}>
+      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><AlertTriangle size={18} /><strong>Antrean Tindakan & Pengingat</strong></div>}>
         <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-warning-50)', padding: '8px', borderRadius: '4px', border: '1px solid var(--color-warning-200)' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+               <AlertCircle size={16} color="var(--color-warning-600)" />
+               <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-warning-700)' }}>Jadwal Stock Opname Akhir Bulan</span>
+            </div>
+            <Button variant="secondary" size="sm" onClick={() => window.location.href='/inventory'}>Mulai Opname</Button>
+          </li>
           <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 'var(--text-sm)' }}>2 Penerimaan menunggu sortasi</span>
             <StatusBadge status="pending" />

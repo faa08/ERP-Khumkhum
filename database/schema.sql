@@ -167,6 +167,8 @@ CREATE TABLE stock_movements (
   created_by UUID REFERENCES users(id)
 );
 
+
+
 -- 6. Sales Orders
 CREATE TABLE sales_orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

@@ -205,3 +205,119 @@ export async function getInventoryForecasting(inventoryId: string): Promise<{
     return { success: false, error: err.message };
   }
 }
+
+export async function receiveNonMushroomItem(payload: { inventory_id: string, quantity: number, notes?: string }): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const batchNumber = `INB-NONJMR-${format(new Date(), 'yyyyMMdd')}-${Math.floor(Math.random() * 10000)}`;
+
+    const { data: inv, error: invError } = await supabaseAdmin.from('inventory').select('quantity').eq('id', payload.inventory_id).single();
+    if (invError) throw invError;
+
+    const newQty = inv.quantity + payload.quantity;
+
+    await supabaseAdmin.from('inventory').update({ quantity: newQty, last_updated_at: new Date().toISOString() }).eq('id', payload.inventory_id);
+
+    await supabaseAdmin.from('stock_movements').insert({
+      inventory_id: payload.inventory_id,
+      movement_type: 'IN',
+      quantity: payload.quantity,
+      reference_type: 'MANUAL_INBOUND',
+      notes: payload.notes ? `${payload.notes} (Batch: ${batchNumber})` : `Batch: ${batchNumber}`,
+      created_by: user.userId
+    });
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+import type { DbStockOpnameItem } from '@/types/database';
+
+export async function saveStockOpname(items: DbStockOpnameItem[]): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'MANAGEMENT', 'SUPER_ADMIN']);
+    
+    for (const item of items) {
+      // Save to stock_opnames even if difference is 0 to track the event
+      await supabaseAdmin.from('stock_opnames').insert({
+        inventory_id: item.inventory_id,
+        system_quantity: item.system_qty,
+        physical_quantity: item.physical_qty,
+        difference: item.difference,
+        created_by: user.userId
+      });
+
+      if (item.difference !== 0) {
+        // Update inventory
+        await supabaseAdmin.from('inventory').update({
+          quantity: item.physical_qty,
+          last_updated_at: new Date().toISOString()
+        }).eq('id', item.inventory_id);
+
+        // Create movement
+        await supabaseAdmin.from('stock_movements').insert({
+          inventory_id: item.inventory_id,
+          movement_type: 'ADJUSTMENT',
+          quantity: item.difference,
+          reference_type: 'STOCK_OPNAME',
+          notes: `Stock Opname adjustment. Sys: ${item.system_qty}, Phys: ${item.physical_qty}`,
+          created_by: user.userId
+        });
+      }
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function getLossReport(): Promise<{ success: boolean; data?: any[]; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'MANAGEMENT', 'SUPER_ADMIN']);
+    const { data, error } = await supabaseAdmin
+      .from('stock_opnames')
+      .select(`
+        *,
+        inventory:inventory_id (
+           item_type,
+           item_id,
+           warehouse:warehouses (name)
+        ),
+        user:users (name)
+      `)
+      .lt('difference', 0)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    
+    // Enrich with item names
+    const enriched = await Promise.all(
+      (data || []).map(async (opname: any) => {
+        let item_name = 'Unknown';
+        if (opname.inventory?.item_type === 'RAW_MATERIAL') {
+          const { data: rm } = await supabaseAdmin
+            .from('raw_materials')
+            .select('name')
+            .eq('id', opname.inventory.item_id)
+            .single();
+          item_name = rm?.name || 'Bahan Baku';
+        } else if (opname.inventory?.item_type === 'PRODUCT') {
+          const { data: prod } = await supabaseAdmin
+            .from('products')
+            .select('name')
+            .eq('id', opname.inventory.item_id)
+            .single();
+          item_name = prod?.name || 'Produk';
+        }
+        return { ...opname, item_name };
+      })
+    );
+
+    return { success: true, data: enriched };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

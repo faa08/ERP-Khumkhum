@@ -11,10 +11,10 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Package, AlertTriangle, TrendingDown, Plus } from 'lucide-react';
+import { Package, AlertTriangle, TrendingDown, Plus, Save } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import { getInventorySummary, getStockMovements } from '@/actions/inventory';
+import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport } from '@/actions/inventory';
 import type { DbInventory, DbStockMovement } from '@/types/database';
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; color: string; rop: number }> = {
@@ -25,29 +25,84 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: string; color: stri
 export default function InventoryPage() {
   const [inventoryData, setInventoryData] = useState<DbInventory[]>([]);
   const [movements, setMovements] = useState<DbStockMovement[]>([]);
+  const [lossData, setLossData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [opnameDrawerOpen, setOpnameDrawerOpen] = useState(false);
-  const [physicalInputs, setPhysicalInputs] = useState<Record<string, string>>({});
   
+  const [physicalInputs, setPhysicalInputs] = useState<Record<string, string>>({});
+  const [isSavingOpname, setIsSavingOpname] = useState(false);
+
+  const [inboundDrawerOpen, setInboundDrawerOpen] = useState(false);
+  const [inboundForm, setInboundForm] = useState({ inventory_id: '', quantity: 0, notes: '' });
+  const [isSavingInbound, setIsSavingInbound] = useState(false);
 
   const toast = useToast();
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [invRes, mvRes] = await Promise.all([
+    const [invRes, mvRes, lossRes] = await Promise.all([
       getInventorySummary(),
       getStockMovements(),
+      getLossReport()
     ]);
     if (invRes.success && invRes.data) setInventoryData(invRes.data);
     if (mvRes.success && mvRes.data) setMovements(mvRes.data);
+    if (lossRes.success && lossRes.data) setLossData(lossRes.data);
     setIsLoading(false);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  const handleSaveOpname = async () => {
+    setIsSavingOpname(true);
+    const itemsToSave = inventoryData.map(inv => {
+      const phys = physicalInputs[inv.id];
+      if (phys === undefined || phys === '') return null;
+      const physical_qty = parseFloat(phys);
+      if (isNaN(physical_qty)) return null;
+      return {
+        inventory_id: inv.id,
+        item_name: inv.item_name || 'Item',
+        system_qty: inv.quantity,
+        physical_qty,
+        difference: physical_qty - inv.quantity,
+      };
+    }).filter(Boolean) as any[];
 
+    if (itemsToSave.length === 0) {
+      toast.error('Tidak ada data opname yang diisi');
+      setIsSavingOpname(false);
+      return;
+    }
 
-  // ── Aggregate stok per kategori ────────────────────────────────
+    const res = await saveStockOpname(itemsToSave);
+    if (res.success) {
+      toast.success('Hasil stock opname berhasil disimpan dan stok disesuaikan');
+      setPhysicalInputs({});
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal menyimpan stock opname');
+    }
+    setIsSavingOpname(false);
+  };
+
+  const handleSaveInbound = async () => {
+    if (!inboundForm.inventory_id || inboundForm.quantity <= 0) {
+      toast.error('Pilih item dan masukkan jumlah yang valid');
+      return;
+    }
+    setIsSavingInbound(true);
+    const res = await receiveNonMushroomItem(inboundForm);
+    if (res.success) {
+      toast.success('Penerimaan barang berhasil');
+      setInboundDrawerOpen(false);
+      setInboundForm({ inventory_id: '', quantity: 0, notes: '' });
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal menerima barang');
+    }
+    setIsSavingInbound(false);
+  };
+
   const categoryTotals = useMemo(() => {
     const map = new Map<string, { total: number; items: DbInventory[]; belowRop: number }>();
     for (const inv of inventoryData) {
@@ -63,7 +118,6 @@ export default function InventoryPage() {
     return map;
   }, [inventoryData]);
 
-  // ── Kalkulasi akurasi opname ───────────────────────────────────
   const opnameAccuracy = useMemo(() => {
     const results = inventoryData.map(inv => {
       const physical = parseFloat(physicalInputs[inv.id] || '');
@@ -76,7 +130,39 @@ export default function InventoryPage() {
     return (1 - avgDiff) * 100;
   }, [inventoryData, physicalInputs]);
 
-  // ── Inventory table columns ────────────────────────────────────
+  const movementsWithBalance = useMemo(() => {
+    const sortedDesc = [...movements].sort((a, b) => new Date(b.movement_date).getTime() - new Date(a.movement_date).getTime());
+    
+    const movementsByInv = new Map<string, any[]>();
+    sortedDesc.forEach(m => {
+      if (!movementsByInv.has(m.inventory_id)) movementsByInv.set(m.inventory_id, []);
+      movementsByInv.get(m.inventory_id)!.push(m);
+    });
+
+    const result: any[] = [];
+    
+    for (const inv of inventoryData) {
+      const invMovements = movementsByInv.get(inv.id) || [];
+      let currentBalance = inv.quantity;
+      
+      for (const m of invMovements) {
+        result.push({ ...m, item_name: inv.item_name, balance: currentBalance });
+        
+        if (m.movement_type === 'IN') {
+          currentBalance -= m.quantity;
+        } else if (m.movement_type === 'OUT') {
+          currentBalance += m.quantity;
+        } else if (m.movement_type === 'ADJUSTMENT') {
+          currentBalance -= m.quantity;
+        } else if (m.movement_type === 'TRANSFER') {
+          currentBalance -= m.quantity;
+        }
+      }
+    }
+    
+    return result.sort((a, b) => new Date(b.movement_date).getTime() - new Date(a.movement_date).getTime());
+  }, [movements, inventoryData]);
+
   const invColumns = useMemo<ColumnDef<DbInventory>[]>(() => [
     {
       id: 'item_name',
@@ -98,10 +184,26 @@ export default function InventoryPage() {
         const rop = row.original.reorder_point || CATEGORY_CONFIG[row.original.item_type]?.rop || 0;
         const low = row.original.quantity < rop;
         return (
-          <span style={{ fontWeight: 600, color: low ? 'var(--color-danger-600)' : 'var(--text-primary)' }}>
-            {row.original.quantity.toLocaleString('id-ID')} kg
-            {low && <span style={{ marginLeft: 6, fontSize: 'var(--text-xs)' }}>⚠ Low</span>}
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontWeight: 600, color: low ? 'var(--color-danger-600)' : 'var(--text-primary)' }}>
+              {row.original.quantity.toLocaleString('id-ID')} kg
+            </span>
+            {low && (
+              <div style={{ 
+                background: 'var(--color-danger-100)', 
+                color: 'var(--color-danger-700)', 
+                padding: '2px 6px', 
+                borderRadius: '4px', 
+                fontSize: '0.7rem', 
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <AlertTriangle size={12} /> Need Reorder
+              </div>
+            )}
+          </div>
         );
       },
     },
@@ -121,26 +223,41 @@ export default function InventoryPage() {
     },
   ], []);
 
-  // ── Movement table columns ─────────────────────────────────────
-  const mvColumns = useMemo<ColumnDef<DbStockMovement>[]>(() => [
-    { accessorKey: 'movement_type', header: 'Tipe', cell: ({ row }) => {
-      const colors: Record<string, string> = { IN: 'var(--color-success-600)', OUT: 'var(--color-danger-600)', ADJUSTMENT: 'var(--color-warning-600)', TRANSFER: 'var(--color-primary-600)' };
-      return <StatusBadge status={row.original.movement_type.toLowerCase()} />;
-    }},
-    { accessorKey: 'quantity', header: 'Qty (kg)', cell: ({ row }) => {
-      const isIn = row.original.movement_type === 'IN';
-      return <strong style={{ color: isIn ? 'var(--color-success-600)' : 'var(--color-danger-600)' }}>
-        {isIn ? '+' : '-'}{Math.abs(row.original.quantity).toLocaleString('id-ID')} kg
-      </strong>;
-    }},
-    { accessorKey: 'notes', header: 'Keterangan', cell: ({ row }) => row.original.notes || '-' },
+  const mvColumns = useMemo<ColumnDef<any>[]>(() => [
     { id: 'date', header: 'Tanggal', cell: ({ row }) => format(new Date(row.original.movement_date), 'dd/MM/yyyy HH:mm') },
+    { accessorKey: 'item_name', header: 'Item' },
+    { accessorKey: 'notes', header: 'Referensi / Keterangan', cell: ({ row }) => row.original.notes || '-' },
+    { id: 'in', header: 'In', cell: ({ row }) => {
+      const isPositive = row.original.quantity > 0 || row.original.movement_type === 'IN'; 
+      const qty = Math.abs(row.original.quantity);
+      return <strong style={{ color: 'var(--color-success-600)' }}>{isPositive && qty > 0 ? `+${qty.toLocaleString('id-ID')} kg` : '-'}</strong>;
+    }},
+    { id: 'out', header: 'Out', cell: ({ row }) => {
+      const isNegative = row.original.quantity < 0 || row.original.movement_type === 'OUT';
+      const qty = Math.abs(row.original.quantity);
+      return <strong style={{ color: 'var(--color-danger-600)' }}>{isNegative && qty > 0 ? `-${qty.toLocaleString('id-ID')} kg` : '-'}</strong>;
+    }},
+    { id: 'balance', header: 'Saldo (kg)', cell: ({ row }) => <strong>{row.original.balance.toLocaleString('id-ID')} kg</strong> },
   ], []);
 
-  // ── TABS ───────────────────────────────────────────────────────
+  const lossColumns = useMemo<ColumnDef<any>[]>(() => [
+    { id: 'date', header: 'Tanggal Opname', cell: ({ row }) => format(new Date(row.original.created_at), 'dd/MM/yyyy HH:mm') },
+    { accessorKey: 'item_name', header: 'Item' },
+    { id: 'warehouse', header: 'Gudang', cell: ({ row }) => row.original.inventory?.warehouse?.name || '-' },
+    { accessorKey: 'system_quantity', header: 'Stok Sistem' },
+    { accessorKey: 'physical_quantity', header: 'Stok Fisik' },
+    { accessorKey: 'difference', header: 'Selisih Minus', cell: ({ row }) => <strong style={{ color: 'var(--color-danger-600)' }}>{row.original.difference} kg</strong> },
+    { accessorKey: 'notes', header: 'Catatan', cell: ({ row }) => row.original.notes || '-' },
+  ], []);
+
   const tabContent = (
     <>
-      {/* TAB 1: Stok Real-time */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-4)' }}>
+        <Button variant="primary" onClick={() => setInboundDrawerOpen(true)} leftIcon={<Plus size={16} />}>
+          Penerimaan Barang Non-Jamur
+        </Button>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
         {Array.from(categoryTotals.entries()).map(([type, stat]) => {
           const cfg = CATEGORY_CONFIG[type] || { label: type, icon: '📦', color: 'var(--text-primary)', rop: 0 };
@@ -165,45 +282,72 @@ export default function InventoryPage() {
             </Card>
           );
         })}
-
-        {/* Fallback jika kosong */}
-        {categoryTotals.size === 0 && !isLoading && (
-          <>
-            {[
-              { label: 'Jamur Bersih', icon: '🍄', qty: 0, color: 'var(--color-success-600)' },
-              { label: 'Minyak & Tepung', icon: '🫙', qty: 0, color: 'var(--color-warning-600)' },
-              { label: 'Bumbu', icon: '🌶️', qty: 0, color: 'var(--color-danger-600)' },
-              { label: 'Kemasan', icon: '📦', qty: 0, color: 'var(--color-primary-600)' },
-              { label: 'Produk Jadi', icon: '🏪', qty: 0, color: 'var(--color-info-600)' },
-            ].map(c => (
-              <Card key={c.label}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-                  <span style={{ fontSize: '2rem' }}>{c.icon}</span>
-                  <div style={{ fontWeight: 600 }}>{c.label}</div>
-                </div>
-                <div style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-tertiary)' }}>0 kg</div>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4 }}>Belum ada data stok</div>
-              </Card>
-            ))}
-          </>
-        )}
       </div>
 
       <DataTable columns={invColumns} data={inventoryData} />
+
+      <Drawer
+        isOpen={inboundDrawerOpen}
+        onClose={() => setInboundDrawerOpen(false)}
+        title="Input Pemasukan Barang (Non-Jamur)"
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setInboundDrawerOpen(false)}>Batal</Button>
+            <Button variant="primary" onClick={handleSaveInbound} loading={isSavingInbound}>Simpan</Button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <FormField label="Pilih Item" required>
+            <select 
+              className="w-full p-2 border rounded"
+              value={inboundForm.inventory_id}
+              onChange={e => setInboundForm(f => ({ ...f, inventory_id: e.target.value }))}
+            >
+              <option value="">-- Pilih Item --</option>
+              {inventoryData.map(inv => (
+                <option key={inv.id} value={inv.id}>{inv.item_name} ({inv.warehouse?.name})</option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Jumlah (kg/pcs)" required>
+            <Input 
+              type="number"
+              value={inboundForm.quantity.toString()} 
+              onChange={e => setInboundForm(f => ({ ...f, quantity: parseFloat(e.target.value) || 0 }))} 
+            />
+          </FormField>
+          <FormField label="Referensi / Catatan">
+            <Input 
+              value={inboundForm.notes} 
+              onChange={e => setInboundForm(f => ({ ...f, notes: e.target.value }))} 
+              placeholder="e.g. Nota Supplier ABC" 
+            />
+          </FormField>
+        </div>
+      </Drawer>
     </>
   );
 
   const movementContent = (
     <div style={{ marginTop: 'var(--space-4)' }}>
-      <DataTable columns={mvColumns} data={movements} />
+      <DataTable columns={mvColumns} data={movementsWithBalance} />
     </div>
   );
 
   const opnameContent = (
     <div style={{ marginTop: 'var(--space-4)' }}>
-      <Card header={<strong>Stock Opname — Input Stok Fisik</strong>}>
+      <Card header={
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <strong>Stock Opname — Input Stok Fisik</strong>
+          <Button variant="primary" onClick={handleSaveOpname} loading={isSavingOpname} leftIcon={<Save size={16} />}>
+            Simpan Hasil Opname
+          </Button>
+        </div>
+      }>
         <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
-          Masukkan hasil hitung fisik untuk setiap item di gudang. Sistem akan menghitung akurasi stok secara otomatis.
+          Masukkan hasil hitung fisik untuk setiap item di gudang. Sistem akan menghitung akurasi stok secara otomatis dan memperbarui stok.
         </p>
         {inventoryData.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -266,7 +410,13 @@ export default function InventoryPage() {
     </div>
   );
 
-
+  const lossContent = (
+    <div style={{ marginTop: 'var(--space-4)' }}>
+      <Card header={<strong>Laporan Rekap Kerugian</strong>}>
+        <DataTable columns={lossColumns} data={lossData} />
+      </Card>
+    </div>
+  );
 
   return (
     <div>
@@ -279,8 +429,9 @@ export default function InventoryPage() {
       <Tabs
         tabs={[
           { id: 'realtime', label: '📊 Stok Real-time', content: tabContent },
-          { id: 'ledger', label: '📋 Kartu Stok / Ledger', content: movementContent },
+          { id: 'ledger', label: '📋 Kartu Stok (Rekening Koran)', content: movementContent },
           { id: 'opname', label: '🔍 Stock Opname', content: opnameContent },
+          { id: 'loss', label: '📉 Laporan Kerugian', content: lossContent },
         ]}
       />
     </div>

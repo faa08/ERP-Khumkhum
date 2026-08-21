@@ -25,7 +25,7 @@ export default function RawmaterialsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DbRawMaterial | null>(null);
   
-  const [form, setForm] = useState({ code: '', name: '', uom: '' });
+  const [form, setForm] = useState({ code: '', name: '', uom: '', min_stock: 0, rop: 0 });
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -55,7 +55,7 @@ export default function RawmaterialsPage() {
 
   const handleCreate = () => {
     setSelectedItem(null);
-    setForm({ code: '', name: '', uom: '' });
+    setForm({ code: '', name: '', uom: '', min_stock: 0, rop: 0 });
     setDrawerOpen(true);
   };
 
@@ -64,7 +64,9 @@ export default function RawmaterialsPage() {
     setForm({
       code: item.code || '',
       name: item.name || '',
-      uom: item.uom || ''
+      uom: item.uom || '',
+      min_stock: item.min_stock || 0,
+      rop: item.rop || 0
     });
     setDrawerOpen(true);
   };
@@ -121,6 +123,8 @@ export default function RawmaterialsPage() {
     { accessorKey: 'code', header: 'Code' },
     { accessorKey: 'name', header: 'Name' },
     { accessorKey: 'uom', header: 'Unit of Measure (UOM)' },
+    { accessorKey: 'min_stock', header: 'Minimum Stock' },
+    { accessorKey: 'rop', header: 'Reorder Point (ROP)' },
     ...(isManagement ? [] : [{
       id: 'actions',
       cell: ({ row }: { row: any }) => (
@@ -184,6 +188,20 @@ export default function RawmaterialsPage() {
               value={form.uom} 
               onChange={e => setForm(f => ({ ...f, uom: e.target.value }))} 
               placeholder="e.g. kg, gram" 
+            />
+          </FormField>
+          <FormField label="Minimum Stock">
+            <Input 
+              type="number"
+              value={form.min_stock.toString()} 
+              onChange={e => setForm(f => ({ ...f, min_stock: parseFloat(e.target.value) || 0 }))} 
+            />
+          </FormField>
+          <FormField label="Reorder Point (ROP)">
+            <Input 
+              type="number"
+              value={form.rop.toString()} 
+              onChange={e => setForm(f => ({ ...f, rop: parseFloat(e.target.value) || 0 }))} 
             />
           </FormField>
         </div>

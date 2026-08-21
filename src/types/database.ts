@@ -51,6 +51,8 @@ export interface DbRawMaterial {
   code: string;
   name: string;
   uom: string;
+  min_stock?: number | null;
+  rop?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -321,6 +323,17 @@ export interface DbStockMovement {
   notes?: string | null;
   movement_date: string;
   created_by?: string | null;
+}
+
+export interface DbStockOpname {
+  id: string;
+  inventory_id: string;
+  system_quantity: number;
+  physical_quantity: number;
+  difference: number;
+  notes?: string | null;
+  created_by?: string | null;
+  created_at: string;
 }
 
 export interface DbStockOpnameItem {

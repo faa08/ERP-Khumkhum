@@ -32,6 +32,8 @@ import {
   Calendar,
   Filter,
   RotateCcw,
+  Trash2,
+  Wand2,
 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, isToday, isThisMonth, isThisYear, startOfDay, endOfDay } from 'date-fns';
@@ -257,18 +259,69 @@ export default function ProductionPage() {
     }
   };
 
+  // Hitung Estimasi Resep Standar BOM berdasarkan target batch
+  const calculateBomForOrder = useCallback((order: DbProductionOrder) => {
+    if (!rawMaterials || rawMaterials.length === 0) return [];
+    const targetQty = Number(order.target_quantity || 500);
+    // Standar rasio: 500 pcs butuh ~50 kg jamur tiram bersih (rasio 0.1 kg/pcs)
+    const estJamurKg = parseFloat((targetQty * 0.1).toFixed(1));
+    const estTepungKg = parseFloat((estJamurKg * 0.25).toFixed(1));
+    const estMinyakKg = parseFloat((estJamurKg * 0.30).toFixed(1));
+    
+    // Sesuaikan rasio bumbu tabur dengan varian rasa produk
+    const variantLower = (order.product_variant || '').toLowerCase();
+    let seasoningRatio = 0.05;
+    if (variantLower.includes('balado') || variantLower.includes('pedas')) {
+      seasoningRatio = 0.08;
+    } else if (variantLower.includes('bbq')) {
+      seasoningRatio = 0.07;
+    }
+    const estBumbuKg = parseFloat((estJamurKg * seasoningRatio).toFixed(1));
+
+    const items: MaterialConsumptionItem[] = [];
+
+    // 1. Jamur Tiram Bersih
+    const jmr = rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur') || rm.code?.includes('JMR'));
+    if (jmr) items.push({ raw_material_id: jmr.id, consumption_quantity: estJamurKg });
+
+    // 2. Tepung Crispy Premix
+    const tpg = rawMaterials.find(rm => rm.name.toLowerCase().includes('tepung') || rm.code?.includes('TPG'));
+    if (tpg) items.push({ raw_material_id: tpg.id, consumption_quantity: estTepungKg });
+
+    // 3. Minyak Goreng
+    const myk = rawMaterials.find(rm => rm.name.toLowerCase().includes('minyak') || rm.code?.includes('MYK'));
+    if (myk) items.push({ raw_material_id: myk.id, consumption_quantity: estMinyakKg });
+
+    // 4. Bumbu Tabur Perasa
+    const bmb = rawMaterials.find(rm => rm.name.toLowerCase().includes('bumbu') || rm.code?.includes('BMB'));
+    if (bmb) items.push({ raw_material_id: bmb.id, consumption_quantity: estBumbuKg });
+
+    // 5. Kemasan Pouch
+    const pkg = rawMaterials.find(rm => rm.name.toLowerCase().includes('kemasan') || rm.name.toLowerCase().includes('pouch') || rm.code?.includes('PKG'));
+    if (pkg) items.push({ raw_material_id: pkg.id, consumption_quantity: targetQty });
+
+    if (items.length === 0) {
+      return rawMaterials.map(rm => ({
+        raw_material_id: rm.id,
+        consumption_quantity: rm.name.toLowerCase().includes('jamur') ? estJamurKg : 0,
+      }));
+    }
+
+    return items;
+  }, [rawMaterials]);
+
   const handleOpenConsumption = (order: DbProductionOrder) => {
     setSelectedOrder(order);
-    // Initialize default material rows
-    if (rawMaterials.length > 0) {
+    if (order.materials && order.materials.length > 0) {
       setConsumedMaterials(
-        rawMaterials.map((rm) => ({
-          raw_material_id: rm.id,
-          consumption_quantity: rm.name.toLowerCase().includes('jamur') ? 50 : 0,
+        order.materials.map(m => ({
+          raw_material_id: m.raw_material_id,
+          consumption_quantity: Number(m.consumption_quantity),
         }))
       );
     } else {
-      setConsumedMaterials([{ raw_material_id: '', consumption_quantity: 0 }]);
+      const bomItems = calculateBomForOrder(order);
+      setConsumedMaterials(bomItems.length > 0 ? bomItems : [{ raw_material_id: rawMaterials[0]?.id || '', consumption_quantity: 0 }]);
     }
     setConsumptionModalOpen(true);
   };
@@ -994,28 +1047,67 @@ export default function ProductionPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
-            Masukkan jumlah riil bahan baku yang dimasukkan ke dalam wajan penggorengan. Sistem akan otomatis memotong stok bahan di gudang dan mencatat mutasi keluar.
-          </p>
+          {/* Info Banner & Auto-fill Action */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: 'var(--space-3)',
+            background: 'var(--color-primary-50)',
+            border: '1px solid var(--color-primary-200)',
+            borderRadius: 'var(--radius-md)',
+            flexWrap: 'wrap',
+            gap: 'var(--space-2)'
+          }}>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--color-primary-800)', fontSize: 'var(--text-sm)' }}>
+                Target Batch: {selectedOrder?.product_variant} ({selectedOrder?.target_quantity?.toLocaleString('id-ID')} pcs)
+              </div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary-700)' }}>
+                Sistem mencatat pemakaian riil bahan baku dan otomatis memotong stok gudang dengan referensi batch <code>{selectedOrder?.batch_number}</code>.
+              </div>
+            </div>
+            {selectedOrder && (
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<Wand2 size={14} />}
+                onClick={() => {
+                  const bom = calculateBomForOrder(selectedOrder);
+                  if (bom.length > 0) {
+                    setConsumedMaterials(bom);
+                    toast.success('Rekomendasi takaran standar BOM berhasil diterapkan');
+                  }
+                }}
+              >
+                Terapkan Takaran Standar
+              </Button>
+            )}
+          </div>
 
+          {/* List of Material Rows */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             {consumedMaterials.map((item, index) => {
               const matchedRm = rawMaterials.find((rm) => rm.id === item.raw_material_id);
+              const available = matchedRm?.available_stock || 0;
+              const isInsufficient = item.consumption_quantity > available;
+
               return (
                 <div
                   key={index}
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 1fr 1fr',
+                    gridTemplateColumns: '2fr 1fr 1.2fr auto',
                     gap: 'var(--space-3)',
                     alignItems: 'center',
                     padding: 'var(--space-3)',
                     background: 'var(--bg-subtle)',
                     borderRadius: 'var(--radius-md)',
+                    border: isInsufficient ? '1px solid var(--color-danger-300)' : '1px solid var(--border-subtle)',
                   }}
                 >
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block' }}>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                       Bahan Baku #{index + 1}
                     </span>
                     <Select
@@ -1033,11 +1125,13 @@ export default function ProductionPage() {
                   </div>
 
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block' }}>
-                      Qty ({matchedRm?.uom || 'kg'})
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      Jumlah Konsumsi ({matchedRm?.uom || 'kg'})
                     </span>
                     <Input
                       type="number"
+                      step="0.01"
+                      min="0"
                       value={item.consumption_quantity || ''}
                       onChange={(e) => {
                         const updated = [...consumedMaterials];
@@ -1049,26 +1143,68 @@ export default function ProductionPage() {
                   </div>
 
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block' }}>
-                      Stok Tersedia
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      Stok Gudang
                     </span>
-                    <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-600)' }}>
-                      {matchedRm?.available_stock !== undefined ? `${matchedRm.available_stock} ${matchedRm.uom}` : '-'}
-                    </strong>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <strong style={{ fontSize: 'var(--text-sm)', color: isInsufficient ? 'var(--color-danger-700)' : 'var(--color-primary-700)' }}>
+                        {matchedRm?.available_stock !== undefined ? `${matchedRm.available_stock.toLocaleString('id-ID')} ${matchedRm.uom}` : '-'}
+                      </strong>
+                      {isInsufficient && (
+                        <span style={{ fontSize: '0.65rem', padding: '2px 4px', background: 'var(--color-danger-100)', color: 'var(--color-danger-700)', borderRadius: '4px', fontWeight: 700 }}>
+                          Stok Kurang
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ paddingTop: '18px' }}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (consumedMaterials.length > 1) {
+                          setConsumedMaterials(consumedMaterials.filter((_, idx) => idx !== index));
+                        } else {
+                          setConsumedMaterials([{ raw_material_id: '', consumption_quantity: 0 }]);
+                        }
+                      }}
+                      style={{ color: 'var(--color-danger-600)', padding: '6px' }}
+                      title="Hapus baris bahan baku"
+                    >
+                      <Trash2 size={16} />
+                    </Button>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setConsumedMaterials([...consumedMaterials, { raw_material_id: '', consumption_quantity: 0 }])}
-            leftIcon={<Plus size={14} />}
-          >
-            Tambah Baris Bahan Baku
-          </Button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setConsumedMaterials([...consumedMaterials, { raw_material_id: '', consumption_quantity: 0 }])}
+              leftIcon={<Plus size={14} />}
+            >
+              Tambah Baris Bahan Baku
+            </Button>
+
+            {/* Total Input Weight preview */}
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              Total Input Masuk Wajan:{' '}
+              <strong style={{ color: 'var(--color-primary-700)' }}>
+                {consumedMaterials
+                  .filter((m) => {
+                    const rm = rawMaterials.find((r) => r.id === m.raw_material_id);
+                    return rm && rm.uom?.toLowerCase() === 'kg';
+                  })
+                  .reduce((sum, m) => sum + (Number(m.consumption_quantity) || 0), 0)
+                  .toFixed(1)}{' '}
+                kg
+              </strong>
+            </div>
+          </div>
         </div>
       </Modal>
 

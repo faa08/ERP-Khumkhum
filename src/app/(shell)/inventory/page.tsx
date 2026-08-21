@@ -9,13 +9,15 @@ import { Tabs } from '@/components/ui/Tabs';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
 import { Package, AlertTriangle, TrendingDown, Plus, Save } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport } from '@/actions/inventory';
-import type { DbInventory, DbStockMovement } from '@/types/database';
+import { getRawMaterials } from '@/actions/master';
+import type { DbInventory, DbStockMovement, DbRawMaterial } from '@/types/database';
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; color: string; rop: number }> = {
   RAW_MATERIAL: { label: 'Bahan Baku Jamur', icon: '🍄', color: 'var(--color-success-600)', rop: 50 },
@@ -34,19 +36,22 @@ export default function InventoryPage() {
   const [inboundDrawerOpen, setInboundDrawerOpen] = useState(false);
   const [inboundForm, setInboundForm] = useState({ item_name: '', uom: 'kg', quantity: 0, notes: '' });
   const [isSavingInbound, setIsSavingInbound] = useState(false);
+  const [masterRawMaterials, setMasterRawMaterials] = useState<DbRawMaterial[]>([]);
 
   const toast = useToast();
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [invRes, mvRes, lossRes] = await Promise.all([
+    const [invRes, mvRes, lossRes, rmRes] = await Promise.all([
       getInventorySummary(),
       getStockMovements(),
-      getLossReport()
+      getLossReport(),
+      getRawMaterials()
     ]);
     if (invRes.success && invRes.data) setInventoryData(invRes.data);
     if (mvRes.success && mvRes.data) setMovements(mvRes.data);
     if (lossRes.success && lossRes.data) setLossData(lossRes.data);
+    if (rmRes.success && rmRes.data) setMasterRawMaterials(rmRes.data);
     setIsLoading(false);
   }, []);
 
@@ -300,10 +305,21 @@ export default function InventoryPage() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <FormField label="Nama Barang" required>
-            <Input
+            <Select
               value={inboundForm.item_name}
-              onChange={e => setInboundForm(f => ({ ...f, item_name: e.target.value }))}
-              placeholder="e.g. Garam, Tepung, Minyak"
+              onChange={e => {
+                const val = e.target.value;
+                const selected = masterRawMaterials.find(rm => rm.name === val);
+                setInboundForm(f => ({ 
+                  ...f, 
+                  item_name: val,
+                  uom: selected ? selected.uom : f.uom 
+                }));
+              }}
+              options={[
+                { value: '', label: 'Pilih Bahan Baku dari Master Data...' },
+                ...masterRawMaterials.map(rm => ({ value: rm.name, label: rm.name }))
+              ]}
             />
           </FormField>
           <FormField label="Satuan (UOM)" required>
@@ -311,6 +327,7 @@ export default function InventoryPage() {
               value={inboundForm.uom}
               onChange={e => setInboundForm(f => ({ ...f, uom: e.target.value }))}
               placeholder="e.g. kg, liter, pcs"
+              disabled
             />
           </FormField>
           <FormField label="Jumlah (kg/pcs)" required>

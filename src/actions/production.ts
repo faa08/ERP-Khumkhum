@@ -301,6 +301,15 @@ export async function recordMaterialConsumption(input: RecordMaterialConsumption
 
       totalInputWeight += Number(item.consumption_quantity);
 
+      // Dapatkan informasi master data bahan baku
+      const { data: rm } = await supabaseAdmin
+        .from('raw_materials')
+        .select('name, uom, code')
+        .eq('id', item.raw_material_id)
+        .maybeSingle();
+      const rmName = rm?.name || 'Bahan Baku';
+      const rmUom = rm?.uom || 'kg';
+
       // Insert consumption record
       await supabaseAdmin.from('production_materials').insert([
         {
@@ -320,8 +329,10 @@ export async function recordMaterialConsumption(input: RecordMaterialConsumption
         .order('quantity', { ascending: false })
         .limit(1);
 
+      let inventoryId = '';
       if (invItems && invItems.length > 0) {
         const inv = invItems[0];
+        inventoryId = inv.id;
         const newQty = Math.max(0, Number(inv.quantity) - Number(item.consumption_quantity));
 
         await supabaseAdmin
@@ -331,16 +342,37 @@ export async function recordMaterialConsumption(input: RecordMaterialConsumption
             last_updated_at: new Date().toISOString(),
           })
           .eq('id', inv.id);
+      } else {
+        // Jika belum ada kartu inventory, cari gudang utama bahan baku
+        const { data: wh } = await supabaseAdmin.from('warehouses').select('id').limit(1).maybeSingle();
+        if (wh?.id) {
+          const { data: newInv } = await supabaseAdmin
+            .from('inventory')
+            .insert([
+              {
+                warehouse_id: wh.id,
+                item_type: 'RAW_MATERIAL',
+                item_id: item.raw_material_id,
+                quantity: 0,
+                last_updated_at: new Date().toISOString(),
+              },
+            ])
+            .select('id')
+            .single();
+          inventoryId = newInv?.id || '';
+        }
+      }
 
-        // Catat mutasi stok OUT
+      // Catat mutasi stok OUT dengan referensi nomor batch yang jelas untuk kartu stok Dev 2
+      if (inventoryId) {
         await supabaseAdmin.from('stock_movements').insert([
           {
-            inventory_id: inv.id,
+            inventory_id: inventoryId,
             movement_type: 'OUT',
             quantity: item.consumption_quantity,
             reference_id: input.production_order_id,
-            reference_type: 'PRODUCTION_CONSUMPTION',
-            notes: `Konsumsi produksi batch ${order.batch_number}`,
+            reference_type: 'PRODUCTION_BATCH',
+            notes: `[${order.batch_number}] Pemakaian Bahan: ${rmName} (-${item.consumption_quantity} ${rmUom}) untuk ${order.product_variant || 'Produksi Jamur Crispy'}`,
             movement_date: new Date().toISOString(),
             created_by: user.userId,
           },

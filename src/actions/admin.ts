@@ -12,6 +12,7 @@ export interface CreateUserInput {
   email: string;
   password?: string;
   role: UserRole;
+  whatsapp_number?: string;
   is_active?: boolean;
 }
 
@@ -19,6 +20,7 @@ export interface UpdateUserInput {
   name?: string;
   email?: string;
   role?: UserRole;
+  whatsapp_number?: string;
   is_active?: boolean;
 }
 
@@ -35,7 +37,7 @@ export async function getUsersAction(): Promise<{
 
     const { data, error } = await supabaseAdmin
       .from('users')
-      .select('id, email, name, role, is_active, created_at, updated_at')
+      .select('id, email, name, role, whatsapp_number, is_active, created_at, updated_at')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -70,10 +72,11 @@ export async function createUserAction(input: CreateUserInput): Promise<{
           email: input.email.trim().toLowerCase(),
           password: hashedPassword,
           role: input.role,
+          whatsapp_number: input.whatsapp_number,
           is_active: input.is_active !== undefined ? input.is_active : true,
         },
       ])
-      .select('id, email, name, role, is_active, created_at, updated_at')
+      .select('id, email, name, role, whatsapp_number, is_active, created_at, updated_at')
       .single();
 
     if (error) {
@@ -115,13 +118,14 @@ export async function updateUserAction(
     if (input.name !== undefined) updatePayload.name = input.name.trim();
     if (input.email !== undefined) updatePayload.email = input.email.trim().toLowerCase();
     if (input.role !== undefined) updatePayload.role = input.role;
+    if (input.whatsapp_number !== undefined) updatePayload.whatsapp_number = input.whatsapp_number;
     if (input.is_active !== undefined) updatePayload.is_active = input.is_active;
 
     const { data, error } = await supabaseAdmin
       .from('users')
       .update(updatePayload)
       .eq('id', id)
-      .select('id, email, name, role, is_active, created_at, updated_at')
+      .select('id, email, name, role, whatsapp_number, is_active, created_at, updated_at')
       .single();
 
     if (error) {

@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
 import { Plus, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse } from '@/actions/master';
+import { getWarehouses, createWarehouse, updateWarehouse, deleteWarehouse, getWarehousePics } from '@/actions/master';
 import type { DbWarehouse } from '@/types/database';
 
 export default function WarehousesPage() {
@@ -25,7 +25,8 @@ export default function WarehousesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DbWarehouse | null>(null);
   
-  const [form, setForm] = useState({ name: '', location: '' });
+  const [form, setForm] = useState({ name: '', location: '', pic_id: '' });
+  const [picOptions, setPicOptions] = useState<{ value: string; label: string }[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -40,11 +41,14 @@ export default function WarehousesPage() {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const res = await getWarehouses();
+    const [res, picRes] = await Promise.all([getWarehouses(), getWarehousePics()]);
     if (res.success && res.data) {
       setData(res.data);
     } else {
       toast.error(res.error || 'Failed to load warehouses');
+    }
+    if (picRes.success && picRes.data) {
+      setPicOptions(picRes.data.map(p => ({ value: p.id, label: p.name })));
     }
     setIsLoading(false);
   }, [toast]);
@@ -55,7 +59,7 @@ export default function WarehousesPage() {
 
   const handleCreate = () => {
     setSelectedItem(null);
-    setForm({ name: '', location: '' });
+    setForm({ name: '', location: '', pic_id: '' });
     setModalOpen(true);
   };
 
@@ -63,7 +67,8 @@ export default function WarehousesPage() {
     setSelectedItem(item);
     setForm({
       name: item.name || '',
-      location: item.location || ''
+      location: item.location || '',
+      pic_id: item.pic_id || '',
     });
     setModalOpen(true);
   };
@@ -119,6 +124,16 @@ export default function WarehousesPage() {
   const columns = useMemo<ColumnDef<DbWarehouse>[]>(() => [
     { accessorKey: 'name', header: 'Name' },
     { accessorKey: 'location', header: 'Location' },
+    { 
+      id: 'pic_name', 
+      header: 'PIC Name',
+      cell: ({ row }) => (row.original.warehouse_pics as any)?.name || '-'
+    },
+    { 
+      id: 'pic_phone', 
+      header: 'PIC Phone',
+      cell: ({ row }) => (row.original.warehouse_pics as any)?.phone_number || '-'
+    },
     ...(isManagement ? [] : [{
       id: 'actions',
       cell: ({ row }: { row: any }) => (
@@ -176,6 +191,18 @@ export default function WarehousesPage() {
               onChange={e => setForm(f => ({ ...f, location: e.target.value }))} 
               placeholder="e.g. Zona Utara" 
             />
+          </FormField>
+          <FormField label="PIC Gudang">
+            <select 
+              value={form.pic_id}
+              onChange={e => setForm(f => ({ ...f, pic_id: e.target.value }))}
+              style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid var(--border)' }}
+            >
+              <option value="">-- Tanpa PIC --</option>
+              {picOptions.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </FormField>
         </div>
       </Modal>

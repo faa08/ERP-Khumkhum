@@ -3,12 +3,14 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
 import { logAuditEvent } from '@/actions/audit';
+import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import type {
   DbFarmer,
   DbProduct,
   DbRawMaterial,
   DbCustomer,
   DbWarehouse,
+  DbWarehousePic,
 } from '@/types/database';
 
 // ─────────────────────────────────────────────
@@ -360,7 +362,12 @@ export async function getWarehouses(): Promise<{ success: boolean; data?: DbWare
     await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
     const { data, error } = await supabaseAdmin
       .from('warehouses')
-      .select('*')
+      .select(`
+        *,
+        warehouse_pics (
+          id, name, phone_number
+        )
+      `)
       .order('name');
     if (error) throw error;
     return { success: true, data: data as DbWarehouse[] };
@@ -431,6 +438,139 @@ export async function deleteWarehouse(id: string): Promise<{ success: boolean; e
       entityId: id,
     });
     return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// ─────────────────────────────────────────────
+// WAREHOUSE PICS
+// ─────────────────────────────────────────────
+
+export async function getWarehousePics(): Promise<{ success: boolean; data?: DbWarehousePic[]; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    const { data, error } = await supabaseAdmin
+      .from('warehouse_pics')
+      .select('*')
+      .order('name');
+    if (error) throw error;
+    return { success: true, data: data as DbWarehousePic[] };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function createWarehousePic(input: Partial<DbWarehousePic>): Promise<{ success: boolean; data?: DbWarehousePic; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { data, error } = await supabaseAdmin
+      .from('warehouse_pics')
+      .insert([input])
+      .select()
+      .single();
+    if (error) throw error;
+    
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'warehouse_pic',
+      entityId: data.id,
+      details: { name: input.name },
+    });
+    return { success: true, data: data as DbWarehousePic };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateWarehousePic(id: string, input: Partial<DbWarehousePic>): Promise<{ success: boolean; data?: DbWarehousePic; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { data, error } = await supabaseAdmin
+      .from('warehouse_pics')
+      .update({ ...input, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'UPDATE',
+      entityType: 'warehouse_pic',
+      entityId: id,
+    });
+    return { success: true, data: data as DbWarehousePic };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteWarehousePic(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['SUPER_ADMIN']);
+    const { error } = await supabaseAdmin
+      .from('warehouse_pics')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'DELETE',
+      entityType: 'warehouse_pic',
+      entityId: id,
+    });
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function testSendReminderAction(picId: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    const { user } = await requireAuth(['SUPER_ADMIN']);
+    
+    const { data: pic, error: picErr } = await supabaseAdmin
+      .from('warehouse_pics')
+      .select('name, phone_number')
+      .eq('id', picId)
+      .single();
+      
+    if (picErr || !pic) throw new Error('PIC not found');
+    if (!pic.phone_number) throw new Error('PIC phone number is empty');
+    
+    const { data: warehouses, error: whErr } = await supabaseAdmin
+      .from('warehouses')
+      .select('name')
+      .eq('pic_id', picId);
+      
+    if (whErr) throw whErr;
+    
+    const warehouseNames = warehouses && warehouses.length > 0 
+      ? warehouses.map(w => w.name).join(', ') 
+      : 'Gudang Belum Ditugaskan';
+
+    const message = `*[TEST]* REMINDER STOCK OPNAME\n\nHalo ${pic.name},\n\nIni adalah pengingat *TEST* untuk jadwal Stock Opname bulanan gudang *${warehouseNames}*.\n\n_Pesan otomatis dari KhumKhum ERP_`;
+    
+    const result = await sendWhatsAppMessage({
+      target: pic.phone_number,
+      message,
+    });
+    
+    if (result.success) {
+      await logAuditEvent({
+        userId: user.userId,
+        action: 'UPDATE',
+        entityType: 'warehouse_pic',
+        entityId: picId,
+        details: { target: pic.phone_number }
+      });
+      return { success: true, message: 'Test reminder sent successfully' };
+    } else {
+      return { success: false, error: result.error || 'Failed to send WhatsApp message' };
+    }
   } catch (err: any) {
     return { success: false, error: err.message };
   }

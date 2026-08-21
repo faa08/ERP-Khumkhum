@@ -21,6 +21,7 @@ export interface DbUser {
   password?: string;
   name: string;
   role: UserRole;
+  whatsapp_number?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -70,6 +71,17 @@ export interface DbWarehouse {
   id: string;
   name: string;
   location?: string | null;
+  pic_id?: string | null;
+  warehouse_pics?: DbWarehousePic | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DbWarehousePic {
+  id: string;
+  name: string;
+  phone_number: string;
+  next_reminder_datetime?: string | null;
   created_at: string;
   updated_at: string;
 }

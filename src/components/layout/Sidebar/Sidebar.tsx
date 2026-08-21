@@ -87,6 +87,7 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
           { id: 'raw-materials', label: 'Bahan Baku', href: '/master/raw-materials' },
           { id: 'customers', label: 'Pelanggan', href: '/master/customers' },
           { id: 'warehouses', label: 'Gudang', href: '/master/warehouses' },
+          { id: 'warehouse-pics', label: 'PIC Gudang', href: '/master/warehouse-pics' },
           { id: 'prod-stds', label: 'Standar Produksi', href: '/master/production-standards', requiredPermission: 'production' },
           { id: 'sort-stds', label: 'Standar Sortasi', href: '/master/sorting-standards', requiredPermission: 'qc' },
           { id: 'qc-stds', label: 'Standar QC', href: '/master/qc-standards', requiredPermission: 'qc' },

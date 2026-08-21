@@ -15,7 +15,7 @@ export async function getPpicData(weekString?: string): Promise<{
   try {
     await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
 
-    let startDateStr = new Date().toISOString().split('T')[0];
+    let startDateStr = '';
     let endDateStr = '';
 
     if (weekString) {
@@ -33,6 +33,17 @@ export async function getPpicData(weekString?: string): Promise<{
       const endDate = new Date(startDate);
       endDate.setDate(endDate.getDate() + 6);
 
+      startDateStr = format(startDate, 'yyyy-MM-dd');
+      endDateStr = format(endDate, 'yyyy-MM-dd');
+    } else {
+      const now = new Date();
+      const day = now.getDay() || 7;
+      const startDate = new Date(now);
+      startDate.setDate(now.getDate() - day + 1);
+      
+      const endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6);
+      
       startDateStr = format(startDate, 'yyyy-MM-dd');
       endDateStr = format(endDate, 'yyyy-MM-dd');
     }

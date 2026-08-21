@@ -11,7 +11,7 @@
 }
 
 .menu {
-  position: absolute;
+  z-index: 9999;
   z-index: var(--z-dropdown);
   background-color: var(--bg-surface);
   border: 1px solid var(--border-default);
@@ -24,10 +24,7 @@
   animation: slideDown var(--transition-fast) ease-out forwards;
 }
 
-.menu--bottom-left { top: calc(100% + var(--space-1)); left: 0; }
-.menu--bottom-right { top: calc(100% + var(--space-1)); right: 0; }
-.menu--top-left { bottom: calc(100% + var(--space-1)); left: 0; }
-.menu--top-right { bottom: calc(100% + var(--space-1)); right: 0; }
+
 
 .item {
   display: flex;

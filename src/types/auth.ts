@@ -25,6 +25,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  whatsappNumber?: string;
   department?: string;
   avatarUrl?: string;
   isActive: boolean;

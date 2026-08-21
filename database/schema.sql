@@ -18,6 +18,7 @@ CREATE TABLE users (
   password VARCHAR(255) NOT NULL,
   name VARCHAR(255) NOT NULL,
   role user_role NOT NULL,
+  whatsapp_number VARCHAR(20),
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -63,11 +64,22 @@ CREATE TABLE customers (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Master Data: Warehouse PICs
+CREATE TABLE warehouse_pics (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(50) NOT NULL,
+  next_reminder_datetime TIMESTAMPTZ,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
 -- Master Data: Warehouses
 CREATE TABLE warehouses (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name VARCHAR(255) NOT NULL,
   location TEXT,
+  pic_id UUID REFERENCES warehouse_pics(id),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/stock-reminder",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

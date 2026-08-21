@@ -15,6 +15,7 @@ const userSchema = z.object({
   username: z.string().min(3, 'Username minimal 3 karakter'),
   password: z.string().optional(),
   role: z.string().min(1, 'Role wajib diisi'),
+  whatsappNumber: z.string().max(20, 'Nomor terlalu panjang').optional().or(z.literal('')),
 });
 
 type UserFormData = z.infer<typeof userSchema>;
@@ -36,6 +37,7 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
       username: '',
       password: '',
       role: '',
+      whatsappNumber: '',
     }
   });
 
@@ -46,9 +48,10 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
           username: user.email, // Map existing email to username field
           password: '',
           role: user.role,
+          whatsappNumber: user.whatsappNumber || '',
         });
       } else {
-        reset({ username: '', password: '', role: '' });
+        reset({ username: '', password: '', role: '', whatsappNumber: '' });
       }
     }
   }, [isOpen, user, reset]);
@@ -67,6 +70,7 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
         email: data.username, // Map username back to email for DB compatibility
         name: data.username,  // Fallback name to username
         role: data.role as UserRole,
+        whatsappNumber: data.whatsappNumber || undefined,
       };
       
       // Inject password for creation
@@ -115,6 +119,10 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
             onChange={(val) => setValue('role', val, { shouldValidate: true })}
             placeholder="Pilih peran..."
           />
+        </FormField>
+        
+        <FormField label="No. WhatsApp (Opsional)" error={errors.whatsappNumber?.message}>
+          <Input fullWidth {...register('whatsappNumber')} placeholder="Misal: 08123456789" />
         </FormField>
       </form>
     </Drawer>

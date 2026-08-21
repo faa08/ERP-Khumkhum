@@ -57,6 +57,7 @@ export default function UsersPage() {
           name: u.name,
           email: u.email,
           role: u.role as UserRole,
+          whatsappNumber: u.whatsapp_number || undefined,
           department: u.role.toLowerCase().includes('produksi')
             ? 'Produksi'
             : u.role.toLowerCase().includes('gudang')
@@ -103,6 +104,7 @@ export default function UsersPage() {
         name: data.name,
         email: data.email,
         role: data.role as DbUserRole,
+        whatsapp_number: data.whatsappNumber,
       });
 
       if (res.success) {
@@ -119,6 +121,7 @@ export default function UsersPage() {
         name: data.name || '',
         email: data.email || '',
         role: (data.role as DbUserRole) || 'QC',
+        whatsapp_number: data.whatsappNumber,
         password: password,
       });
 
@@ -210,6 +213,15 @@ export default function UsersPage() {
         cell: ({ row }) => (
           <span style={{ fontSize: 'var(--text-sm)' }}>
             {ROLE_LABELS[row.original.role] || row.original.role}
+          </span>
+        ),
+      },
+      {
+        accessorKey: 'whatsappNumber',
+        header: 'No. WhatsApp',
+        cell: ({ row }) => (
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+            {row.original.whatsappNumber || '-'}
           </span>
         ),
       },

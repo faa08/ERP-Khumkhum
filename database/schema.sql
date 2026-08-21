@@ -50,6 +50,9 @@ CREATE TABLE raw_materials (
   code VARCHAR(50) UNIQUE NOT NULL,
   name VARCHAR(255) NOT NULL,
   uom VARCHAR(20) NOT NULL, -- Unit of Measure (e.g., kg, gram, pcs)
+  min_stock DECIMAL(10,2) DEFAULT 0,
+  rop DECIMAL(10,2) DEFAULT 0,
+  material_category VARCHAR(50), -- Jamur, Bumbu, Tepung, Minyak, Packaging
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -116,7 +119,16 @@ CREATE TABLE sortings (
 CREATE TABLE production_orders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   batch_number VARCHAR(100) UNIQUE NOT NULL,
-  status VARCHAR(50) DEFAULT 'DRAFT', -- DRAFT, IN_PROGRESS, QC_PENDING, COMPLETED, CANCELLED
+  product_id UUID REFERENCES products(id),
+  product_variant VARCHAR(255),
+  target_quantity DECIMAL(10,2),
+  status VARCHAR(50) DEFAULT 'DRAFT', -- DRAFT, IN_PROGRESS, COMPLETED_WIP, QC_PENDING, RELEASED, COMPLETED, CANCELLED
+  input_weight DECIMAL(10,2),
+  output_weight DECIMAL(10,2),
+  yield_percentage DECIMAL(5,2),
+  is_yield_compliant BOOLEAN,
+  anomaly_reason TEXT,
+  notes TEXT,
   start_date TIMESTAMP WITH TIME ZONE,
   end_date TIMESTAMP WITH TIME ZONE,
   created_by UUID REFERENCES users(id),
@@ -165,6 +177,7 @@ CREATE TABLE inventory (
   item_id UUID NOT NULL, 
   batch_number VARCHAR(100),
   quantity DECIMAL(10,2) NOT NULL DEFAULT 0,
+  reorder_point DECIMAL(10,2) DEFAULT 0,
   last_updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -175,6 +188,8 @@ CREATE TABLE stock_movements (
   movement_type VARCHAR(50) NOT NULL, -- 'IN', 'OUT', 'ADJUSTMENT', 'TRANSFER'
   quantity DECIMAL(10,2) NOT NULL,
   reference_id UUID, -- e.g., receiving_id, production_order_id, sales_order_id
+  reference_type VARCHAR(50), -- e.g., 'PRODUCTION_BATCH', 'MANUAL_INBOUND', 'STOCK_OPNAME', 'QC_RELEASE', 'SALES_ORDER_SHIPMENT'
+  notes TEXT,
   movement_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   created_by UUID REFERENCES users(id)
 );

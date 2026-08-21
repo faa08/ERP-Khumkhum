@@ -206,20 +206,68 @@ export async function getInventoryForecasting(inventoryId: string): Promise<{
   }
 }
 
-export async function receiveNonMushroomItem(payload: { inventory_id: string, quantity: number, notes?: string }): Promise<{ success: boolean; error?: string }> {
+export async function receiveNonMushroomItem(payload: { item_name: string, uom: string, quantity: number, notes?: string }): Promise<{ success: boolean; error?: string }> {
   try {
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
     const batchNumber = `INB-NONJMR-${format(new Date(), 'yyyyMMdd')}-${Math.floor(Math.random() * 10000)}`;
 
-    const { data: inv, error: invError } = await supabaseAdmin.from('inventory').select('quantity').eq('id', payload.inventory_id).single();
-    if (invError) throw invError;
+    // 1. Find or create raw_material
+    let rawMaterialId = '';
+    const { data: existingRm } = await supabaseAdmin.from('raw_materials').select('id').ilike('name', payload.item_name).maybeSingle();
+    
+    if (existingRm) {
+      rawMaterialId = existingRm.id;
+    } else {
+      const code = `RM-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
+      const { data: newRm, error: rmError } = await supabaseAdmin.from('raw_materials').insert({
+        code,
+        name: payload.item_name,
+        uom: payload.uom || 'kg',
+        min_stock: 0,
+        rop: 0
+      }).select('id').single();
+      
+      if (rmError) throw rmError;
+      rawMaterialId = newRm.id;
+    }
 
-    const newQty = inv.quantity + payload.quantity;
+    // 2. Find or create inventory
+    let inventoryId = '';
+    let currentQty = 0;
+    const { data: existingInv } = await supabaseAdmin.from('inventory')
+      .select('id, quantity')
+      .eq('item_type', 'RAW_MATERIAL')
+      .eq('item_id', rawMaterialId)
+      .maybeSingle();
 
-    await supabaseAdmin.from('inventory').update({ quantity: newQty, last_updated_at: new Date().toISOString() }).eq('id', payload.inventory_id);
+    if (existingInv) {
+      inventoryId = existingInv.id;
+      currentQty = existingInv.quantity;
+      await supabaseAdmin.from('inventory').update({ 
+        quantity: currentQty + payload.quantity, 
+        last_updated_at: new Date().toISOString() 
+      }).eq('id', inventoryId);
+    } else {
+      // Find a warehouse
+      const { data: wh } = await supabaseAdmin.from('warehouses').select('id').limit(1).single();
+      const warehouseId = wh?.id;
+      if (!warehouseId) throw new Error('No warehouse found');
 
+      const { data: newInv, error: invError } = await supabaseAdmin.from('inventory').insert({
+        warehouse_id: warehouseId,
+        item_type: 'RAW_MATERIAL',
+        item_id: rawMaterialId,
+        quantity: payload.quantity,
+        reorder_point: 0
+      }).select('id').single();
+
+      if (invError) throw invError;
+      inventoryId = newInv.id;
+    }
+
+    // 3. Create movement
     await supabaseAdmin.from('stock_movements').insert({
-      inventory_id: payload.inventory_id,
+      inventory_id: inventoryId,
       movement_type: 'IN',
       quantity: payload.quantity,
       reference_type: 'MANUAL_INBOUND',

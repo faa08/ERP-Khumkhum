@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Tabs } from '@/components/ui/Tabs';
 import { StatusBadge } from '@/components/ui/StatusBadge';
-import { Drawer } from '@/components/ui/Drawer';
+import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
@@ -32,7 +32,7 @@ export default function InventoryPage() {
   const [isSavingOpname, setIsSavingOpname] = useState(false);
 
   const [inboundDrawerOpen, setInboundDrawerOpen] = useState(false);
-  const [inboundForm, setInboundForm] = useState({ inventory_id: '', quantity: 0, notes: '' });
+  const [inboundForm, setInboundForm] = useState({ item_name: '', uom: 'kg', quantity: 0, notes: '' });
   const [isSavingInbound, setIsSavingInbound] = useState(false);
 
   const toast = useToast();
@@ -86,8 +86,8 @@ export default function InventoryPage() {
   };
 
   const handleSaveInbound = async () => {
-    if (!inboundForm.inventory_id || inboundForm.quantity <= 0) {
-      toast.error('Pilih item dan masukkan jumlah yang valid');
+    if (!inboundForm.item_name || inboundForm.quantity <= 0) {
+      toast.error('Masukkan nama item dan jumlah yang valid');
       return;
     }
     setIsSavingInbound(true);
@@ -95,7 +95,7 @@ export default function InventoryPage() {
     if (res.success) {
       toast.success('Penerimaan barang berhasil');
       setInboundDrawerOpen(false);
-      setInboundForm({ inventory_id: '', quantity: 0, notes: '' });
+      setInboundForm({ item_name: '', uom: 'kg', quantity: 0, notes: '' });
       loadData();
     } else {
       toast.error(res.error || 'Gagal menerima barang');
@@ -286,7 +286,7 @@ export default function InventoryPage() {
 
       <DataTable columns={invColumns} data={inventoryData} />
 
-      <Drawer
+      <Modal
         isOpen={inboundDrawerOpen}
         onClose={() => setInboundDrawerOpen(false)}
         title="Input Pemasukan Barang (Non-Jamur)"
@@ -299,17 +299,19 @@ export default function InventoryPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <FormField label="Pilih Item" required>
-            <select 
-              className="w-full p-2 border rounded"
-              value={inboundForm.inventory_id}
-              onChange={e => setInboundForm(f => ({ ...f, inventory_id: e.target.value }))}
-            >
-              <option value="">-- Pilih Item --</option>
-              {inventoryData.map(inv => (
-                <option key={inv.id} value={inv.id}>{inv.item_name} ({inv.warehouse?.name})</option>
-              ))}
-            </select>
+          <FormField label="Nama Barang" required>
+            <Input
+              value={inboundForm.item_name}
+              onChange={e => setInboundForm(f => ({ ...f, item_name: e.target.value }))}
+              placeholder="e.g. Garam, Tepung, Minyak"
+            />
+          </FormField>
+          <FormField label="Satuan (UOM)" required>
+            <Input
+              value={inboundForm.uom}
+              onChange={e => setInboundForm(f => ({ ...f, uom: e.target.value }))}
+              placeholder="e.g. kg, liter, pcs"
+            />
           </FormField>
           <FormField label="Jumlah (kg/pcs)" required>
             <Input 
@@ -326,7 +328,7 @@ export default function InventoryPage() {
             />
           </FormField>
         </div>
-      </Drawer>
+      </Modal>
     </>
   );
 

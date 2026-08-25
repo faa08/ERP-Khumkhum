@@ -33,41 +33,47 @@ export async function getQcInspections(): Promise<{
 
     if (error) throw error;
 
-    // Fetch linked production order batches and results
-    const enriched = await Promise.all(
-      (data || []).map(async (item: any) => {
-        let prodOrder: any = null;
-        if (item.reference_type === 'PRODUCTION' && item.reference_id) {
-          const { data: po } = await supabaseAdmin
-            .from('production_orders')
-            .select('id, batch_number, status, start_date, end_date')
-            .eq('id', item.reference_id)
-            .single();
+    // Fetch linked production order batches and results in bulk
+    const prodOrderIds = data?.filter(i => i.reference_type === 'PRODUCTION' && i.reference_id).map(i => i.reference_id) || [];
+    let poMap = new Map();
 
-          if (po) {
-            const { data: res } = await supabaseAdmin
-              .from('production_results')
-              .select('*, product:products(id, sku, name)')
-              .eq('production_order_id', po.id)
-              .limit(1);
+    if (prodOrderIds.length > 0) {
+      const { data: pos } = await supabaseAdmin
+        .from('production_orders')
+        .select(`
+          id, batch_number, status, start_date, end_date,
+          results:production_results(*, product:products(id, sku, name))
+        `)
+        .in('id', prodOrderIds);
 
-            const r = res?.[0];
-            prodOrder = {
-              ...po,
-              product: r?.product || null,
-              product_variant: r?.product?.name || 'Jamur Crispy Original 100g',
-              yield_percentage: r?.yield_percentage || null,
-              target_quantity: r?.finished_goods_quantity || 500,
-            };
-          }
+      poMap = new Map(pos?.map(po => [po.id, po]) || []);
+    }
+
+    const enriched = (data || []).map((item: any) => {
+      let prodOrder: any = null;
+      if (item.reference_type === 'PRODUCTION' && item.reference_id) {
+        const po = poMap.get(item.reference_id);
+        if (po) {
+          const r = po.results?.[0];
+          prodOrder = {
+            id: po.id,
+            batch_number: po.batch_number,
+            status: po.status,
+            start_date: po.start_date,
+            end_date: po.end_date,
+            product: r?.product || null,
+            product_variant: r?.product?.name || 'Jamur Crispy Original 100g',
+            yield_percentage: r?.yield_percentage || null,
+            target_quantity: r?.finished_goods_quantity || 500,
+          };
         }
+      }
 
-        return {
-          ...item,
-          production_order: prodOrder,
-        } as DbQcInspection;
-      })
-    );
+      return {
+        ...item,
+        production_order: prodOrder,
+      } as DbQcInspection;
+    });
 
     return { success: true, data: enriched };
   } catch (err: any) {

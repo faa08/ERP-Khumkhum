@@ -125,26 +125,33 @@ export async function generateReportData(
         avg_yield: po.results?.length ? (po.results.reduce((sum: number, r: any) => sum + Number(r.yield_percentage || 0), 0) / po.results.length) : 0
       }));
     } else if (type === 'inventory') {
-      processedData = await Promise.all(
-        (data || []).map(async (mv: any) => {
-          let item_name = 'Unknown';
-          if (mv.inventory?.item_type === 'RAW_MATERIAL') {
-             const {data: rm} = await supabaseAdmin.from('raw_materials').select('name').eq('id', mv.inventory.item_id).single();
-             item_name = rm?.name || 'Bahan Baku';
-          } else if (mv.inventory?.item_type === 'PRODUCT') {
-             const {data: pr} = await supabaseAdmin.from('products').select('name').eq('id', mv.inventory.item_id).single();
-             item_name = pr?.name || 'Produk';
-          }
-          return {
-            date: mv.movement_date,
-            item_name: item_name,
-            warehouse: mv.inventory?.warehouse?.name,
-            movement_type: mv.movement_type,
-            quantity: mv.quantity,
-            notes: mv.notes
-          };
-        })
-      );
+      const rmIds = data?.filter((mv: any) => mv.inventory?.item_type === 'RAW_MATERIAL').map((mv: any) => mv.inventory.item_id) || [];
+      const prodIds = data?.filter((mv: any) => mv.inventory?.item_type === 'PRODUCT').map((mv: any) => mv.inventory.item_id) || [];
+
+      const [rmRes, prodRes] = await Promise.all([
+        rmIds.length > 0 ? supabaseAdmin.from('raw_materials').select('id, name').in('id', rmIds) : { data: [] },
+        prodIds.length > 0 ? supabaseAdmin.from('products').select('id, name').in('id', prodIds) : { data: [] }
+      ]);
+
+      const rmMap = new Map(rmRes.data?.map(rm => [rm.id, rm.name]) || []);
+      const prodMap = new Map(prodRes.data?.map(p => [p.id, p.name]) || []);
+
+      processedData = (data || []).map((mv: any) => {
+        let item_name = 'Unknown';
+        if (mv.inventory?.item_type === 'RAW_MATERIAL') {
+          item_name = rmMap.get(mv.inventory.item_id) || 'Bahan Baku';
+        } else if (mv.inventory?.item_type === 'PRODUCT') {
+          item_name = prodMap.get(mv.inventory.item_id) || 'Produk';
+        }
+        return {
+          date: mv.movement_date,
+          item_name: item_name,
+          warehouse: mv.inventory?.warehouse?.name,
+          movement_type: mv.movement_type,
+          quantity: mv.quantity,
+          notes: mv.notes
+        };
+      });
     } else if (type === 'sales') {
       processedData = data.map((so: any) => ({
         date: so.order_date,

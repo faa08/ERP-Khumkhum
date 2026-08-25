@@ -22,28 +22,27 @@ export async function getInventorySummary(): Promise<{
 
     if (error) throw error;
 
-    // Enrich with item names
-    const enriched = await Promise.all(
-      (data || []).map(async (inv: any) => {
-        let item_name = 'Unknown';
-        if (inv.item_type === 'RAW_MATERIAL') {
-          const { data: rm } = await supabaseAdmin
-            .from('raw_materials')
-            .select('name')
-            .eq('id', inv.item_id)
-            .single();
-          item_name = rm?.name || 'Bahan Baku';
-        } else if (inv.item_type === 'PRODUCT') {
-          const { data: prod } = await supabaseAdmin
-            .from('products')
-            .select('name')
-            .eq('id', inv.item_id)
-            .single();
-          item_name = prod?.name || 'Produk';
-        }
-        return { ...inv, item_name };
-      })
-    );
+    // Enrich with item names via batched queries
+    const rmIds = data?.filter(inv => inv.item_type === 'RAW_MATERIAL').map(inv => inv.item_id) || [];
+    const prodIds = data?.filter(inv => inv.item_type === 'PRODUCT').map(inv => inv.item_id) || [];
+
+    const [rmRes, prodRes] = await Promise.all([
+      rmIds.length > 0 ? supabaseAdmin.from('raw_materials').select('id, name').in('id', rmIds) : { data: [] },
+      prodIds.length > 0 ? supabaseAdmin.from('products').select('id, name').in('id', prodIds) : { data: [] }
+    ]);
+
+    const rmMap = new Map(rmRes.data?.map(rm => [rm.id, rm.name]) || []);
+    const prodMap = new Map(prodRes.data?.map(p => [p.id, p.name]) || []);
+
+    const enriched = (data || []).map((inv: any) => {
+      let item_name = 'Unknown';
+      if (inv.item_type === 'RAW_MATERIAL') {
+        item_name = rmMap.get(inv.item_id) || 'Bahan Baku';
+      } else if (inv.item_type === 'PRODUCT') {
+        item_name = prodMap.get(inv.item_id) || 'Produk';
+      }
+      return { ...inv, item_name };
+    });
 
     return { success: true, data: enriched as DbInventory[] };
   } catch (err: any) {
@@ -341,28 +340,27 @@ export async function getLossReport(): Promise<{ success: boolean; data?: any[];
 
     if (error) throw error;
     
-    // Enrich with item names
-    const enriched = await Promise.all(
-      (data || []).map(async (opname: any) => {
-        let item_name = 'Unknown';
-        if (opname.inventory?.item_type === 'RAW_MATERIAL') {
-          const { data: rm } = await supabaseAdmin
-            .from('raw_materials')
-            .select('name')
-            .eq('id', opname.inventory.item_id)
-            .single();
-          item_name = rm?.name || 'Bahan Baku';
-        } else if (opname.inventory?.item_type === 'PRODUCT') {
-          const { data: prod } = await supabaseAdmin
-            .from('products')
-            .select('name')
-            .eq('id', opname.inventory.item_id)
-            .single();
-          item_name = prod?.name || 'Produk';
-        }
-        return { ...opname, item_name };
-      })
-    );
+    // Enrich with item names via batched queries
+    const rmIds = data?.filter(op => op.inventory?.item_type === 'RAW_MATERIAL').map(op => op.inventory.item_id) || [];
+    const prodIds = data?.filter(op => op.inventory?.item_type === 'PRODUCT').map(op => op.inventory.item_id) || [];
+
+    const [rmRes, prodRes] = await Promise.all([
+      rmIds.length > 0 ? supabaseAdmin.from('raw_materials').select('id, name').in('id', rmIds) : { data: [] },
+      prodIds.length > 0 ? supabaseAdmin.from('products').select('id, name').in('id', prodIds) : { data: [] }
+    ]);
+
+    const rmMap = new Map(rmRes.data?.map(rm => [rm.id, rm.name]) || []);
+    const prodMap = new Map(prodRes.data?.map(p => [p.id, p.name]) || []);
+
+    const enriched = (data || []).map((opname: any) => {
+      let item_name = 'Unknown';
+      if (opname.inventory?.item_type === 'RAW_MATERIAL') {
+        item_name = rmMap.get(opname.inventory.item_id) || 'Bahan Baku';
+      } else if (opname.inventory?.item_type === 'PRODUCT') {
+        item_name = prodMap.get(opname.inventory.item_id) || 'Produk';
+      }
+      return { ...opname, item_name };
+    });
 
     return { success: true, data: enriched };
   } catch (err: any) {

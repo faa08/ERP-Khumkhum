@@ -58,9 +58,9 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   SUPER_ADMIN: ['*'],
   QC:          ['dashboard', 'qc', 'standards', 'production', 'inventory', 'master', 'traceability', 'reports', 'forecast'],
-  WAREHOUSE:   ['dashboard', 'master', 'receiving', 'sorting', 'inventory', 'ppic', 'traceability', 'reports', 'forecast'],
+  WAREHOUSE:   ['dashboard', 'master', 'receiving', 'sorting', 'inventory', 'warehouse', 'ppic', 'traceability', 'reports', 'forecast'],
   PRODUCTION:  ['dashboard', 'production', 'ppic', 'inventory', 'traceability'],
-  MANAGEMENT:  ['dashboard', 'reports', 'traceability', 'master', 'production', 'inventory', 'qc', 'sales', 'audit', 'forecast'],
+  MANAGEMENT:  ['dashboard', 'reports', 'traceability', 'master', 'production', 'inventory', 'warehouse', 'qc', 'sales', 'audit', 'forecast'],
   SALES:       ['dashboard', 'master', 'sales', 'inventory', 'traceability'],
   FARMER:      [], // Petani tidak login ke web — interaksi via WhatsApp
 };

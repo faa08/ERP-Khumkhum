@@ -166,3 +166,206 @@ export async function addManualHistoricalSorting(date: string, weight: number, f
     return { success: false, error: err.message };
   }
 }
+
+// ─────────────────────────────────────────────
+// RIWAYAT JAMUR MATANG PENGGORENGAN (WIP Plain)
+// ─────────────────────────────────────────────
+
+export async function getCookedMushroomHistory(): Promise<{
+  success: boolean;
+  data?: {
+    entries: {
+      id: string;
+      date: string;
+      batch_number: string;
+      output_weight: number;
+      input_weight: number;
+      yield_percentage: number;
+      status: string;
+      source: 'production' | 'manual';
+    }[];
+    weeklyData: number[];
+    dailyAverage: number;
+    weeklyAverage: number;
+    totalLast30Days: number;
+  };
+  error?: string;
+}> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
+
+    // Get completed production orders from last 60 days
+    const sixtyDaysAgo = new Date();
+    sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+    const { data: orders, error: ordersErr } = await supabaseAdmin
+      .from('production_orders')
+      .select('id, batch_number, start_date, created_at, status, input_weight, output_weight, yield_percentage')
+      .in('status', ['COMPLETED', 'COMPLETED_WIP', 'RELEASED', 'QC_PENDING'])
+      .gte('created_at', format(sixtyDaysAgo, 'yyyy-MM-dd'))
+      .order('created_at', { ascending: false });
+
+    if (ordersErr) throw ordersErr;
+
+    const entries = (orders || []).map((o: any) => ({
+      id: o.id,
+      date: o.start_date || o.created_at,
+      batch_number: o.batch_number || '-',
+      output_weight: Number(o.output_weight || 0),
+      input_weight: Number(o.input_weight || 0),
+      yield_percentage: Number(o.yield_percentage || 0),
+      status: o.status,
+      source: 'production' as const,
+    }));
+
+    // Bucket into 8 weeks for trend
+    const weeklyData = Array(8).fill(0);
+    const now = new Date();
+    entries.forEach(e => {
+      const d = new Date(e.date);
+      const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+      const weekIdx = 7 - Math.floor(diffDays / 7);
+      if (weekIdx >= 0 && weekIdx < 8) {
+        weeklyData[weekIdx] += e.output_weight;
+      }
+    });
+
+    // Last 30 days stats
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentEntries = entries.filter(e => new Date(e.date) >= thirtyDaysAgo);
+    const totalLast30 = recentEntries.reduce((s, e) => s + e.output_weight, 0);
+    const dailyAvg = totalLast30 / 30;
+    const weeklyAvg = totalLast30 / 4;
+
+    return {
+      success: true,
+      data: {
+        entries,
+        weeklyData,
+        dailyAverage: Number(dailyAvg.toFixed(2)),
+        weeklyAverage: Number(weeklyAvg.toFixed(2)),
+        totalLast30Days: Number(totalLast30.toFixed(2)),
+      },
+    };
+  } catch (err: any) {
+    console.error('getCookedMushroomHistory error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function addManualCookedMushroomEntry(payload: {
+  date: string;
+  output_weight: number;
+  input_weight: number;
+  notes?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE']);
+
+    const batchNumber = `MANUAL-COOK-${format(new Date(payload.date), 'yyyyMMdd')}-${Math.floor(Math.random() * 1000)}`;
+    const yieldPct = payload.input_weight > 0
+      ? Number(((payload.output_weight / payload.input_weight) * 100).toFixed(2))
+      : 0;
+
+    const { error } = await supabaseAdmin.from('production_orders').insert({
+      batch_number: batchNumber,
+      status: 'COMPLETED_WIP',
+      start_date: new Date(payload.date).toISOString(),
+      input_weight: payload.input_weight,
+      output_weight: payload.output_weight,
+      yield_percentage: yieldPct,
+      is_yield_compliant: yieldPct >= 75,
+      notes: payload.notes ? `[Input Manual] ${payload.notes}` : '[Input Manual] Data jamur matang manual',
+      created_by: user.userId,
+      created_at: new Date(payload.date).toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    console.error('addManualCookedMushroomEntry error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+// ─────────────────────────────────────────────
+// PERBANDINGAN PASOKAN vs PESANAN (Supply vs Demand)
+// ─────────────────────────────────────────────
+
+export async function getSupplyDemandComparison(): Promise<{
+  success: boolean;
+  data?: {
+    totalSupplyKg: number;
+    totalDemandKg: number;
+    gapKg: number;
+    gapStatus: 'SURPLUS' | 'DEFICIT' | 'BALANCED';
+    demandByProduct: { product_name: string; total_qty: number }[];
+  };
+  error?: string;
+}> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
+
+    // Supply: avg weekly cooked mushroom output (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data: prodOrders } = await supabaseAdmin
+      .from('production_orders')
+      .select('output_weight, created_at')
+      .in('status', ['COMPLETED', 'COMPLETED_WIP', 'RELEASED'])
+      .gte('created_at', format(thirtyDaysAgo, 'yyyy-MM-dd'));
+
+    const totalOutputLast30 = (prodOrders || []).reduce((s: number, o: any) => s + Number(o.output_weight || 0), 0);
+    const weeklySupply = Number((totalOutputLast30 / 4).toFixed(2));
+
+    // Demand: pending sales orders
+    const { data: pendingOrders } = await supabaseAdmin
+      .from('sales_orders')
+      .select(`
+        items:sales_order_items(
+          quantity,
+          product:products(name)
+        )
+      `)
+      .in('status', ['PENDING', 'CONFIRMED']);
+
+    let totalDemand = 0;
+    const demandMap: Record<string, number> = {};
+
+    (pendingOrders || []).forEach((so: any) => {
+      (so.items || []).forEach((item: any) => {
+        const qty = Number(item.quantity || 0);
+        const name = item.product?.name || 'Unknown';
+        totalDemand += qty;
+        demandMap[name] = (demandMap[name] || 0) + qty;
+      });
+    });
+
+    const gapKg = Number((weeklySupply - totalDemand).toFixed(2));
+    let gapStatus: 'SURPLUS' | 'DEFICIT' | 'BALANCED' = 'BALANCED';
+    if (gapKg > 10) gapStatus = 'SURPLUS';
+    else if (gapKg < -10) gapStatus = 'DEFICIT';
+
+    const demandByProduct = Object.entries(demandMap).map(([product_name, total_qty]) => ({
+      product_name,
+      total_qty,
+    }));
+
+    return {
+      success: true,
+      data: {
+        totalSupplyKg: weeklySupply,
+        totalDemandKg: totalDemand,
+        gapKg,
+        gapStatus,
+        demandByProduct,
+      },
+    };
+  } catch (err: any) {
+    console.error('getSupplyDemandComparison error:', err);
+    return { success: false, error: err.message };
+  }
+}

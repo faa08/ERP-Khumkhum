@@ -47,6 +47,7 @@ import {
   getProductionOverviewMetrics,
   getProductionFormOptions,
   getSpkSuggestions,
+  getProductionCapacityMetrics,
   type CreateProductionOrderInput,
   type MaterialConsumptionItem,
   type SpkSuggestion,
@@ -88,6 +89,7 @@ export default function ProductionPage() {
   const [checkedSpk, setCheckedSpk] = useState<Set<string>>(new Set());
   const [isCreatingSpk, setIsCreatingSpk] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [capacityMetrics, setCapacityMetrics] = useState<any>(null);
 
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [consumptionModalOpen, setConsumptionModalOpen] = useState(false);
@@ -159,12 +161,13 @@ export default function ProductionPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [ordersRes, metricsRes, optionsRes, ppicRes, spkRes] = await Promise.all([
+      const [ordersRes, metricsRes, optionsRes, ppicRes, spkRes, capRes] = await Promise.all([
         getProductionOrders(),
         getProductionOverviewMetrics(),
         getProductionFormOptions(),
         getPpicData(),
         getSpkSuggestions(),
+        getProductionCapacityMetrics(),
       ]);
 
       if (ordersRes.success && ordersRes.data) {
@@ -182,6 +185,9 @@ export default function ProductionPage() {
       }
       if (spkRes.success && spkRes.suggestions) {
         setSpkSuggestions(spkRes.suggestions);
+      }
+      if (capRes.success && capRes.data) {
+        setCapacityMetrics(capRes.data);
       }
     } catch (err: any) {
       console.error('Gagal memuat data lini produksi:', err);
@@ -841,6 +847,49 @@ export default function ProductionPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {/* ── METERAN BEBAN KAPASITAS PABRIK ── */}
+          {capacityMetrics && (
+            <div style={{
+              padding: 'var(--space-4)', borderRadius: 'var(--radius-md)',
+              border: `2px solid ${capacityMetrics.loadLevel === 'RINGAN' ? 'var(--color-success-300)' : capacityMetrics.loadLevel === 'NORMAL' ? 'var(--color-primary-300)' : capacityMetrics.loadLevel === 'BERAT' ? 'var(--color-warning-300)' : 'var(--color-danger-300)'}`,
+              background: capacityMetrics.loadLevel === 'RINGAN' ? 'var(--color-success-50)' : capacityMetrics.loadLevel === 'NORMAL' ? 'var(--color-primary-50)' : capacityMetrics.loadLevel === 'BERAT' ? 'var(--color-warning-50)' : 'var(--color-danger-50)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-3)' }}>
+                <span style={{ fontSize: '1.5rem' }}>
+                  {capacityMetrics.loadLevel === 'RINGAN' ? '🟢' : capacityMetrics.loadLevel === 'NORMAL' ? '🔵' : capacityMetrics.loadLevel === 'BERAT' ? '🟡' : '🔴'}
+                </span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 'var(--text-md)' }}>Beban Kapasitas Pabrik: {capacityMetrics.loadLevel}</div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                    {capacityMetrics.activeShiftCount} shift aktif • Maks. {capacityMetrics.maxBatchesPerDay} batch/hari
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Rata-rata Harian</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{capacityMetrics.avgDailyOutputKg} kg</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Kapasitas Maks.</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{capacityMetrics.maxDailyCapacityKg} kg</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Utilisasi</div>
+                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: capacityMetrics.loadLevel === 'OVER' ? 'var(--color-danger-600)' : 'var(--text-primary)' }}>{capacityMetrics.utilizationPct}%</div>
+                </div>
+              </div>
+              {/* Progress bar */}
+              <div style={{ marginTop: 'var(--space-3)', height: '8px', borderRadius: '4px', background: 'var(--bg-subtle)', overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%', borderRadius: '4px', transition: 'width 0.5s ease',
+                  width: `${Math.min(100, capacityMetrics.utilizationPct)}%`,
+                  background: capacityMetrics.loadLevel === 'RINGAN' ? 'var(--color-success-500)' : capacityMetrics.loadLevel === 'NORMAL' ? 'var(--color-primary-500)' : capacityMetrics.loadLevel === 'BERAT' ? 'var(--color-warning-500)' : 'var(--color-danger-500)',
+                }} />
+              </div>
+            </div>
+          )}
+
           {/* ── SECTION 1: Rekomendasi dari History Warehouse ── */}
           <div style={{ padding: 'var(--space-3)', background: 'var(--color-warning-50)', borderRadius: 'var(--radius-md)', color: 'var(--color-warning-900)', fontSize: 'var(--text-sm)', border: '1px solid var(--color-warning-200)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, marginBottom: '4px' }}>

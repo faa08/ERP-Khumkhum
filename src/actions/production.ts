@@ -828,3 +828,85 @@ export async function getSpkSuggestions(): Promise<{
     return { success: false, error: err.message };
   }
 }
+
+// ─────────────────────────────────────────────
+// PRODUCTION CAPACITY METRICS (For SPK Draft)
+// ─────────────────────────────────────────────
+
+export async function getProductionCapacityMetrics(): Promise<{
+  success: boolean;
+  data?: {
+    avgDailyOutputKg: number;
+    maxDailyCapacityKg: number;
+    utilizationPct: number;
+    loadLevel: 'RINGAN' | 'NORMAL' | 'BERAT' | 'OVER';
+    activeShiftCount: number;
+    maxBatchesPerDay: number;
+  };
+  error?: string;
+}> {
+  try {
+    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE', 'MANAGEMENT']);
+
+    // 1. Get average daily output from last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const { data: recentOrders } = await supabaseAdmin
+      .from('production_orders')
+      .select('output_weight, created_at')
+      .in('status', ['COMPLETED', 'COMPLETED_WIP', 'RELEASED'])
+      .gte('created_at', thirtyDaysAgo.toISOString());
+
+    const totalOutput = (recentOrders || []).reduce(
+      (s: number, o: any) => s + Number(o.output_weight || 0), 0
+    );
+    const avgDailyOutput = Number((totalOutput / 30).toFixed(2));
+
+    // 2. Get operating hours config for max capacity
+    const { data: settingsData } = await supabaseAdmin
+      .from('settings')
+      .select('value')
+      .eq('key', 'operating_hours_standards')
+      .maybeSingle();
+
+    let maxBatchesPerDay = 14; // Default
+    let activeShiftCount = 1;
+
+    if (settingsData?.value) {
+      const config = settingsData.value as any;
+      const activeShifts = (config.shifts || []).filter((s: any) => s.is_active);
+      activeShiftCount = activeShifts.length;
+      maxBatchesPerDay = activeShifts.reduce((s: number, sh: any) => s + (sh.max_fryer_batches || 0), 0);
+    }
+
+    // Estimate: each batch ~5kg output (adjustable)
+    const estimatedKgPerBatch = 5;
+    const maxDailyCapacity = maxBatchesPerDay * estimatedKgPerBatch;
+
+    const utilizationPct = maxDailyCapacity > 0
+      ? Number(((avgDailyOutput / maxDailyCapacity) * 100).toFixed(1))
+      : 0;
+
+    let loadLevel: 'RINGAN' | 'NORMAL' | 'BERAT' | 'OVER' = 'NORMAL';
+    if (utilizationPct < 40) loadLevel = 'RINGAN';
+    else if (utilizationPct <= 75) loadLevel = 'NORMAL';
+    else if (utilizationPct <= 100) loadLevel = 'BERAT';
+    else loadLevel = 'OVER';
+
+    return {
+      success: true,
+      data: {
+        avgDailyOutputKg: avgDailyOutput,
+        maxDailyCapacityKg: maxDailyCapacity,
+        utilizationPct,
+        loadLevel,
+        activeShiftCount,
+        maxBatchesPerDay,
+      },
+    };
+  } catch (err: any) {
+    console.error('getProductionCapacityMetrics error:', err);
+    return { success: false, error: err.message };
+  }
+}

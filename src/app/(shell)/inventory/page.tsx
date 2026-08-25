@@ -17,6 +17,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport } from '@/actions/inventory';
 import { getRawMaterials } from '@/actions/master';
+import { usePathname } from 'next/navigation';
 import type { DbInventory, DbStockMovement, DbRawMaterial } from '@/types/database';
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: string; color: string; rop: number }> = {
@@ -25,6 +26,9 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: string; color: stri
 };
 
 export default function InventoryPage() {
+  const pathname = usePathname();
+  const isWarehouseMode = pathname.includes('/warehouse');
+
   const [inventoryData, setInventoryData] = useState<DbInventory[]>([]);
   const [movements, setMovements] = useState<DbStockMovement[]>([]);
   const [lossData, setLossData] = useState<any[]>([]);
@@ -48,12 +52,24 @@ export default function InventoryPage() {
       getLossReport(),
       getRawMaterials()
     ]);
-    if (invRes.success && invRes.data) setInventoryData(invRes.data);
-    if (mvRes.success && mvRes.data) setMovements(mvRes.data);
+    
+    let filteredInv: DbInventory[] = [];
+    if (invRes.success && invRes.data) {
+      filteredInv = invRes.data.filter(i => isWarehouseMode ? i.item_type === 'RAW_MATERIAL' : i.item_type === 'PRODUCT');
+      setInventoryData(filteredInv);
+    }
+    
+    if (mvRes.success && mvRes.data) {
+      const invIds = new Set(filteredInv.map(i => i.id));
+      const filteredMv = mvRes.data.filter(m => invIds.has(m.inventory_id));
+      setMovements(filteredMv);
+    }
+    
     if (lossRes.success && lossRes.data) setLossData(lossRes.data);
     if (rmRes.success && rmRes.data) setMasterRawMaterials(rmRes.data);
+    
     setIsLoading(false);
-  }, []);
+  }, [isWarehouseMode]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -257,12 +273,6 @@ export default function InventoryPage() {
 
   const tabContent = (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--space-4)' }}>
-        <Button variant="primary" onClick={() => setInboundDrawerOpen(true)} leftIcon={<Plus size={16} />}>
-          Penerimaan Barang Non-Jamur
-        </Button>
-      </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
         {Array.from(categoryTotals.entries()).map(([type, stat]) => {
           const cfg = CATEGORY_CONFIG[type] || { label: type, icon: '📦', color: 'var(--text-primary)', rop: 0 };
@@ -439,10 +449,18 @@ export default function InventoryPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Manajemen Inventori"
-        description="Monitor stok real-time 5 kategori gudang, kartu stok mutasi, dan rekonsiliasi stock opname."
-        breadcrumbs={[{ label: 'Operasional' }, { label: 'Inventori' }]}
+      <PageHeader 
+        title={isWarehouseMode ? "Warehouse (Bahan Baku)" : "Inventaris (Produk Jadi)"}
+        description={isWarehouseMode ? "Monitor stok bahan baku, kartu stok mutasi, dan stock opname gudang material." : "Monitor stok produk siap jual, kartu stok mutasi, dan stock opname."}
+        breadcrumbs={[{ label: 'Operasional' }, { label: isWarehouseMode ? 'Warehouse' : 'Inventaris' }]}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button leftIcon={<Plus size={16} />} onClick={() => setInboundDrawerOpen(true)}>
+              {isWarehouseMode ? "Penerimaan Barang Non-Jamur" : "Penerimaan Produk Jadi"}
+            </Button>
+            <Button variant="secondary" onClick={loadData}>Refresh Data</Button>
+          </div>
+        }
       />
 
       <Tabs

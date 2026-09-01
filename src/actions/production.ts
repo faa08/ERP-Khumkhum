@@ -872,16 +872,19 @@ export async function getProductionCapacityMetrics(): Promise<{
 
     let maxBatchesPerDay = 14; // Default
     let activeShiftCount = 1;
+    let estimatedKgPerBatch = 5;
 
     if (settingsData?.value) {
       const config = settingsData.value as any;
       const activeShifts = (config.shifts || []).filter((s: any) => s.is_active);
       activeShiftCount = activeShifts.length;
       maxBatchesPerDay = activeShifts.reduce((s: number, sh: any) => s + (sh.max_fryer_batches || 0), 0);
+      
+      if (config.batch_parameters?.batch_capacity_kg) {
+        estimatedKgPerBatch = Number(config.batch_parameters.batch_capacity_kg);
+      }
     }
 
-    // Estimate: each batch ~5kg output (adjustable)
-    const estimatedKgPerBatch = 5;
     const maxDailyCapacity = maxBatchesPerDay * estimatedKgPerBatch;
 
     const utilizationPct = maxDailyCapacity > 0

@@ -89,12 +89,17 @@ export default function OperatingHoursPage() {
     setConfig({ ...config, shifts });
   };
 
-  const updateBatchParam = (field: string, value: number) => {
+  const updateBatchParam = (field: string, value: number | number[]) => {
     if (!config) return;
     const bp = { ...config.batch_parameters, [field]: value };
     
-    // Auto-recalculate total cycle
-    bp.total_cycle_minutes = bp.standard_frying_minutes + bp.standard_spinning_minutes + bp.standard_seasoning_minutes;
+    // Auto-recalculate total cycle (Waktu Baku) using Time Study Formula
+    const samples = bp.time_study_samples || [30, 30, 30, 30, 30, 30, 30, 30, 30, 30];
+    const avgCycleTime = samples.reduce((a, b) => a + b, 0) / Math.max(1, samples.length);
+    const normalTime = avgCycleTime * ((bp.rating_factor_pct || 100) / 100);
+    const standardTime = normalTime * (1 + (bp.allowance_pct || 10) / 100);
+    
+    bp.total_cycle_minutes = Math.round(standardTime);
     
     // Recalculate max batches for all shifts
     const shifts = config.shifts.map(shift => {
@@ -109,6 +114,13 @@ export default function OperatingHoursPage() {
     });
 
     setConfig({ ...config, batch_parameters: bp, shifts });
+  };
+
+  const updateTimeStudySample = (index: number, value: number) => {
+    if (!config) return;
+    const newSamples = [...(config.batch_parameters.time_study_samples || [30, 30, 30, 30, 30, 30, 30, 30, 30, 30])];
+    newSamples[index] = value;
+    updateBatchParam('time_study_samples', newSamples);
   };
 
   if (isLoading || !config) {
@@ -139,8 +151,12 @@ export default function OperatingHoursPage() {
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Jam Operasional' }]}
         actions={
           !isManagement && (
-            <Button onClick={handleSave} disabled={isSaving}>
-              <Save size={16} style={{ marginRight: 8 }} />
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={isSaving}
+              leftIcon={<Save size={16} />}
+            >
               {isSaving ? 'Menyimpan...' : 'Simpan Perubahan'}
             </Button>
           )
@@ -346,21 +362,19 @@ export default function OperatingHoursPage() {
                 min={1}
               />
             </FormField>
-            <FormField label="Total Siklus">
-              <div style={{
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--color-primary-50)',
-                fontWeight: 700,
-                color: 'var(--color-primary-700)',
-                fontSize: 'var(--text-lg)',
-                display: 'flex', alignItems: 'center', gap: 6,
-              }}>
-                ⏱ {config.batch_parameters.total_cycle_minutes} menit / batch
-              </div>
+            <FormField label="Kapasitas per Batch (kg)">
+              <Input
+                type="number"
+                step="0.5"
+                value={config.batch_parameters.batch_capacity_kg || 5}
+                onChange={e => updateBatchParam('batch_capacity_kg', Number(e.target.value))}
+                min={1}
+              />
             </FormField>
           </div>
         </Card>
+
+
       </div>
     </div>
   );

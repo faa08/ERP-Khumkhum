@@ -199,6 +199,10 @@ export interface BatchParameters {
   standard_spinning_minutes: number;
   standard_seasoning_minutes: number;
   total_cycle_minutes: number;
+  batch_capacity_kg: number;
+  time_study_samples: number[];
+  rating_factor_pct: number;
+  allowance_pct: number;
 }
 
 export interface OperatingHoursConfig {
@@ -236,6 +240,10 @@ const DEFAULT_OPERATING_HOURS: OperatingHoursConfig = {
     standard_spinning_minutes: 5,
     standard_seasoning_minutes: 10,
     total_cycle_minutes: 30,
+    batch_capacity_kg: 5,
+    time_study_samples: [30, 30, 30, 30, 30, 30, 30, 30, 30, 30],
+    rating_factor_pct: 100,
+    allowance_pct: 10,
   },
 };
 
@@ -257,7 +265,27 @@ export async function getOperatingHoursStandards(): Promise<{
       return { success: true, data: DEFAULT_OPERATING_HOURS };
     }
 
-    return { success: true, data: { ...DEFAULT_OPERATING_HOURS, ...data.value } };
+    const mergedData = { ...DEFAULT_OPERATING_HOURS, ...data.value };
+    if (data.value && data.value.batch_parameters) {
+      mergedData.batch_parameters = {
+        ...DEFAULT_OPERATING_HOURS.batch_parameters,
+        ...data.value.batch_parameters,
+      };
+      if (data.value.batch_parameters.batch_capacity_kg === undefined) {
+        mergedData.batch_parameters.batch_capacity_kg = 5;
+      }
+      if (!data.value.batch_parameters.time_study_samples || !Array.isArray(data.value.batch_parameters.time_study_samples) || data.value.batch_parameters.time_study_samples.length !== 10) {
+        mergedData.batch_parameters.time_study_samples = [30, 30, 30, 30, 30, 30, 30, 30, 30, 30];
+      }
+      if (data.value.batch_parameters.rating_factor_pct === undefined) {
+        mergedData.batch_parameters.rating_factor_pct = 100;
+      }
+      if (data.value.batch_parameters.allowance_pct === undefined) {
+        mergedData.batch_parameters.allowance_pct = 10;
+      }
+    }
+
+    return { success: true, data: mergedData };
   } catch (err: any) {
     console.error('getOperatingHoursStandards error:', err);
     return { success: true, data: DEFAULT_OPERATING_HOURS };

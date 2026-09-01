@@ -289,6 +289,8 @@ export interface MaterialForecastItem {
   total_procurement_needed: number;
   confidence: 'Tinggi' | 'Sedang' | 'Rendah';
   notes: string;
+  current_stock: number;
+  net_requirement: number;
 }
 
 export interface ForecastWeekProjection {
@@ -296,7 +298,19 @@ export interface ForecastWeekProjection {
   date_label: string;
   projected_kg: number;
   confidence: 'Tinggi' | 'Sedang' | 'Rendah';
+  confidence_score: number; // 0-100
   status_color: string;
+}
+
+export type ForecastDataSource = 'PRODUCTION' | 'RECEIVING' | 'SORTING' | 'INSUFFICIENT';
+export type ForecastDataQuality = 'GOOD' | 'LIMITED' | 'INSUFFICIENT';
+
+export interface ForecastMetadata {
+  dataSource: ForecastDataSource;
+  dataQuality: ForecastDataQuality;
+  totalHistoricalWeeks: number;
+  coefficientOfVariation: number;
+  dataSourceLabel: string;
 }
 
 export interface OperationalInsight {

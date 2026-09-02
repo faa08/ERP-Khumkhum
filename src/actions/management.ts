@@ -196,7 +196,7 @@ export async function searchTraceability(keyword: string): Promise<{
 
       chain.push({
         step: step++,
-        label: '🌾 Petani Asal',
+        label: 'Petani Asal',
         id: receiving.farmer?.id || '-',
         status: 'completed',
         data: {
@@ -208,7 +208,7 @@ export async function searchTraceability(keyword: string): Promise<{
 
       chain.push({
         step: step++,
-        label: '📦 Penerimaan Bahan Baku',
+        label: 'Penerimaan Bahan Baku',
         id: receiving.batch_number,
         status: receiving.status || 'completed',
         data: {
@@ -230,7 +230,7 @@ export async function searchTraceability(keyword: string): Promise<{
       if (sorting) {
         chain.push({
           step: step++,
-          label: '⚖️ Sortasi & Grading',
+          label: 'Sortasi & Grading',
           id: sorting.id,
           status: 'completed',
           data: {
@@ -238,7 +238,7 @@ export async function searchTraceability(keyword: string): Promise<{
             'Berat Batang': `${sorting.stem_weight || sorting.waste} kg`,
             '% Daun': sorting.leaf_percentage ? `${sorting.leaf_percentage}%` : '-',
             'Grade': sorting.quality_grade || sorting.grade || '-',
-            'Standar': sorting.is_standard_compliant ? '✅ Lolos' : '❌ Tidak Lolos',
+            'Standar': sorting.is_standard_compliant ? 'Lolos' : 'Tidak Lolos',
           },
         });
 
@@ -254,7 +254,7 @@ export async function searchTraceability(keyword: string): Promise<{
         if (prodOrder) {
           chain.push({
             step: step++,
-            label: '🏭 Batch Produksi',
+            label: 'Batch Produksi',
             id: prodOrder.batch_number,
             status: prodOrder.status.toLowerCase(),
             data: {
@@ -276,7 +276,7 @@ export async function searchTraceability(keyword: string): Promise<{
           if (qc) {
             chain.push({
               step: step++,
-              label: '🔬 Quality Control',
+              label: 'Quality Control',
               id: qc.id,
               status: qc.decision?.toLowerCase() || (qc.is_passed ? 'passed' : 'failed'),
               data: {
@@ -314,7 +314,7 @@ export async function searchTraceability(keyword: string): Promise<{
 
       chain.push({
         step: step++,
-        label: '🏭 Batch Produksi',
+        label: 'Batch Produksi',
         id: prodOrder.batch_number,
         status: prodOrder.status.toLowerCase(),
         data: {
@@ -328,7 +328,7 @@ export async function searchTraceability(keyword: string): Promise<{
       if (qc) {
         chain.push({
           step: step++,
-          label: '🔬 Quality Control',
+          label: 'Quality Control',
           id: qc.id,
           status: qc.decision?.toLowerCase() || (qc.is_passed ? 'passed' : 'failed'),
           data: {
@@ -349,7 +349,7 @@ export async function searchTraceability(keyword: string): Promise<{
         const sorting = sortings[0];
         chain.push({
           step: step++,
-          label: '⚖️ Sortasi & Grading',
+          label: 'Sortasi & Grading',
           id: sorting.id,
           status: 'completed',
           data: {
@@ -362,7 +362,7 @@ export async function searchTraceability(keyword: string): Promise<{
         if (sorting.receiving) {
           chain.push({
             step: step++,
-            label: '📦 Penerimaan Bahan Baku',
+            label: 'Penerimaan Bahan Baku',
             id: sorting.receiving.batch_number,
             status: sorting.receiving.status || 'completed',
             data: {
@@ -375,7 +375,7 @@ export async function searchTraceability(keyword: string): Promise<{
           if (sorting.receiving.farmer) {
             chain.push({
               step: step++,
-              label: '🌾 Petani Asal',
+              label: 'Petani Asal',
               id: sorting.receiving.farmer.id,
               status: 'completed',
               data: {

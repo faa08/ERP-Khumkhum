@@ -1,27 +1,29 @@
+import { Store, MapPin, ShoppingBag, Calendar } from "lucide-react";
+
 const stats = [
   {
     value: "1.500+",
     label: "Gerai Oleh-oleh & Retail",
-    icon: "",
-    desc: "Tersebar dari Sabang sampai sudut Jawa",
+    icon: <Store className="w-8 h-8 mx-auto text-[var(--chili)]" />,
+    desc: "Tersebar di toko oleh-oleh, rest area, dan swalayan",
   },
   {
     value: "8",
-    label: "Provinsi",
-    icon: "",
-    desc: "Dan terus bertambah setiap tahun",
+    label: "Provinsi di Indonesia",
+    icon: <MapPin className="w-8 h-8 mx-auto text-[var(--turmeric-deep)]" />,
+    desc: "Menjangkau pulau Jawa, Sumatera, hingga Indonesia Timur",
   },
   {
     value: "6+",
-    label: "Retail Modern Mitra",
-    icon: "",
-    desc: "Minimarket & gerai modern terpilih",
+    label: "Jejaring Retail Mitra",
+    icon: <ShoppingBag className="w-8 h-8 mx-auto text-[var(--chili)]" />,
+    desc: "Pusat oleh-oleh ternama & minimarket modern terpilih",
   },
   {
     value: "2020",
-    label: "Berdiri Sejak",
-    icon: "",
-    desc: "Dari Ramadhan hingga ke seluruh nusantara",
+    label: "Tumbuh Bersama Petani",
+    icon: <Calendar className="w-8 h-8 mx-auto text-[var(--turmeric-deep)]" />,
+    desc: "Konsisten menjaga kerenyahan dan mutu bahan baku",
   },
 ];
 
@@ -56,9 +58,15 @@ export default function DistributionSection() {
           >
             Dari Kulon Progo,{" "}
             <span style={{ color: "var(--chili)" }}>
-              kini ada di rak-rak favoritmu.
+              kini hadir di rak camilan favoritmu.
             </span>
           </h2>
+          <p
+            className="mt-3 text-base max-w-xl mx-auto"
+            style={{ color: "var(--ink-soft)" }}
+          >
+            Mudah ditemukan di toko oleh-oleh terkemuka, pusat jajanan khas daerah, maupun pemesanan online langsung ke rumahmu.
+          </p>
         </div>
 
         {/* Stats grid */}
@@ -66,9 +74,9 @@ export default function DistributionSection() {
           {stats.map((s) => (
             <div
               key={s.label}
-              className="stat-card rounded-2xl p-6 text-center card-hover"
+              className="stat-card rounded-2xl p-6 text-center card-hover border-2 border-[var(--ink)]/10"
             >
-              <div className="text-4xl mb-3">{s.icon}</div>
+              <div className="mb-3 flex items-center justify-center">{s.icon}</div>
               <div
                 style={{
                   fontFamily: "'Baloo 2', sans-serif",
@@ -81,12 +89,12 @@ export default function DistributionSection() {
                 {s.value}
               </div>
               <div
-                className="font-bold text-sm mt-1 mb-1"
+                className="font-bold text-sm mt-2 mb-1"
                 style={{ color: "var(--ink)" }}
               >
                 {s.label}
               </div>
-              <div className="text-xs" style={{ color: "var(--ink-soft)" }}>
+              <div className="text-xs leading-relaxed" style={{ color: "var(--ink-soft)" }}>
                 {s.desc}
               </div>
             </div>
@@ -101,21 +109,24 @@ export default function DistributionSection() {
             boxShadow: "6px 6px 0 var(--ink)",
           }}
         >
+          <div className="text-xs font-bold uppercase tracking-widest text-[var(--chili)] mb-2">
+            Wilayah Pengiriman & Penjualan Aktif
+          </div>
           <p
             style={{
               fontFamily: "'Caveat', cursive",
               fontWeight: 700,
-              fontSize: "1.5rem",
+              fontSize: "clamp(1.2rem, 3vw, 1.6rem)",
               color: "var(--ink)",
             }}
           >
-            Jawa  Sumatera  Kalimantan  Sulawesi  Bali  NTB  Papua  Maluku
+            Jawa • Sumatera • Kalimantan • Sulawesi • Bali • NTB • Papua • Maluku
           </p>
           <p
-            className="mt-2 text-sm"
+            className="mt-2 text-sm font-medium"
             style={{ color: "var(--ink-soft)" }}
           >
-            &amp; masih terus berkembang ke seluruh penjuru nusantara
+            Melayani pengiriman ritel reguler & pengadaan grosir ke seluruh pelosok Nusantara
           </p>
         </div>
       </div>

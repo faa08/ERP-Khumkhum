@@ -433,8 +433,10 @@ export default function SortingPage() {
               padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
               background: 'var(--color-warning-50)', border: '1px solid var(--color-warning-200)',
               fontSize: 'var(--text-xs)', color: 'var(--color-warning-800)',
+              display: 'flex', alignItems: 'center', gap: '8px',
             }}>
-              ⚠️ Stok persediaan jamur bersih di gudang akan otomatis disesuaikan dengan selisih timbangan baru.
+              <AlertTriangle className="w-4 h-4 text-currentColor flex-shrink-0" aria-hidden="true" />
+              <span>Stok persediaan jamur bersih di gudang akan otomatis disesuaikan dengan selisih timbangan baru.</span>
             </div>
           </div>
         )}

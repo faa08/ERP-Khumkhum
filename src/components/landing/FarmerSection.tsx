@@ -1,11 +1,12 @@
 import Image from "next/image";
+import { ShieldCheck, Award, CheckCircle2, HeartHandshake, Sparkles } from "lucide-react";
 
 const certs = [
-  { icon: "", label: "Halal LPPOM MUI" },
-  { icon: "", label: "P-IRT Dinkes" },
-  { icon: "", label: "Sertifikat Merek" },
-  { icon: "", label: "Inovator Sosial DIY 2023" },
-  { icon: "", label: "UKM Unggulan Inkubator Bisnis DIY 2022" },
+  { icon: <ShieldCheck size={16} className="text-[var(--chili)]" />, label: "Halal LPPOM MUI" },
+  { icon: <CheckCircle2 size={16} className="text-[#4CAF50]" />, label: "P-IRT Dinkes Terdaftar" },
+  { icon: <Sparkles size={16} className="text-[var(--turmeric-deep)]" />, label: "Sertifikat Merek Resmi" },
+  { icon: <Award size={16} className="text-[var(--turmeric-deep)]" />, label: "Inovator Sosial DIY 2023" },
+  { icon: <HeartHandshake size={16} className="text-[var(--chili)]" />, label: "UKM Unggulan Inkubator Bisnis DIY 2022" },
 ];
 
 export default function FarmerSection() {
@@ -19,7 +20,7 @@ export default function FarmerSection() {
         <div className="grid lg:grid-cols-2 gap-12 items-center">
           {/* Content */}
           <div>
-            <span className="eyebrow mb-4 block">Mitra Petani</span>
+            <span className="eyebrow mb-4 block">Kemitraan Petani</span>
             <h2
               className="mb-5"
               style={{
@@ -30,7 +31,7 @@ export default function FarmerSection() {
                 lineHeight: 1.25,
               }}
             >
-              Kami tumbuh bersama{" "}
+              Tumbuh dan berdaya bersama{" "}
               <span style={{ color: "var(--chili)" }}>
                 petani jamur tiram Kulon Progo.
               </span>
@@ -39,19 +40,15 @@ export default function FarmerSection() {
               className="mb-8 leading-relaxed"
               style={{ color: "var(--ink-soft)", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
             >
-              Hasil panen dari belasan petani jamur tiram diserap langsung oleh
-              KhumKhum, memastikan bahan baku segar sekaligus membuka pasar yang
-              lebih pasti bagi petani mitra. Komitmen ini membawa KhumKhum meraih
-              penghargaan UKM Unggulan Inkubator Bisnis DIY 2022 dan Inovator
-              Sosial DIY 2023.
+              Setiap bungkus KhumKhum lahir dari jamur tiram segar yang dipetik langsung dari kumbung petani mitra di Kulon Progo. Kemitraan ini memberi kepastian harga dan serapan hasil panen yang adil, mengantarkan KhumKhum meraih penghargaan <strong>UKM Unggulan Inkubator Bisnis DIY 2022</strong> dan <strong>Inovator Sosial DIY 2023</strong>.
             </p>
 
             {/* Cert badges */}
             <div className="flex flex-wrap gap-3">
               {certs.map((c) => (
-                <div key={c.label} className="cert-badge">
+                <div key={c.label} className="cert-badge flex items-center gap-2 py-2 px-3.5 shadow-sm">
                   <span>{c.icon}</span>
-                  <span>{c.label}</span>
+                  <span className="font-semibold text-xs text-[var(--ink)]">{c.label}</span>
                 </div>
               ))}
             </div>

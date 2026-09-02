@@ -75,11 +75,10 @@ export default function AboutSection() {
               className="mb-6 leading-relaxed"
               style={{ color: "var(--ink-soft)", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
             >
-              KhumKhum lahir dari CV Khaira Buana Mas di Desa Bendungan, Wates,
-              Kulon Progo  bermula dari kelebihan panen jamur tiram petani lokal
-              yang belum terserap pasar. Sejak Ramadhan 2020, racikan sederhana
-              itu tumbuh jadi camilan yang menemani ribuan momen ngemil di seluruh
-              Indonesia.
+              KhumKhum dirintis oleh CV Khaira Buana Mas di Desa Bendungan, Wates,
+              Kulon Progo. Berawal dari niat menyerap kelebihan panen jamur tiram petani mitra lokal
+              yang melimpah sejak Ramadhan 2020, kini racikan renyah ini telah tumbuh menjadi
+              camilan favorit yang menemani momen santai keluarga di seluruh Indonesia.
             </p>
 
             {/* Quote card */}

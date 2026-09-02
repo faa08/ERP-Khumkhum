@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { Sparkles } from "lucide-react";
 
 export default function HeroSection() {
   const flavorBadges = [
@@ -29,7 +30,10 @@ export default function HeroSection() {
         <div className="order-2 lg:order-1">
           {/* Eyebrow */}
           <div className="mb-4">
-            <span className="eyebrow">Oleh-oleh khas Kulon Progo</span>
+            <span className="eyebrow inline-flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-currentColor" aria-hidden="true" />
+              <span>Oleh-oleh Khas Kulon Progo</span>
+            </span>
           </div>
 
           {/* Headline */}
@@ -42,9 +46,8 @@ export default function HeroSection() {
               color: "var(--ink)",
             }}
           >
-            Kriuk yang bikin{" "}
-            <span style={{ color: "var(--chili)" }}>nagih</span>, dari jamur
-            tiram pilihan petani lokal.
+            Kriuknya bikin{" "}
+            <span style={{ color: "var(--chili)" }}>nagih</span>, diracik dari jamur tiram pilihan petani lokal.
           </h1>
 
           {/* Sub */}
@@ -52,11 +55,9 @@ export default function HeroSection() {
             className="mb-8 text-lg leading-relaxed max-w-lg"
             style={{ color: "var(--ink-soft)", fontFamily: "'Plus Jakarta Sans', sans-serif" }}
           >
-            KhumKhum Jamur Crispy diracik dari jamur tiram segar Kulon Progo,
-            digoreng kering tanpa MSG, dan dibumbui sepenuh hati  sudah
-            dipercaya di lebih dari{" "}
-            <strong style={{ color: "var(--ink)" }}>1.500 toko</strong> di{" "}
-            <strong style={{ color: "var(--ink)" }}>8 provinsi</strong>.
+            KhumKhum Jamur Crispy digoreng garing higienis tanpa MSG tambahan, dibumbui rempah alami yang pas di lidah. Telah dipercaya di lebih dari{" "}
+            <strong style={{ color: "var(--ink)" }}>1.500 gerai oleh-oleh</strong> di{" "}
+            <strong style={{ color: "var(--ink)" }}>8 provinsi</strong> seluruh Indonesia.
           </p>
 
           {/* CTA */}
@@ -66,14 +67,14 @@ export default function HeroSection() {
               id="hero-cta-varian"
               className="btn-comic btn-primary px-7 py-3.5 rounded-xl text-base"
             >
-              Lihat Varian Rasa
+              Lihat 5 Varian Rasa
             </a>
             <a
               href="#kontak"
               id="hero-cta-reseller"
               className="btn-comic btn-secondary px-7 py-3.5 rounded-xl text-base"
             >
-              Gabung Reseller 
+              Kemitraan Reseller
             </a>
           </div>
 

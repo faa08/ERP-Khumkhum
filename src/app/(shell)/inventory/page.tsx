@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Package, AlertTriangle, TrendingDown, Plus, Save } from 'lucide-react';
+import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport } from '@/actions/inventory';
@@ -20,9 +20,9 @@ import { getRawMaterials } from '@/actions/master';
 import { usePathname } from 'next/navigation';
 import type { DbInventory, DbStockMovement, DbRawMaterial } from '@/types/database';
 
-const CATEGORY_CONFIG: Record<string, { label: string; icon: string; color: string; rop: number }> = {
-  RAW_MATERIAL: { label: 'Bahan Baku Jamur', icon: '🍄', color: 'var(--color-success-600)', rop: 50 },
-  PRODUCT: { label: 'Produk Jadi', icon: '📦', color: 'var(--color-primary-600)', rop: 100 },
+const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string; rop: number }> = {
+  RAW_MATERIAL: { label: 'Bahan Baku Jamur', icon: <Sprout className="w-6 h-6 text-currentColor" aria-hidden="true" />, color: 'var(--color-success-600)', rop: 50 },
+  PRODUCT: { label: 'Produk Jadi', icon: <Package className="w-6 h-6 text-currentColor" aria-hidden="true" />, color: 'var(--color-primary-600)', rop: 100 },
 };
 
 export default function InventoryPage() {
@@ -275,11 +275,13 @@ export default function InventoryPage() {
     <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
         {Array.from(categoryTotals.entries()).map(([type, stat]) => {
-          const cfg = CATEGORY_CONFIG[type] || { label: type, icon: '📦', color: 'var(--text-primary)', rop: 0 };
+          const cfg = CATEGORY_CONFIG[type] || { label: type, icon: <Package className="w-6 h-6 text-currentColor" aria-hidden="true" />, color: 'var(--text-primary)', rop: 0 };
           return (
             <Card key={type}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-                <span style={{ fontSize: '2rem' }}>{cfg.icon}</span>
+                <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {cfg.icon}
+                </div>
                 <div>
                   <div style={{ fontWeight: 600 }}>{cfg.label}</div>
                   <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{stat.items.length} item(s)</div>
@@ -424,8 +426,19 @@ export default function InventoryPage() {
                 <div style={{ fontSize: '2.5rem', fontWeight: 700, color: opnameAccuracy >= 98 ? 'var(--color-success-600)' : 'var(--color-warning-600)' }}>
                   {opnameAccuracy.toFixed(1)}%
                 </div>
-                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-                  Target ≥ 98% — {opnameAccuracy >= 98 ? '✅ Tercapai' : '⚠️ Perlu Pengecekan'}
+                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <span>Target ≥ 98% — </span>
+                  {opnameAccuracy >= 98 ? (
+                    <span style={{ color: 'var(--color-success-600)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                      <span>Tercapai</span>
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--color-warning-600)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <AlertTriangle className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                      <span>Perlu Pengecekan</span>
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -455,7 +468,7 @@ export default function InventoryPage() {
         breadcrumbs={[{ label: 'Operasional' }, { label: isWarehouseMode ? 'Warehouse' : 'Inventaris' }]}
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            <Button leftIcon={<Plus size={16} />} onClick={() => setInboundDrawerOpen(true)}>
+            <Button leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />} onClick={() => setInboundDrawerOpen(true)}>
               {isWarehouseMode ? "Penerimaan Barang Non-Jamur" : "Penerimaan Produk Jadi"}
             </Button>
             <Button variant="secondary" onClick={loadData}>Refresh Data</Button>
@@ -465,10 +478,10 @@ export default function InventoryPage() {
 
       <Tabs
         tabs={[
-          { id: 'realtime', label: '📊 Stok Real-time', content: tabContent },
-          { id: 'ledger', label: '📋 Kartu Stok (Rekening Koran)', content: movementContent },
-          { id: 'opname', label: '🔍 Stock Opname', content: opnameContent },
-          { id: 'loss', label: '📉 Laporan Kerugian', content: lossContent },
+          { id: 'realtime', label: <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><BarChart3 className="w-4 h-4 text-currentColor" aria-hidden="true" /> Stok Real-time</span>, content: tabContent },
+          { id: 'ledger', label: <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><ClipboardList className="w-4 h-4 text-currentColor" aria-hidden="true" /> Kartu Stok (Rekening Koran)</span>, content: movementContent },
+          { id: 'opname', label: <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Search className="w-4 h-4 text-currentColor" aria-hidden="true" /> Stock Opname</span>, content: opnameContent },
+          { id: 'loss', label: <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><TrendingDown className="w-4 h-4 text-currentColor" aria-hidden="true" /> Laporan Kerugian</span>, content: lossContent },
         ]}
       />
     </div>

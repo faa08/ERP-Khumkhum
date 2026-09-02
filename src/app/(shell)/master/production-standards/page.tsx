@@ -32,7 +32,11 @@ export default function ProductionStandardsPage() {
     oil_temp_max: 180,
     frying_duration_minutes: 15,
     spinning_duration_minutes: 5,
+    default_batch_weight_gram: 800,
+    default_rating_factor: 1.0,
+    default_allowance_factor: 0.15,
     bom_recipes: [],
+    seasoning_per_variant: [],
   });
 
   const [isLoading, setIsLoading] = useState(true);
@@ -91,7 +95,7 @@ export default function ProductionStandardsPage() {
               variant="primary"
               onClick={handleSave}
               disabled={isSaving || isLoading}
-              leftIcon={<Save size={16} />}
+              leftIcon={<Save className="w-4 h-4" aria-hidden="true" />}
             >
               {isSaving ? 'Menyimpan...' : 'Simpan Perubahan Standar'}
             </Button>
@@ -101,7 +105,7 @@ export default function ProductionStandardsPage() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 'var(--space-4)' }}>
         {/* 1. Rendemen Thresholds */}
-        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Scale size={18} color="var(--color-primary-600)" /> <strong>Ambang Batas Rendemen (%)</strong></div>}>
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Scale className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" /> <strong>Ambang Batas Rendemen (%)</strong></div>}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
             <FormField label="Target Efisiensi Rendemen Minimum (%)" required>
               <Input disabled={isManagement}
@@ -130,7 +134,7 @@ export default function ProductionStandardsPage() {
         </Card>
 
         {/* 2. Frying Parameters */}
-        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Flame size={18} color="var(--color-warning-600)" /> <strong>Parameter Penggorengan & Penirisan</strong></div>}>
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Flame className="w-4 h-4 text-[var(--color-warning-600)]" aria-hidden="true" /> <strong>Parameter Penggorengan & Penirisan</strong></div>}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
             <FormField label="Suhu Minyak Min (°C)">
               <Input disabled={isManagement}
@@ -169,8 +173,8 @@ export default function ProductionStandardsPage() {
 
       {/* 3. BOM Recipes Configuration */}
       <Card header={<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Factory size={18} color="var(--color-success-600)" /> <strong>Resep Bill of Materials (BOM) Standar per 1 kg Jamur Bersih</strong></div>
-        {!isManagement && <Button variant="secondary" size="sm" onClick={handleAddRecipe} leftIcon={<Plus size={14} />}>Tambah Varian Resep</Button>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Factory className="w-4 h-4 text-[var(--color-success-600)]" aria-hidden="true" /> <strong>Resep Bill of Materials (BOM) Standar per 1 kg Jamur Bersih</strong></div>
+        {!isManagement && <Button variant="secondary" size="sm" onClick={handleAddRecipe} leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}>Tambah Varian Resep</Button>}
       </div>}>
         <p style={{ margin: 0, marginBottom: 'var(--space-3)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
           Rasio kebutuhan bahan pembantu per 1.0 kg jamur tiram segar untuk estimasi kebutuhan bahan otomatis (MRP).
@@ -264,9 +268,9 @@ export default function ProductionStandardsPage() {
                     variant="ghost"
                     size="sm"
                     onClick={() => handleRemoveRecipe(index)}
-                    style={{ color: 'var(--color-danger-600)' }}
+                    aria-label={`Hapus resep ${recipe.product_name}`}
                   >
-                    <Trash2 size={16} />
+                    <Trash2 className="w-4 h-4 text-[var(--color-danger-600)]" aria-hidden="true" />
                   </Button>
                 )}
               </div>

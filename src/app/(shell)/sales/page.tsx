@@ -11,7 +11,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Eye, CheckCircle, Truck, Package, FileText } from 'lucide-react';
+import { Plus, MoreVertical, Eye, CheckCircle, Truck, Package, FileText, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { getSalesOrders, createSalesOrder, updateSalesOrderStatus } from '@/actions/sales';
@@ -241,10 +241,15 @@ export default function SalesPage() {
                   <FormField label="Qty (kg)">
                     <Input type="number" step="0.01" min="0" placeholder="0" value={item.quantity} onChange={e => updateItem(i, 'quantity', e.target.value)} />
                   </FormField>
-                  <FormField label="Harga/kg (Rp)">
-                    <Input type="number" step="100" min="0" placeholder="0" value={item.unit_price} onChange={e => updateItem(i, 'unit_price', e.target.value)} />
-                  </FormField>
-                  <Button variant="ghost" size="sm" onClick={() => removeItem(i)} style={{ color: 'var(--color-danger-600)', marginBottom: '2px' }}>✕</Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => removeItem(i)} 
+                    aria-label="Hapus baris item" 
+                    style={{ color: 'var(--color-danger-600)', marginBottom: '2px' }}
+                  >
+                    <Trash2 className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                  </Button>
                 </div>
               ))}
             </div>

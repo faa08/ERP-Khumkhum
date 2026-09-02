@@ -18,6 +18,7 @@ import {
   Calendar,
   CheckCircle2,
   ShieldAlert,
+  ArrowRight,
 } from 'lucide-react';
 import { getMaterialForecast, getOperationalInsights } from '@/actions/forecast';
 import type {
@@ -220,8 +221,9 @@ export default function AiForecastPage() {
                     )}
                   </div>
                   <span style={{ fontSize: 'var(--text-xs)', opacity: 0.9 }}>{insight.description}</span>
-                  <div style={{ fontSize: 'var(--text-xs)', marginTop: '2px', fontWeight: 600 }}>
-                    👉 Tindakan Rekomendasi: <span style={{ fontWeight: 400 }}>{insight.recommendation}</span>
+                  <div style={{ fontSize: 'var(--text-xs)', marginTop: '2px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <ArrowRight className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
+                    <span>Tindakan Rekomendasi:</span> <span style={{ fontWeight: 400 }}>{insight.recommendation}</span>
                   </div>
                 </div>
               </div>

@@ -11,7 +11,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck } from 'lucide-react';
+import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck, Check } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
@@ -144,9 +144,16 @@ export default function ReceivingPage() {
           <span style={{
             color: ok ? 'var(--color-success-600)' : 'var(--color-danger-600)',
             fontWeight: 600,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px',
           }}>
-            {pct > 0 ? '+' : ''}{pct.toFixed(2)}%
-            {ok ? ' ✓' : ' ⚠'}
+            <span>{pct > 0 ? '+' : ''}{pct.toFixed(2)}%</span>
+            {ok ? (
+              <Check className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
+            ) : (
+              <AlertTriangle className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
+            )}
           </span>
         );
       },

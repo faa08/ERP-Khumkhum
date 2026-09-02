@@ -175,6 +175,15 @@ export interface DbProductionOrder {
   start_date?: string | null;
   end_date?: string | null;
   created_by?: string | null;
+  // Revisi: kolom tambahan produksi goreng & packing
+  total_kremesan_gram?: number | null;
+  total_longsong_count?: number | null;
+  unpacked_longsong_count?: number | null;
+  cycle_time_avg_seconds?: number | null;
+  normal_time_seconds?: number | null;
+  standard_time_seconds?: number | null;
+  rating_factor?: number | null;
+  allowance_factor?: number | null;
   created_at: string;
   updated_at: string;
   // Joined fields
@@ -182,6 +191,8 @@ export interface DbProductionOrder {
   creator?: { id: string; name: string } | null;
   materials?: DbProductionMaterial[];
   results?: DbProductionResult[];
+  frying_batches?: DbFryingBatch[];
+  packing_entries?: DbPackingEntry[];
 }
 
 export interface DbProductionMaterial {
@@ -205,6 +216,66 @@ export interface DbProductionResult {
   // Joined
   product?: Pick<DbProduct, 'id' | 'sku' | 'name'> | null;
 }
+
+// ─────────────────────────────────────────────
+// PRODUCTION FRYING & PACKING TYPES (Revisi)
+// ─────────────────────────────────────────────
+
+export interface DbFryingBatch {
+  id: string;
+  production_order_id: string;
+  wajan_number: number;
+  batch_weight_gram: number;
+  oil_temp_celsius?: number | null;
+  frying_duration_minutes?: number | null;
+  output_weight_gram?: number | null;
+  longsong_count: number;
+  kremesan_weight_gram: number;
+  notes?: string | null;
+  operator_id?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at: string;
+  // Joined
+  operator?: { id: string; name: string } | null;
+}
+
+export interface DbPackingEntry {
+  id: string;
+  frying_batch_id?: string | null;
+  production_order_id: string;
+  flavor_variant: string;
+  longsong_number: number;
+  longsong_weight_gram?: number | null;
+  packaged_toples_count: number;
+  packaging_weight_gram?: string | null;
+  seasoning_used_gram: number;
+  is_packed: boolean;
+  packed_at?: string | null;
+  notes?: string | null;
+  created_at: string;
+  // Joined
+  frying_batch?: Pick<DbFryingBatch, 'id' | 'wajan_number' | 'batch_weight_gram'> | null;
+}
+
+export interface DbTimeStudySample {
+  id: string;
+  production_order_id: string;
+  stage: 'FRYING' | 'PACKING';
+  sample_number: number;
+  started_at: string;
+  finished_at?: string | null;
+  duration_seconds?: number | null;
+  operator_id?: string | null;
+  notes?: string | null;
+  created_at: string;
+  // Joined
+  operator?: { id: string; name: string } | null;
+}
+
+export type FlavorVariant = 'Original' | 'Balado' | 'BBQ' | 'Pedas Manis' | 'Super Pedas';
+
+export const FLAVOR_VARIANTS: FlavorVariant[] = ['Original', 'Balado', 'BBQ', 'Pedas Manis', 'Super Pedas'];
 
 // ─────────────────────────────────────────────
 // QC MODULE TYPES
@@ -263,7 +334,17 @@ export interface ProductionStandardConfig {
   oil_temp_max: number;
   frying_duration_minutes: number;
   spinning_duration_minutes: number;
+  default_batch_weight_gram?: number;
+  default_rating_factor?: number;
+  default_allowance_factor?: number;
   bom_recipes: BomRecipe[];
+  seasoning_per_variant?: SeasoningConfig[];
+}
+
+export interface SeasoningConfig {
+  variant: FlavorVariant;
+  seasoning_ratio_per_kg: number;
+  seasoning_name: string;
 }
 
 export interface DefectCategoryConfig {

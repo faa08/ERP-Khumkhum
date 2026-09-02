@@ -13,6 +13,9 @@ const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
   oil_temp_max: 180,
   frying_duration_minutes: 15,
   spinning_duration_minutes: 5,
+  default_batch_weight_gram: 800,
+  default_rating_factor: 1.0,
+  default_allowance_factor: 0.15,
   bom_recipes: [
     {
       product_name: 'Jamur Crispy Original 100g',
@@ -35,6 +38,13 @@ const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
       cooking_oil_ratio: 0.30,
       seasoning_ratio: 0.07,
     },
+  ],
+  seasoning_per_variant: [
+    { variant: 'Original', seasoning_ratio_per_kg: 0.05, seasoning_name: 'Bumbu Gurih Original' },
+    { variant: 'Balado', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Balado Pedas' },
+    { variant: 'BBQ', seasoning_ratio_per_kg: 0.07, seasoning_name: 'Bumbu Tabur BBQ Smoked' },
+    { variant: 'Pedas Manis', seasoning_ratio_per_kg: 0.07, seasoning_name: 'Bumbu Tabur Pedas Manis' },
+    { variant: 'Super Pedas', seasoning_ratio_per_kg: 0.10, seasoning_name: 'Bumbu Tabur Super Pedas Lv.5' },
   ],
 };
 

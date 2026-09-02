@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/useToast';
 import {
   CalendarDays, TrendingUp, AlertCircle, Sprout, LineChart as LineChartIcon,
   AlertTriangle, Flame, ArrowUpDown, Package, BarChart3,
+  CheckCircle2, Scale, ClipboardList, Target, Plus,
 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, addDays } from 'date-fns';
@@ -300,7 +301,7 @@ export default function PpicPage() {
     <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {/* Supply vs Demand Summary */}
       {supplyDemand && (
-        <Card header={<strong>📊 Perbandingan Pasokan vs Pesanan Pembeli</strong>}>
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart3 className="w-4 h-4 text-currentColor" aria-hidden="true" /><strong>Perbandingan Pasokan vs Pesanan Pembeli</strong></div>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
             <div style={{
               padding: 'var(--space-4)', borderRadius: 'var(--radius-md)',
@@ -336,8 +337,23 @@ export default function PpicPage() {
               <div style={{ fontSize: '2rem', fontWeight: 700, color: supplyDemand.gapStatus === 'SURPLUS' ? 'var(--color-success-600)' : supplyDemand.gapStatus === 'DEFICIT' ? 'var(--color-danger-600)' : 'var(--text-primary)' }}>
                 {supplyDemand.gapKg > 0 ? '+' : ''}{supplyDemand.gapKg.toLocaleString('id-ID')} <span style={{ fontSize: 'var(--text-sm)' }}>kg</span>
               </div>
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-                {supplyDemand.gapStatus === 'SURPLUS' ? '✅ Pasokan cukup' : supplyDemand.gapStatus === 'DEFICIT' ? '🔴 Pasokan kurang' : '⚖ Seimbang'}
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                {supplyDemand.gapStatus === 'SURPLUS' ? (
+                  <span style={{ color: 'var(--color-success-600)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
+                    <span>Pasokan cukup</span>
+                  </span>
+                ) : supplyDemand.gapStatus === 'DEFICIT' ? (
+                  <span style={{ color: 'var(--color-danger-600)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertCircle className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
+                    <span>Pasokan kurang</span>
+                  </span>
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <Scale className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
+                    <span>Seimbang</span>
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -345,8 +361,9 @@ export default function PpicPage() {
           {/* Demand by Product (Alokasi Rasa) */}
           {supplyDemand.demandByProduct.length > 0 && (
             <div>
-              <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600, marginBottom: 'var(--space-3)' }}>
-                📦 Rincian Pesanan Per Varian Rasa
+              <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600, marginBottom: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Package className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                <span>Rincian Pesanan Per Varian Rasa</span>
               </h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
                 {supplyDemand.demandByProduct.map((item: any) => (
@@ -365,7 +382,7 @@ export default function PpicPage() {
       )}
 
       {/* ORIGINAL PPIC FORECAST (Daun) */}
-      <Card header={<strong>🔮 Proyeksi Ketersediaan Daun Jamur (4 Minggu - Holt's Linear Trend)</strong>}>
+      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><TrendingUp className="w-4 h-4 text-currentColor" aria-hidden="true" /><strong>Proyeksi Ketersediaan Daun Jamur (4 Minggu - Holt&apos;s Linear Trend)</strong></div>}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
           {forecastWeeks.map((fw, i) => (
             <div key={i} style={{
@@ -384,14 +401,14 @@ export default function PpicPage() {
           ))}
         </div>
         <div style={{ padding: 'var(--space-3)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-          <strong>Metode:</strong> Holt's Linear Trend (Double Exponential Smoothing) (α = 0.3, β = 0.2)
+          <strong>Metode:</strong> Holt&apos;s Linear Trend (Double Exponential Smoothing) (α = 0.3, β = 0.2)
           <br />
           Data historis (aktual) daun jamur per minggu: {historicalData.join(', ')} kg
         </div>
       </Card>
 
       {/* MRP Global */}
-      <Card header={<strong>📋 Kebutuhan Bahan Baku (MRP) — Estimasi Minggu Depan</strong>}>
+      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><ClipboardList className="w-4 h-4 text-currentColor" aria-hidden="true" /><strong>Kebutuhan Bahan Baku (MRP) — Estimasi Minggu Depan</strong></div>}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {[
             { material: 'Jamur Tiram Segar', needed: `${(forecastWeeks[0]?.forecast_kg || 0) * 1.3} kg`, note: 'estimasi rendemen 75%' },
@@ -409,7 +426,7 @@ export default function PpicPage() {
       </Card>
 
       {/* Per-product forecast */}
-      <Card header={<strong>🎯 Analisis Permintaan & Kebutuhan Spesifik (Per Produk)</strong>}>
+      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Target className="w-4 h-4 text-currentColor" aria-hidden="true" /><strong>Analisis Permintaan & Kebutuhan Spesifik (Per Produk)</strong></div>}>
         <div style={{ marginBottom: 'var(--space-4)' }}>
           <FormField label="Pilih Varian Produk Jadi">
             <select
@@ -560,7 +577,7 @@ export default function PpicPage() {
 
       {/* Trend Chart */}
       {cookedData && cookedData.weeklyData.some((v: number) => v > 0) && (
-        <Card header={<strong>📈 Tren Output Jamur Matang per Minggu (8 Minggu Terakhir)</strong>}>
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><TrendingUp className="w-4 h-4 text-currentColor" aria-hidden="true" /><strong>Tren Output Jamur Matang per Minggu (8 Minggu Terakhir)</strong></div>}>
           <div style={{ height: 300, width: '100%' }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={cookedData.weeklyData.map((val: number, idx: number) => ({
@@ -587,7 +604,10 @@ export default function PpicPage() {
       {/* Manual Input */}
       <Card>
         <div style={{ marginBottom: 'var(--space-4)' }}>
-          <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>➕ Input Manual Data Jamur Matang (Bypass)</h4>
+          <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />
+            <span>Input Manual Data Jamur Matang (Bypass)</span>
+          </h4>
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
             Gunakan form ini untuk menambahkan data historis hasil penggorengan jamur secara manual. Data ini akan dijadikan acuan perhitungan kapasitas PPIC.
           </p>
@@ -613,7 +633,7 @@ export default function PpicPage() {
 
       {/* Data Table */}
       {cookedData && cookedData.entries.length > 0 && (
-        <Card header={<strong>📋 Riwayat Data Jamur Matang Penggorengan</strong>}>
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><ClipboardList className="w-4 h-4 text-currentColor" aria-hidden="true" /><strong>Riwayat Data Jamur Matang Penggorengan</strong></div>}>
           <DataTable columns={cookedColumns} data={cookedData.entries} />
         </Card>
       )}
@@ -621,7 +641,7 @@ export default function PpicPage() {
   );
 
   // ═══════════════════════════════════════════════════════════════
-  // TAB 3: DATA DAUN JAMUR SORTASI 🌿
+  // TAB 3: DATA DAUN JAMUR SORTASI
   // ═══════════════════════════════════════════════════════════════
   const Tab3_DaunSortasi = (
     <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -635,7 +655,10 @@ export default function PpicPage() {
 
       <Card>
         <div style={{ marginBottom: 'var(--space-4)' }}>
-          <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600 }}>➕ Input Manual Data Historis Sortasi (Bypass)</h4>
+          <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />
+            <span>Input Manual Data Historis Sortasi (Bypass)</span>
+          </h4>
           <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Gunakan form ini untuk menambahkan data historis berat daun jamur (hasil sortasi) secara manual untuk keperluan forecasting.</p>
         </div>
         <form onSubmit={handleAddManualSorting} style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -736,17 +759,17 @@ export default function PpicPage() {
           tabs={[
             {
               id: 'rencana',
-              label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><LineChartIcon size={16} /> Ringkasan & Rencana Rasa</span>,
+              label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><LineChartIcon className="w-4 h-4 text-currentColor" aria-hidden="true" /> Ringkasan & Rencana Rasa</span>,
               content: Tab1_RencanaRasa,
             },
             {
               id: 'jamur-matang',
-              label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Flame size={16} /> ⭐ Riwayat Jamur Matang</span>,
+              label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Flame className="w-4 h-4 text-currentColor" aria-hidden="true" /> Riwayat Jamur Matang</span>,
               content: Tab2_JamurMatang,
             },
             {
               id: 'daun-sortasi',
-              label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Sprout size={16} /> 🌿 Daun Sortasi</span>,
+              label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Sprout className="w-4 h-4 text-currentColor" aria-hidden="true" /> Daun Sortasi</span>,
               content: Tab3_DaunSortasi,
             },
           ]}

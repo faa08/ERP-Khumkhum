@@ -17,6 +17,10 @@ import {
   Timer,
   CheckCircle,
   XCircle,
+  BarChart3,
+  CheckCircle2,
+  Pause,
+  Flame,
 } from 'lucide-react';
 import {
   getOperatingHoursStandards,
@@ -149,7 +153,7 @@ export default function OperatingHoursPage() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
         {/* Summary Card */}
-        <Card header={<strong>📊 Ringkasan Kapasitas Harian</strong>}>
+        <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart3 className="w-4 h-4 text-currentColor" aria-hidden="true" /><strong>Ringkasan Kapasitas Harian</strong></div>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
             <div style={{
               padding: 'var(--space-4)', borderRadius: 'var(--radius-md)',
@@ -245,9 +249,22 @@ export default function OperatingHoursPage() {
                     fontWeight: 600,
                     fontSize: 'var(--text-sm)',
                     cursor: isManagement ? 'not-allowed' : 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
                   }}
                 >
-                  {shift.is_active ? '✅ Aktif' : '⏸ Nonaktif'}
+                  {shift.is_active ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                      <span>Aktif</span>
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                      <span>Nonaktif</span>
+                    </>
+                  )}
                 </button>
               </div>
             }
@@ -291,7 +308,7 @@ export default function OperatingHoursPage() {
                   fontSize: 'var(--text-lg)',
                   display: 'flex', alignItems: 'center', gap: 6,
                 }}>
-                  <Timer size={16} /> {shift.effective_hours} jam
+                  <Timer className="w-4 h-4 text-currentColor" aria-hidden="true" /> {shift.effective_hours} jam
                 </div>
               </FormField>
               <FormField label="Maks. Batch Goreng">
@@ -304,7 +321,7 @@ export default function OperatingHoursPage() {
                   fontSize: 'var(--text-lg)',
                   display: 'flex', alignItems: 'center', gap: 6,
                 }}>
-                  🔥 {shift.max_fryer_batches} batch
+                  <Flame className="w-4 h-4 text-currentColor" aria-hidden="true" /> {shift.max_fryer_batches} batch
                 </div>
               </FormField>
             </div>

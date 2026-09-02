@@ -941,7 +941,6 @@ export default function AiForecastPage() {
                       <span style={{ fontWeight: 400 }}>{insight.recommendation}</span>
                     </div>
                   </div>
-                  </div>
                 </div>
               </div>
             );

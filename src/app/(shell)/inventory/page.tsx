@@ -15,8 +15,8 @@ import { useToast } from '@/hooks/useToast';
 import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport } from '@/actions/inventory';
-import { getRawMaterials } from '@/actions/master';
+import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment } from '@/actions/inventory';
+import { getRawMaterials, getWarehouses } from '@/actions/master';
 import { usePathname } from 'next/navigation';
 import type { DbInventory, DbStockMovement, DbRawMaterial } from '@/types/database';
 
@@ -41,16 +41,23 @@ export default function InventoryPage() {
   const [inboundForm, setInboundForm] = useState({ item_name: '', uom: 'kg', quantity: 0, notes: '' });
   const [isSavingInbound, setIsSavingInbound] = useState(false);
   const [masterRawMaterials, setMasterRawMaterials] = useState<DbRawMaterial[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferInv, setTransferInv] = useState<DbInventory | null>(null);
+  const [transferForm, setTransferForm] = useState({ quantity: 0, target_warehouse_id: '', notes: '' });
+  const [isTransferring, setIsTransferring] = useState(false);
 
   const toast = useToast();
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [invRes, mvRes, lossRes, rmRes] = await Promise.all([
+    const [invRes, mvRes, lossRes, rmRes, whRes] = await Promise.all([
       getInventorySummary(),
       getStockMovements(),
       getLossReport(),
-      getRawMaterials()
+      getRawMaterials(),
+      getWarehouses(),
     ]);
     
     let filteredInv: DbInventory[] = [];
@@ -67,6 +74,7 @@ export default function InventoryPage() {
     
     if (lossRes.success && lossRes.data) setLossData(lossRes.data);
     if (rmRes.success && rmRes.data) setMasterRawMaterials(rmRes.data);
+    if (whRes.success && whRes.data) setWarehouses(whRes.data);
     
     setIsLoading(false);
   }, [isWarehouseMode]);
@@ -122,6 +130,28 @@ export default function InventoryPage() {
       toast.error(res.error || 'Gagal menerima barang');
     }
     setIsSavingInbound(false);
+  };
+
+  const handleSaveTransfer = async () => {
+    if (!transferInv || transferForm.quantity <= 0 || !transferForm.target_warehouse_id) {
+      toast.error('Masukkan jumlah yang valid dan pilih gudang tujuan');
+      return;
+    }
+    setIsTransferring(true);
+    const res = await transferToConsignment({
+      inventory_id: transferInv.id,
+      target_warehouse_id: transferForm.target_warehouse_id,
+      quantity: transferForm.quantity,
+      notes: transferForm.notes
+    });
+    setIsTransferring(false);
+    if (res.success) {
+      toast.success('Stok berhasil dikirim ke gudang konsinyasi');
+      setTransferOpen(false);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal transfer konsinyasi');
+    }
   };
 
   const categoryTotals = useMemo(() => {
@@ -237,10 +267,24 @@ export default function InventoryPage() {
         return <StatusBadge status={status} />;
       },
     },
+    { accessorKey: 'reorder_point', header: 'ROP (kg)', cell: ({ row }) => row.original.reorder_point || CATEGORY_CONFIG[row.original.item_type]?.rop || 0 },
+    { accessorKey: 'lead_time_days', header: 'Lead Time (Hari)', cell: ({ row }) => row.original.lead_time_days ? `${row.original.lead_time_days} Hari` : '-' },
     {
       id: 'updated',
       header: 'Update Terakhir',
       cell: ({ row }) => format(new Date(row.original.last_updated_at), 'dd/MM/yyyy HH:mm'),
+    },
+    {
+      id: 'actions',
+      cell: ({ row }) => (
+        <Button variant="secondary" size="sm" onClick={() => {
+          setTransferInv(row.original);
+          setTransferForm({ quantity: 0, target_warehouse_id: '', notes: '' });
+          setTransferOpen(true);
+        }}>
+          Kirim Konsinyasi
+        </Button>
+      ),
     },
   ], []);
 
@@ -354,6 +398,50 @@ export default function InventoryPage() {
               value={inboundForm.notes} 
               onChange={e => setInboundForm(f => ({ ...f, notes: e.target.value }))} 
               placeholder="e.g. Nota Supplier ABC" 
+            />
+          </FormField>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        title={`Kirim Konsinyasi: ${transferInv?.item_name}`}
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setTransferOpen(false)}>Batal</Button>
+            <Button variant="primary" onClick={handleSaveTransfer} loading={isTransferring}>Kirim Konsinyasi</Button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div style={{ padding: 'var(--space-3)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)' }}>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Stok Saat Ini</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>{transferInv?.quantity.toLocaleString('id-ID')} kg</div>
+          </div>
+          <FormField label="Gudang Tujuan (Konsinyasi)" required>
+            <Select
+              value={transferForm.target_warehouse_id}
+              onChange={e => setTransferForm(f => ({ ...f, target_warehouse_id: e.target.value }))}
+              options={[
+                { value: '', label: 'Pilih Gudang...' },
+                ...warehouses.filter(w => w.id !== transferInv?.warehouse_id).map(w => ({ value: w.id, label: w.name }))
+              ]}
+            />
+          </FormField>
+          <FormField label="Jumlah Kirim (kg)" required>
+            <Input 
+              type="number" step="0.01" min="0" max={transferInv?.quantity || 0}
+              value={transferForm.quantity.toString()} 
+              onChange={e => setTransferForm(f => ({ ...f, quantity: parseFloat(e.target.value) || 0 }))} 
+            />
+          </FormField>
+          <FormField label="Catatan / Referensi Surat Jalan">
+            <Input 
+              value={transferForm.notes} 
+              onChange={e => setTransferForm(f => ({ ...f, notes: e.target.value }))} 
+              placeholder="e.g. SJ-202610-001" 
             />
           </FormField>
         </div>

@@ -10,7 +10,7 @@ import type { DbReceiving } from '@/types/database';
 function generateBatchNumber(prefix: string): string {
   const now = new Date();
   const date = format(now, 'yyyyMMdd');
-  const rand = Math.floor(Math.random() * 900) + 100;
+  const rand = Math.floor(Math.random() * 9000) + 1000;
   return `${prefix}-${date}-${rand}`;
 }
 
@@ -84,7 +84,7 @@ export async function createReceiving(input: CreateReceivingInput): Promise<{
   try {
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
 
-    const batch_number = generateBatchNumber('RM');
+    const batch_number = generateBatchNumber('RCV');
     const weight_difference = input.weight - input.weight_sent;
     const diff_percentage = input.weight_sent > 0
       ? ((input.weight - input.weight_sent) / input.weight_sent) * 100
@@ -138,6 +138,68 @@ export async function createReceiving(input: CreateReceivingInput): Promise<{
     return { success: true, data: data as DbReceiving };
   } catch (err: any) {
     console.error('createReceiving error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function getFarmerRecap(month: number, year: number, farmerId?: string) {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+
+    let query = supabaseAdmin
+      .from('receivings')
+      .select(`
+        id, weight, received_date,
+        farmer:farmers(id, name, supplier_type, price_per_kg)
+      `);
+
+    // Gte and Lt for month range
+    const startDate = new Date(year, month - 1, 1).toISOString();
+    const endDate = new Date(year, month, 1).toISOString();
+    query = query.gte('received_date', startDate).lt('received_date', endDate);
+
+    if (farmerId) {
+      query = query.eq('farmer_id', farmerId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    // Aggregate data per farmer
+    const recapMap = new Map<string, {
+      farmer_id: string;
+      farmer_name: string;
+      supplier_type: string;
+      total_frequency: number;
+      total_weight: number;
+      price_per_kg: number;
+      total_payment: number;
+    }>();
+
+    (data || []).forEach((row: any) => {
+      const f = row.farmer;
+      if (!f) return;
+      const fid = f.id;
+      if (!recapMap.has(fid)) {
+        recapMap.set(fid, {
+          farmer_id: fid,
+          farmer_name: f.name,
+          supplier_type: f.supplier_type || 'FARMER_MICRO',
+          total_frequency: 0,
+          total_weight: 0,
+          price_per_kg: f.price_per_kg || 0,
+          total_payment: 0,
+        });
+      }
+      const entry = recapMap.get(fid)!;
+      entry.total_frequency += 1;
+      entry.total_weight += row.weight || 0;
+      entry.total_payment += (row.weight || 0) * (f.price_per_kg || 0);
+    });
+
+    return { success: true, data: Array.from(recapMap.values()) };
+  } catch (err: any) {
+    console.error('getFarmerRecap error:', err);
     return { success: false, error: err.message };
   }
 }

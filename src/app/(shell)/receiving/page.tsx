@@ -11,13 +11,12 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck, Check } from 'lucide-react';
+import { Plus, MoreVertical, Eye, AlertTriangle, CheckCircle, MessageCircle, ClipboardCheck, Check, DollarSign, Download } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import { id as idLocale } from 'date-fns/locale';
-import { getReceivings, createReceiving, getInboundEstimates } from '@/actions/receiving';
+import { getReceivings, createReceiving, getFarmerRecap } from '@/actions/receiving';
 import { getFarmers, getRawMaterials } from '@/actions/master';
-import type { DbReceiving, DbFarmerHarvestEstimate } from '@/types/database';
+import type { DbReceiving } from '@/types/database';
 
 interface FormState {
   farmer_id: string;
@@ -37,49 +36,61 @@ const EMPTY_FORM: FormState = {
 
 export default function ReceivingPage() {
   const [data, setData] = useState<DbReceiving[]>([]);
-  const [farmers, setFarmers] = useState<{ id: string; name: string; phone_number?: string | null }[]>([]);
+  const [farmers, setFarmers] = useState<{ id: string; name: string; phone_number?: string | null; supplier_type?: string | null }[]>([]);
   const [rawMaterials, setRawMaterials] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [inboundEstimates, setInboundEstimates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'menunggu' | 'selesai'>('menunggu');
+  const [activeTab, setActiveTab] = useState<'selesai' | 'rekap'>('selesai');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [viewItem, setViewItem] = useState<DbReceiving | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
-    isOpen: boolean; title: string; description: string;
-    onConfirm: () => void; variant: 'danger' | 'primary';
-  }>({ isOpen: false, title: '', description: '', onConfirm: () => {}, variant: 'primary' });
+    isOpen: boolean;
+    title: string;
+    description: string;
+    variant: 'danger' | 'primary';
+    onConfirm: () => void;
+  }>({ isOpen: false, title: '', description: '', variant: 'primary', onConfirm: () => {} });
+  
+  // Recap States
+  const [recapData, setRecapData] = useState<any[]>([]);
+  const [recapMonth, setRecapMonth] = useState(new Date().getMonth() + 1);
+  const [recapYear, setRecapYear] = useState(new Date().getFullYear());
+  const [recapFarmerId, setRecapFarmerId] = useState('');
+  const [isLoadingRecap, setIsLoadingRecap] = useState(false);
 
   const toast = useToast();
 
-  // ── Kalkulasi live ──────────────────────────────────────────────
   const weightSent = parseFloat(form.weight_sent) || 0;
   const weightReceived = parseFloat(form.weight) || 0;
   const deltaW = weightReceived - weightSent;
   const diffPct = weightSent > 0 ? (deltaW / weightSent) * 100 : 0;
   const isWithinTolerance = Math.abs(diffPct) <= 2;
 
-  // ── Load data ───────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [recRes, farmRes, rmRes, estRes] = await Promise.all([
+    const [recRes, farmRes, rmRes] = await Promise.all([
       getReceivings(),
       getFarmers(),
       getRawMaterials(),
-      getInboundEstimates(),
     ]);
     if (recRes.success && recRes.data) setData(recRes.data);
     if (farmRes.success) setFarmers(farmRes.data as any);
     if (rmRes.success) setRawMaterials(rmRes.data as any);
-    if (estRes.success && estRes.estimates) setInboundEstimates(estRes.estimates);
     setIsLoading(false);
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const loadRecap = useCallback(async () => {
+    setIsLoadingRecap(true);
+    const res = await getFarmerRecap(recapMonth, recapYear, recapFarmerId || undefined);
+    if (res.success && res.data) setRecapData(res.data);
+    setIsLoadingRecap(false);
+  }, [recapMonth, recapYear, recapFarmerId]);
 
-  // ── Handlers ────────────────────────────────────────────────────
+  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { if (activeTab === 'rekap') loadRecap(); }, [activeTab, loadRecap]);
+
   const handleOpenCreate = () => { setForm(EMPTY_FORM); setDrawerOpen(true); };
 
   const handleSave = async () => {
@@ -107,11 +118,10 @@ export default function ReceivingPage() {
 
   const handleView = (item: DbReceiving) => { setViewItem(item); setViewOpen(true); };
 
-  // ── Columns ─────────────────────────────────────────────────────
   const columns = useMemo<ColumnDef<DbReceiving>[]>(() => [
     {
       accessorKey: 'batch_number',
-      header: 'No. Penerimaan',
+      header: 'No. Penerimaan / Lot',
       cell: ({ row }) => (
         <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--color-primary-600)' }}>
           {row.original.batch_number}
@@ -120,7 +130,7 @@ export default function ReceivingPage() {
     },
     {
       id: 'farmer_name',
-      header: 'Petani',
+      header: 'Petani / Pemasok',
       cell: ({ row }) => row.original.farmer?.name || row.original.farmer_id || '-',
     },
     {
@@ -181,49 +191,21 @@ export default function ReceivingPage() {
     },
   ], []);
 
-  const estimateColumns = useMemo<ColumnDef<any>[]>(() => [
-    {
-      id: 'farmer_name',
-      header: 'Petani Mitra',
-      cell: ({ row }) => row.original.farmer?.name || row.original.farmer_id || '-',
+  const recapColumns = useMemo<ColumnDef<any>[]>(() => [
+    { accessorKey: 'farmer_name', header: 'Petani / Supplier' },
+    { 
+      accessorKey: 'supplier_type', 
+      header: 'Kategori', 
+      cell: ({ row }) => {
+        const t = row.original.supplier_type;
+        return <StatusBadge status={t === 'FARMER_MAIN' ? 'warning' : t === 'EXTERNAL_SUPPLIER' ? 'info' : 'success'} label={t === 'FARMER_MAIN' ? 'Mitra Besar' : t === 'EXTERNAL_SUPPLIER' ? 'Supplier Eksternal' : 'Petani Mikro'} />
+      } 
     },
-    {
-      accessorKey: 'expected_date',
-      header: 'Rencana Kedatangan',
-      cell: ({ row }) => format(new Date(row.original.expected_date), 'dd MMM yyyy', { locale: idLocale }),
-    },
-    {
-      accessorKey: 'estimated_kg',
-      header: 'Estimasi Kiriman',
-      cell: ({ row }) => <strong>{row.original.estimated_kg} kg</strong>,
-    },
-    {
-      accessorKey: 'source',
-      header: 'Sumber',
-      cell: ({ row }) => <StatusBadge status={row.original.source === 'WA_BOT' ? 'success' : 'info'} label={row.original.source === 'WA_BOT' ? 'WhatsApp' : 'Manual'} />,
-    },
-    {
-      id: 'actions',
-      header: 'Aksi',
-      cell: ({ row }) => (
-        <Button 
-          variant="primary" 
-          size="sm" 
-          onClick={() => {
-            setForm(f => ({
-              ...f,
-              farmer_id: row.original.farmer_id,
-              weight_sent: String(row.original.estimated_kg),
-            }));
-            toast.info(`Data otomatis diisi untuk ${row.original.farmer?.name || 'Petani'}`);
-            setDrawerOpen(true);
-          }}
-        >
-          Terima Barang
-        </Button>
-      ),
-    },
-  ], [toast]);
+    { accessorKey: 'total_frequency', header: 'Total Frekuensi' },
+    { accessorKey: 'total_weight', header: 'Total Berat (kg)', cell: ({ row }) => <strong>{row.original.total_weight.toFixed(2)} kg</strong> },
+    { accessorKey: 'price_per_kg', header: 'Tarif / kg', cell: ({ row }) => `Rp ${row.original.price_per_kg.toLocaleString('id-ID')}` },
+    { accessorKey: 'total_payment', header: 'Total Hak Bayar', cell: ({ row }) => <strong style={{ color: 'var(--color-primary-600)' }}>Rp {row.original.total_payment.toLocaleString('id-ID')}</strong> },
+  ], []);
 
   return (
     <div>
@@ -234,21 +216,6 @@ export default function ReceivingPage() {
       />
 
       <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-2)' }}>
-        <button
-          onClick={() => setActiveTab('menunggu')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            background: 'none', border: 'none', cursor: 'pointer',
-            padding: 'var(--space-2) var(--space-4)',
-            fontSize: 'var(--text-md)', fontWeight: 600,
-            color: activeTab === 'menunggu' ? 'var(--color-primary-600)' : 'var(--text-secondary)',
-            borderBottom: activeTab === 'menunggu' ? '2px solid var(--color-primary-600)' : '2px solid transparent',
-            marginBottom: '-17px' // overlapping border
-          }}
-        >
-          <Sprout size={18} />
-          Menunggu Kedatangan
-        </button>
         <button
           onClick={() => setActiveTab('selesai')}
           style={{
@@ -262,52 +229,81 @@ export default function ReceivingPage() {
           }}
         >
           <ClipboardCheck size={18} />
-          Selesai Dicatat
+          Riwayat Penerimaan
+        </button>
+        <button
+          onClick={() => setActiveTab('rekap')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '8px',
+            background: 'none', border: 'none', cursor: 'pointer',
+            padding: 'var(--space-2) var(--space-4)',
+            fontSize: 'var(--text-md)', fontWeight: 600,
+            color: activeTab === 'rekap' ? 'var(--color-primary-600)' : 'var(--text-secondary)',
+            borderBottom: activeTab === 'rekap' ? '2px solid var(--color-primary-600)' : '2px solid transparent',
+            marginBottom: '-17px'
+          }}
+        >
+          <DollarSign size={18} />
+          Rekap Pembayaran Bulanan
         </button>
       </div>
-
-      {activeTab === 'menunggu' && (
-        <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Rencana Pasokan Hari Ini</h3>
-            <Button variant="secondary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
-              Catat Penerimaan Manual
-            </Button>
-          </div>
-          <DataTable columns={estimateColumns} data={inboundEstimates} />
-        </div>
-      )}
 
       {activeTab === 'selesai' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <Button variant="primary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
-              Catat Penerimaan Manual
+              Catat Penerimaan Inbound
             </Button>
           </div>
           <DataTable columns={columns} data={data} />
         </div>
       )}
 
-      {/* ── CREATE DRAWER ── */}
+      {activeTab === 'rekap' && (
+        <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+              <FormField label="Bulan">
+                <select value={recapMonth} onChange={e => setRecapMonth(Number(e.target.value))} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
+                  {Array.from({length: 12}).map((_, i) => <option key={i+1} value={i+1}>{new Date(2000, i, 1).toLocaleString('id-ID', { month: 'long' })}</option>)}
+                </select>
+              </FormField>
+              <FormField label="Tahun">
+                <select value={recapYear} onChange={e => setRecapYear(Number(e.target.value))} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
+                  {[2025, 2026, 2027].map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </FormField>
+              <FormField label="Filter Pemasok">
+                <select value={recapFarmerId} onChange={e => setRecapFarmerId(e.target.value)} style={{ padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
+                  <option value="">-- Semua Pemasok --</option>
+                  {farmers.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </select>
+              </FormField>
+            </div>
+            <Button variant="secondary" leftIcon={<Download size={16} />} onClick={() => { toast.success('Mengekspor laporan ke Excel...'); }}>
+              Export Excel
+            </Button>
+          </div>
+          <DataTable columns={recapColumns} data={recapData} />
+        </div>
+      )}
+
       <Modal
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title="Catat Penerimaan Bahan Baku"
+        title="Catat Penerimaan Inbound (Timbang Nyata)"
         size="md"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Batal</Button>
             <Button variant="primary" onClick={handleSave} loading={isSaving}>
-              Simpan & Kirim Nota WA
+              Simpan & Terbitkan Lot
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {/* Selection removed, handled directly via button on row */}
-
-          <FormField label="Petani Mitra" required>
+          <FormField label="Sumber Pemasok" required>
             <select
               value={form.farmer_id}
               onChange={e => setForm(f => ({ ...f, farmer_id: e.target.value }))}
@@ -318,12 +314,15 @@ export default function ReceivingPage() {
                 fontSize: 'var(--text-sm)',
               }}
             >
-              <option value="">-- Pilih Petani --</option>
-              {farmers.map(f => (
-                <option key={f.id} value={f.id}>
-                  {f.name}{f.phone_number ? ` (${f.phone_number})` : ''}
-                </option>
-              ))}
+              <option value="">-- Pilih Pemasok / Petani Mitra --</option>
+              {farmers.map(f => {
+                const label = f.supplier_type === 'EXTERNAL_SUPPLIER' ? '[MOU Eksternal]' : f.supplier_type === 'FARMER_MAIN' ? '[Mitra Besar]' : '[Petani Mikro]';
+                return (
+                  <option key={f.id} value={f.id}>
+                    {label} {f.name}{f.phone_number ? ` (${f.phone_number})` : ''}
+                  </option>
+                );
+              })}
             </select>
           </FormField>
 
@@ -347,28 +346,27 @@ export default function ReceivingPage() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
             <FormField label="Berat Kirim Petani (kg)" required>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={form.weight_sent}
-                onChange={e => setForm(f => ({ ...f, weight_sent: e.target.value }))}
-              />
+              <div>
+                <Input
+                  type="number" step="0.1" min="0" placeholder="0.0"
+                  value={form.weight_sent}
+                  onChange={e => setForm(f => ({ ...f, weight_sent: e.target.value }))}
+                />
+                {weightSent > 0 && <div style={{ fontSize: '12px', marginTop: '4px', color: 'var(--text-secondary)' }}>Kira-kira {weightSent * 10} ons</div>}
+              </div>
             </FormField>
             <FormField label="Berat Timbang Aktual (kg)" required>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                placeholder="0.00"
-                value={form.weight}
-                onChange={e => setForm(f => ({ ...f, weight: e.target.value }))}
-              />
+              <div>
+                <Input
+                  type="number" step="0.1" min="0" placeholder="0.0"
+                  value={form.weight}
+                  onChange={e => setForm(f => ({ ...f, weight: e.target.value }))}
+                />
+                {weightReceived > 0 && <div style={{ fontSize: '12px', marginTop: '4px', color: 'var(--text-secondary)' }}>Kira-kira {weightReceived * 10} ons</div>}
+              </div>
             </FormField>
           </div>
 
-          {/* Live Kalkulasi */}
           {weightSent > 0 && weightReceived > 0 && (
             <div style={{
               padding: 'var(--space-3)',
@@ -408,12 +406,11 @@ export default function ReceivingPage() {
             fontSize: 'var(--text-sm)', color: 'var(--color-primary-700)',
           }}>
             <MessageCircle size={14} />
-            Nota timbangan akan otomatis terkirim ke WhatsApp petani setelah disimpan.
+            Nota penerimaan (Lot Number) akan diterbitkan setelah disimpan.
           </div>
         </div>
       </Modal>
 
-      {/* ── VIEW DRAWER ── */}
       <Modal
         isOpen={viewOpen}
         onClose={() => setViewOpen(false)}

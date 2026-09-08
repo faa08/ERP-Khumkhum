@@ -355,3 +355,56 @@ export async function updateSorting(input: UpdateSortingInput): Promise<{
     return { success: false, error: err.message };
   }
 }
+
+export async function getDailySortingSummary(): Promise<{
+  success: boolean;
+  data?: {
+    total_sorted: number;
+    total_leaf: number;
+    total_waste: number;
+    waste_percentage: number;
+  };
+  error?: string;
+}> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'MANAGEMENT']);
+    
+    // Get today's sortings
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const { data, error } = await supabaseAdmin
+      .from('sortings')
+      .select('leaf_weight, stem_weight')
+      .gte('sorting_date', today.toISOString())
+      .lt('sorting_date', tomorrow.toISOString());
+
+    if (error) throw error;
+
+    let total_leaf = 0;
+    let total_waste = 0;
+
+    (data || []).forEach(row => {
+      total_leaf += Number(row.leaf_weight || 0);
+      total_waste += Number(row.stem_weight || 0);
+    });
+
+    const total_sorted = total_leaf + total_waste;
+    const waste_percentage = total_sorted > 0 ? (total_waste / total_sorted) * 100 : 0;
+
+    return {
+      success: true,
+      data: {
+        total_sorted,
+        total_leaf,
+        total_waste,
+        waste_percentage
+      }
+    };
+  } catch (err: any) {
+    console.error('getDailySortingSummary error:', err);
+    return { success: false, error: err.message };
+  }
+}

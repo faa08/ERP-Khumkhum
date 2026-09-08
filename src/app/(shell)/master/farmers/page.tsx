@@ -26,7 +26,10 @@ export default function FarmersPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DbFarmer | null>(null);
   
-  const [form, setForm] = useState({ name: '', phone_number: '', contact: '', address: '' });
+  const [form, setForm] = useState({ 
+    name: '', phone_number: '', contact: '', address: '',
+    price_per_kg: '', supplier_type: 'FARMER_MICRO', bank_name: '', bank_account_number: '' 
+  });
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -56,7 +59,10 @@ export default function FarmersPage() {
 
   const handleCreate = () => {
     setSelectedItem(null);
-    setForm({ name: '', phone_number: '', contact: '', address: '' });
+    setForm({ 
+      name: '', phone_number: '', contact: '', address: '', 
+      price_per_kg: '', supplier_type: 'FARMER_MICRO', bank_name: '', bank_account_number: '' 
+    });
     setDrawerOpen(true);
   };
 
@@ -66,7 +72,11 @@ export default function FarmersPage() {
       name: item.name || '',
       phone_number: item.phone_number || '',
       contact: item.contact || '',
-      address: item.address || ''
+      address: item.address || '',
+      price_per_kg: item.price_per_kg ? item.price_per_kg.toString() : '',
+      supplier_type: item.supplier_type || 'FARMER_MICRO',
+      bank_name: item.bank_name || '',
+      bank_account_number: item.bank_account_number || ''
     });
     setDrawerOpen(true);
   };
@@ -78,8 +88,13 @@ export default function FarmersPage() {
     }
     setIsSaving(true);
     
+    const payload = {
+      ...form,
+      price_per_kg: form.price_per_kg ? parseFloat(form.price_per_kg) : null,
+    };
+    
     if (selectedItem) {
-      const res = await updateFarmer(selectedItem.id, form);
+      const res = await updateFarmer(selectedItem.id, payload);
       if (res.success) {
         toast.success('Farmer updated successfully');
         setDrawerOpen(false);
@@ -88,7 +103,7 @@ export default function FarmersPage() {
         toast.error(res.error || 'Failed to update farmer');
       }
     } else {
-      const res = await createFarmer(form);
+      const res = await createFarmer(payload);
       if (res.success) {
         toast.success('Farmer created successfully');
         setDrawerOpen(false);
@@ -121,9 +136,22 @@ export default function FarmersPage() {
 
   const columns = useMemo<ColumnDef<DbFarmer>[]>(() => [
     { accessorKey: 'name', header: 'Name' },
-    { accessorKey: 'contact', header: 'Contact Person' },
-    { accessorKey: 'phone_number', header: 'Phone' },
-    { accessorKey: 'address', header: 'Address' },
+    { 
+      id: 'supplier_type', 
+      header: 'Kategori',
+      cell: ({ row }) => {
+        const type = row.original.supplier_type;
+        if (type === 'FARMER_MAIN') return <StatusBadge status="warning" label="Mitra Besar" />;
+        if (type === 'EXTERNAL_SUPPLIER') return <StatusBadge status="info" label="Supplier Eksternal" />;
+        return <StatusBadge status="success" label="Petani Sekitar" />;
+      }
+    },
+    { accessorKey: 'phone_number', header: 'WhatsApp' },
+    { 
+      id: 'price', 
+      header: 'Harga Acuan',
+      cell: ({ row }) => row.original.price_per_kg ? `Rp ${row.original.price_per_kg.toLocaleString('id-ID')}/kg` : '-'
+    },
     ...(isManagement ? [] : [{
       id: 'actions',
       cell: ({ row }: { row: any }) => (
@@ -168,32 +196,71 @@ export default function FarmersPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <FormField label="Name" required>
-            <Input 
-              value={form.name} 
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))} 
-              placeholder="Nama Petani/Kelompok Tani" 
-            />
+          <FormField label="Kategori Pemasok" required>
+            <select
+              value={form.supplier_type}
+              onChange={e => setForm(f => ({ ...f, supplier_type: e.target.value }))}
+              style={{
+                width: '100%', padding: 'var(--space-2) var(--space-3)',
+                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+                background: 'var(--bg-default)', color: 'var(--text-primary)',
+                fontSize: 'var(--text-sm)',
+              }}
+            >
+              <option value="FARMER_MICRO">Petani Sekitar / Mikro</option>
+              <option value="FARMER_MAIN">Petani Besar / Sentra</option>
+              <option value="EXTERNAL_SUPPLIER">Supplier Eksternal (MOU)</option>
+            </select>
           </FormField>
-          <FormField label="Contact Person">
-            <Input 
-              value={form.contact} 
-              onChange={e => setForm(f => ({ ...f, contact: e.target.value }))} 
-              placeholder="Nama Penanggung Jawab" 
-            />
-          </FormField>
-          <FormField label="Phone Number">
-            <Input 
-              value={form.phone_number} 
-              onChange={e => setForm(f => ({ ...f, phone_number: e.target.value }))} 
-              placeholder="e.g. 08123456789" 
-            />
-          </FormField>
-          <FormField label="Address">
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+            <FormField label="Name" required>
+              <Input 
+                value={form.name} 
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))} 
+                placeholder="Nama Petani/Kelompok Tani" 
+              />
+            </FormField>
+            <FormField label="Kontak WhatsApp">
+              <Input 
+                value={form.phone_number} 
+                onChange={e => setForm(f => ({ ...f, phone_number: e.target.value }))} 
+                placeholder="e.g. 08123456789" 
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Alamat">
             <Input 
               value={form.address} 
               onChange={e => setForm(f => ({ ...f, address: e.target.value }))} 
               placeholder="Alamat lengkap" 
+            />
+          </FormField>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+            <FormField label="Bank / E-Wallet">
+              <Input 
+                value={form.bank_name} 
+                onChange={e => setForm(f => ({ ...f, bank_name: e.target.value }))} 
+                placeholder="BCA, Mandiri, DANA, dll" 
+              />
+            </FormField>
+            <FormField label="Nomor Rekening">
+              <Input 
+                value={form.bank_account_number} 
+                onChange={e => setForm(f => ({ ...f, bank_account_number: e.target.value }))} 
+                placeholder="No. Rekening" 
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Tarif Beli Acuan (Rp/kg)">
+            <Input 
+              type="number"
+              value={form.price_per_kg} 
+              onChange={e => setForm(f => ({ ...f, price_per_kg: e.target.value }))} 
+              placeholder="15000" 
             />
           </FormField>
         </div>

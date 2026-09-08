@@ -18,6 +18,7 @@ import {
   createSorting,
   updateSorting,
   getUnsortedReceivings,
+  getDailySortingSummary,
 } from '@/actions/sorting';
 import type { DbSorting } from '@/types/database';
 
@@ -35,6 +36,12 @@ export default function SortingPage() {
     { id: string; batch_number: string; weight: number; farmer?: { name: string } | null }[]
   >([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [dailySummary, setDailySummary] = useState<{
+    total_sorted: number;
+    total_leaf: number;
+    total_waste: number;
+    waste_percentage: number;
+  } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -61,12 +68,14 @@ export default function SortingPage() {
   // ── Load data ──────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [sortRes, unsortRes] = await Promise.all([
+    const [sortRes, unsortRes, sumRes] = await Promise.all([
       getSortings(),
       getUnsortedReceivings(),
+      getDailySortingSummary(),
     ]);
     if (sortRes.success && sortRes.data) setData(sortRes.data);
     if (unsortRes.success && unsortRes.data) setUnsortedReceivings(unsortRes.data as any);
+    if (sumRes.success && sumRes.data) setDailySummary(sumRes.data);
     setIsLoading(false);
   }, []);
 
@@ -85,7 +94,7 @@ export default function SortingPage() {
     });
     setIsSaving(false);
     if (res.success) {
-      toast.success('Sortasi berhasil dicatat! Info hasil sortasi terkirim ke petani.');
+      toast.success('Sortasi berhasil dicatat!');
       setDrawerOpen(false);
       setForm(EMPTY_FORM);
       loadData();
@@ -228,6 +237,27 @@ export default function SortingPage() {
         }
       />
 
+      {dailySummary && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-4)' }}>
+          <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Total Disortir Hari Ini</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>{dailySummary.total_sorted.toFixed(2)} kg</div>
+          </div>
+          <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-success-200)', borderLeft: '4px solid var(--color-success-500)' }}>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Total Daun Bersih (Grade A/B)</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--color-success-700)' }}>{dailySummary.total_leaf.toFixed(2)} kg</div>
+          </div>
+          <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-danger-200)', borderLeft: '4px solid var(--color-danger-500)' }}>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Total Afkir (Batang)</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 600, color: 'var(--color-danger-700)' }}>{dailySummary.total_waste.toFixed(2)} kg</div>
+          </div>
+          <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Persentase Afkir</div>
+            <div style={{ fontSize: '1.5rem', fontWeight: 600 }}>{dailySummary.waste_percentage.toFixed(2)}%</div>
+          </div>
+        </div>
+      )}
+
       <DataTable columns={columns} data={data} />
 
       {/* ── CREATE MODAL (POP UP) ── */}
@@ -319,8 +349,8 @@ export default function SortingPage() {
             display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
             fontSize: 'var(--text-sm)', color: 'var(--color-primary-700)',
           }}>
-            <MessageCircle size={14} />
-            Info hasil sortasi akan otomatis terkirim ke WhatsApp petani.
+            <CheckCircle size={14} />
+            Data sortasi akan memotong antrean penerimaan dan menambah stok gudang secara otomatis.
           </div>
         </div>
       </Modal>

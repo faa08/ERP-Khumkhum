@@ -37,6 +37,9 @@ export interface DbFarmer {
   phone_number?: string | null;
   price_per_kg?: number | null;
   farmer_type?: FarmerType;
+  supplier_type?: string | null;
+  bank_name?: string | null;
+  bank_account_number?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -431,6 +434,7 @@ export interface DbInventory {
   batch_number?: string | null;
   quantity: number;
   reorder_point?: number | null;
+  lead_time_days?: number | null;
   last_updated_at: string;
   warehouse?: Pick<DbWarehouse, 'id' | 'name'> | null;
   item_name?: string | null;

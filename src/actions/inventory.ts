@@ -367,3 +367,82 @@ export async function getLossReport(): Promise<{ success: boolean; data?: any[];
     return { success: false, error: err.message };
   }
 }
+
+export async function transferToConsignment(payload: { inventory_id: string, target_warehouse_id: string, quantity: number, notes?: string }): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'MANAGEMENT', 'SUPER_ADMIN', 'SALES']);
+    
+    // 1. Dapatkan info inventory asal
+    const { data: sourceInv, error: srcErr } = await supabaseAdmin
+      .from('inventory')
+      .select('*')
+      .eq('id', payload.inventory_id)
+      .single();
+
+    if (srcErr || !sourceInv) throw new Error('Inventory asal tidak ditemukan');
+    if (sourceInv.quantity < payload.quantity) throw new Error('Stok tidak mencukupi untuk ditransfer');
+
+    // 2. Kurangi stok di gudang asal
+    const newSourceQty = sourceInv.quantity - payload.quantity;
+    await supabaseAdmin
+      .from('inventory')
+      .update({ quantity: newSourceQty, last_updated_at: new Date().toISOString() })
+      .eq('id', sourceInv.id);
+
+    // 3. Catat movement OUT di gudang asal
+    await supabaseAdmin.from('stock_movements').insert({
+      inventory_id: sourceInv.id,
+      movement_type: 'TRANSFER',
+      quantity: payload.quantity,
+      reference_type: 'CONSIGNMENT_TRANSFER',
+      notes: payload.notes || `Transfer konsinyasi ke gudang tujuan`,
+      created_by: user.userId
+    });
+
+    // 4. Cari atau buat inventory di gudang tujuan
+    const { data: targetInv } = await supabaseAdmin
+      .from('inventory')
+      .select('id, quantity')
+      .eq('warehouse_id', payload.target_warehouse_id)
+      .eq('item_type', sourceInv.item_type)
+      .eq('item_id', sourceInv.item_id)
+      .maybeSingle();
+
+    let newTargetInvId = '';
+    if (targetInv) {
+      newTargetInvId = targetInv.id;
+      await supabaseAdmin
+        .from('inventory')
+        .update({ quantity: targetInv.quantity + payload.quantity, last_updated_at: new Date().toISOString() })
+        .eq('id', targetInv.id);
+    } else {
+      const { data: newInv } = await supabaseAdmin.from('inventory').insert({
+        warehouse_id: payload.target_warehouse_id,
+        item_type: sourceInv.item_type,
+        item_id: sourceInv.item_id,
+        batch_number: sourceInv.batch_number,
+        quantity: payload.quantity,
+        reorder_point: sourceInv.reorder_point || 0,
+        lead_time_days: sourceInv.lead_time_days || 0,
+        last_updated_at: new Date().toISOString()
+      }).select('id').single();
+      newTargetInvId = newInv?.id || '';
+    }
+
+    // 5. Catat movement IN di gudang tujuan
+    if (newTargetInvId) {
+      await supabaseAdmin.from('stock_movements').insert({
+        inventory_id: newTargetInvId,
+        movement_type: 'IN',
+        quantity: payload.quantity,
+        reference_type: 'CONSIGNMENT_TRANSFER',
+        notes: payload.notes || `Penerimaan konsinyasi dari gudang asal`,
+        created_by: user.userId
+      });
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

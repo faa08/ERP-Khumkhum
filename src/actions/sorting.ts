@@ -3,7 +3,6 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
 import { logAuditEvent } from '@/actions/audit';
-import { sendWhatsAppMessage, formatSortationSummaryMessage } from '@/lib/whatsapp';
 import { revalidatePath } from 'next/cache';
 import type { DbSorting, DbReceiving } from '@/types/database';
 
@@ -190,19 +189,8 @@ export async function createSorting(input: CreateSortingInput): Promise<{
       }
     }
 
-    // Kirim WA info hasil sortasi
-    const farmerPhone = data?.receiving?.farmer?.phone_number;
-    const farmerName = data?.receiving?.farmer?.name;
-    if (farmerPhone && farmerName) {
-      const msg = formatSortationSummaryMessage({
-        farmerName,
-        batchNumber: data.receiving.batch_number,
-        gradeA: quality_grade === 'A' ? input.leaf_weight : 0,
-        gradeB: quality_grade === 'B' ? input.leaf_weight : 0,
-        waste: input.stem_weight,
-      });
-      await sendWhatsAppMessage({ target: farmerPhone, message: msg });
-    }
+    // Revisi Dev 1: Pesan WA rincian sortasi ke petani dinonaktifkan
+
 
     await logAuditEvent({
       userId: user.userId,
@@ -325,17 +313,8 @@ export async function updateSorting(input: UpdateSortingInput): Promise<{
       }
     }
 
-    // Kirim notifikasi WA koreksi ke petani
-    const farmerPhone = data?.receiving?.farmer?.phone_number;
-    const farmerName = data?.receiving?.farmer?.name;
-    if (farmerPhone && farmerName) {
-      const msg = `*KOREKSI HASIL SORTASI JAMUR*\n---------------------------------------\nHalo *${farmerName}*,\nTerdapat pembaruan data sortasi untuk batch *${data.receiving.batch_number}*:\n\n` +
-        `✅ *Grade A (Jamur Bersih):* ${quality_grade === 'A' ? input.leaf_weight : 0} kg\n` +
-        `⚠️ *Grade B (Cacat Ringan):* ${quality_grade === 'B' ? input.leaf_weight : 0} kg\n` +
-        `❌ *Afkir / Batang:* ${input.stem_weight} kg\n\n` +
-        `_Data terbaru telah disesuaikan di sistem ERP KhumKhum. Terima kasih!_`;
-      await sendWhatsAppMessage({ target: farmerPhone, message: msg });
-    }
+    // Revisi Dev 1: Pesan WA koreksi sortasi ke petani dinonaktifkan
+
 
     await logAuditEvent({
       userId: user.userId,

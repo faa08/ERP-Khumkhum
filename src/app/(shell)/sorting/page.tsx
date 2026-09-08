@@ -8,11 +8,12 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
+import { Card } from '@/components/ui/Card';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Eye, Edit, CheckCircle, AlertTriangle, MessageCircle } from 'lucide-react';
+import { Plus, MoreVertical, Eye, Edit, CheckCircle, AlertTriangle, Leaf, Scale } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { format } from 'date-fns';
+import { format, isToday } from 'date-fns';
 import {
   getSortings,
   createSorting,
@@ -85,7 +86,7 @@ export default function SortingPage() {
     });
     setIsSaving(false);
     if (res.success) {
-      toast.success('Sortasi berhasil dicatat! Info hasil sortasi terkirim ke petani.');
+      toast.success('Sortasi berhasil dicatat!');
       setDrawerOpen(false);
       setForm(EMPTY_FORM);
       loadData();
@@ -134,6 +135,18 @@ export default function SortingPage() {
     }
   };
 
+  // ── Summary harian ──────────────────────────────────────────────
+  const todaySummary = useMemo(() => {
+    const todayItems = data.filter(d => isToday(new Date(d.sorting_date)));
+    const totalLeaf = todayItems.reduce((s, d) => s + (d.leaf_weight ?? d.accepted_quantity ?? 0), 0);
+    const totalStem = todayItems.reduce((s, d) => s + (d.stem_weight ?? d.waste ?? 0), 0);
+    const totalWeight = totalLeaf + totalStem;
+    const avgLeafPct = todayItems.length > 0
+      ? todayItems.reduce((s, d) => s + (d.leaf_percentage ?? 0), 0) / todayItems.length
+      : 0;
+    return { count: todayItems.length, totalLeaf, totalStem, totalWeight, avgLeafPct };
+  }, [data]);
+
   // ── Columns ────────────────────────────────────────────────────
   const columns = useMemo<ColumnDef<DbSorting>[]>(() => [
     {
@@ -152,12 +165,12 @@ export default function SortingPage() {
     },
     {
       id: 'leaf_weight',
-      header: 'Berat Daun (kg)',
+      header: 'Daun (kg)',
       cell: ({ row }) => row.original.leaf_weight != null ? `${row.original.leaf_weight} kg` : `${row.original.accepted_quantity} kg`,
     },
     {
       id: 'stem_weight',
-      header: 'Berat Batang (kg)',
+      header: 'Batang (kg)',
       cell: ({ row }) => row.original.stem_weight != null ? `${row.original.stem_weight} kg` : `${row.original.waste} kg`,
     },
     {
@@ -175,23 +188,14 @@ export default function SortingPage() {
       header: 'Grade',
       cell: ({ row }) => {
         const g = row.original.quality_grade || '-';
-        const color = g === 'A' ? 'var(--color-success-600)' : g === 'B' ? 'var(--color-warning-600)' : g === 'C' ? 'var(--color-danger-600)' : 'var(--text-secondary)';
-        return <strong style={{ color }}>Grade {g}</strong>;
-      },
-    },
-    {
-      id: 'standard',
-      header: 'Status Standar',
-      cell: ({ row }) => {
         const ok = row.original.is_standard_compliant;
-        if (ok == null) return '-';
+        const color = g === 'A' ? 'var(--color-success-600)' : g === 'B' ? 'var(--color-warning-600)' : g === 'C' ? 'var(--color-danger-600)' : 'var(--text-secondary)';
         return (
-          <span style={{
-            color: ok ? 'var(--color-success-600)' : 'var(--color-danger-600)',
-            display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 500,
-          }}>
-            {ok ? <CheckCircle size={14} /> : <AlertTriangle size={14} />}
-            {ok ? 'Lolos (≥75%)' : 'Di Bawah Standar'}
+          <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <strong style={{ color }}>Grade {g}</strong>
+            {ok != null && (
+              ok ? <CheckCircle size={13} color="var(--color-success-500)" /> : <AlertTriangle size={13} color="var(--color-danger-500)" />
+            )}
           </span>
         );
       },
@@ -227,6 +231,54 @@ export default function SortingPage() {
           </Button>
         }
       />
+
+      {/* ── Summary Harian ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', background: 'var(--color-primary-50)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Scale size={18} color="var(--color-primary-600)" />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Sortasi Hari Ini</p>
+              <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>{todaySummary.count} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 400, color: 'var(--text-tertiary)' }}>entri</span></p>
+            </div>
+          </div>
+        </Card>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', background: 'var(--color-success-50)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Leaf size={18} color="var(--color-success-600)" />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Total Daun</p>
+              <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>{todaySummary.totalLeaf.toLocaleString('id-ID', { maximumFractionDigits: 1 })} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 400, color: 'var(--text-tertiary)' }}>kg</span></p>
+            </div>
+          </div>
+        </Card>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', background: 'var(--color-warning-50)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertTriangle size={18} color="var(--color-warning-600)" />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Total Batang</p>
+              <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>{todaySummary.totalStem.toLocaleString('id-ID', { maximumFractionDigits: 1 })} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 400, color: 'var(--text-tertiary)' }}>kg</span></p>
+            </div>
+          </div>
+        </Card>
+        <Card>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', background: todaySummary.avgLeafPct >= 75 ? 'var(--color-success-50)' : 'var(--color-danger-50)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <CheckCircle size={18} color={todaySummary.avgLeafPct >= 75 ? 'var(--color-success-600)' : 'var(--color-danger-600)'} />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Rata-rata % Daun</p>
+              <p style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, color: todaySummary.avgLeafPct >= 75 ? 'var(--color-success-600)' : 'var(--color-danger-600)' }}>{todaySummary.avgLeafPct.toFixed(1)}%</p>
+            </div>
+          </div>
+        </Card>
+      </div>
 
       <DataTable columns={columns} data={data} />
 
@@ -313,15 +365,7 @@ export default function SortingPage() {
             </div>
           )}
 
-          <div style={{
-            padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
-            background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-200)',
-            display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-            fontSize: 'var(--text-sm)', color: 'var(--color-primary-700)',
-          }}>
-            <MessageCircle size={14} />
-            Info hasil sortasi akan otomatis terkirim ke WhatsApp petani.
-          </div>
+
         </div>
       </Modal>
 

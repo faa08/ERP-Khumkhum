@@ -171,14 +171,23 @@ export default function ProductionStandardsPage() {
         </Card>
       </div>
 
-      {/* 3. BOM Recipes Configuration */}
+      {/* 3. BOM Recipe Configuration — 1 Resep Dasar Goreng */}
       <Card header={<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Factory className="w-4 h-4 text-[var(--color-success-600)]" aria-hidden="true" /> <strong>Resep Bill of Materials (BOM) Standar per 1 kg Jamur Bersih</strong></div>
-        {!isManagement && <Button variant="secondary" size="sm" onClick={handleAddRecipe} leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}>Tambah Varian Resep</Button>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Factory className="w-4 h-4 text-[var(--color-success-600)]" aria-hidden="true" /> <strong>Resep BOM Dasar — Goreng Jamur (Tanpa Rasa)</strong></div>
+        {!isManagement && config.bom_recipes.length === 0 && <Button variant="secondary" size="sm" onClick={handleAddRecipe} leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}>Tambah Resep</Button>}
       </div>}>
-        <p style={{ margin: 0, marginBottom: 'var(--space-3)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
-          Rasio kebutuhan bahan pembantu per 1.0 kg jamur tiram segar untuk estimasi kebutuhan bahan otomatis (MRP).
+        <p style={{ margin: 0, marginBottom: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
+          Rasio kebutuhan bahan per 1,0 kg jamur tiram segar untuk proses <strong>goreng saja</strong>. Bumbu/rasa (Ori, Balado, BBQ, Pedas Manis, Super Pedas) ditambahkan pada tahap packing.
         </p>
+
+        <div style={{
+          padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
+          background: 'var(--color-info-50)', border: '1px solid var(--color-info-200)',
+          fontSize: 'var(--text-sm)', color: 'var(--color-info-700)',
+          marginBottom: 'var(--space-3)',
+        }}>
+          💡 Cukup 1 resep dasar karena semua varian rasa menggunakan jamur goreng yang sama. Pemberian bumbu dilakukan saat packing.
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {config.bom_recipes.map((recipe, index) => (
@@ -186,7 +195,7 @@ export default function ProductionStandardsPage() {
               key={index}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr auto',
+                gridTemplateColumns: '2fr 1fr 1fr 1fr auto',
                 gap: 'var(--space-2)',
                 alignItems: 'center',
                 padding: 'var(--space-3)',
@@ -195,7 +204,7 @@ export default function ProductionStandardsPage() {
               }}
             >
               <div>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Nama Produk / Varian</span>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Nama Resep</span>
                 <Input disabled={isManagement}
                   value={recipe.product_name}
                   onChange={(e) => {
@@ -243,20 +252,6 @@ export default function ProductionStandardsPage() {
                   onChange={(e) => {
                     const updated = [...config.bom_recipes];
                     updated[index].cooking_oil_ratio = Number(e.target.value);
-                    setConfig({ ...config, bom_recipes: updated });
-                  }}
-                />
-              </div>
-
-              <div>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Bumbu (kg)</span>
-                <Input disabled={isManagement}
-                  type="number"
-                  step="0.01"
-                  value={recipe.seasoning_ratio}
-                  onChange={(e) => {
-                    const updated = [...config.bom_recipes];
-                    updated[index].seasoning_ratio = Number(e.target.value);
                     setConfig({ ...config, bom_recipes: updated });
                   }}
                 />

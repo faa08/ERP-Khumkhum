@@ -1,0 +1,99 @@
+/* KpiCard — angka, posisi terhadap target, dan tren periode */
+
+.card {
+  display: flex;
+  flex-direction: column;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.headText {
+  min-width: 0;
+}
+
+.label {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.value {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-4xl);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/*
+ * Hanya KPI bertarget yang mewarnai angkanya. KPI volume tetap netral —
+ * warna semantik di sini akan menyiratkan status yang tidak dimiliki angkanya.
+ */
+.value--positive { color: var(--color-success-700); }
+.value--negative { color: var(--color-danger-700); }
+.value--neutral  { color: var(--text-primary); }
+
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.delta--positive { color: var(--color-success-600); }
+.delta--negative { color: var(--color-danger-600); }
+.delta--neutral  { color: var(--text-tertiary); }
+
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  /* Dekoratif: sengaja netral agar tidak bersaing dengan warna status */
+  background-color: var(--mushroom-light);
+  color: var(--mushroom);
+}
+
+.empty {
+  margin: var(--space-2) 0 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.bullet {
+  margin-top: var(--space-3);
+}
+
+.trend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.trendCaption {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+[data-theme="dark"] .icon {
+  background-color: rgba(139, 94, 60, 0.22);
+  color: var(--turmeric);
+}

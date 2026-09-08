@@ -3,7 +3,7 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
 import { logAuditEvent } from '@/actions/audit';
-import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { sendWhatsAppMessage, formatStockInquiryMessage, getWhatsAppDirectUrl } from '@/lib/whatsapp';
 import type {
   DbFarmer,
   DbProduct,
@@ -93,6 +93,58 @@ export async function deleteFarmer(id: string): Promise<{ success: boolean; erro
       entityId: id,
     });
     return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Kirim pesan WA tanya ketersediaan stok jamur ke petani mitra.
+ * Jika Fonnte tidak aktif, kembalikan link direct WA sebagai fallback.
+ */
+export async function inquireFarmerStockAction(params: {
+  farmerId: string;
+  targetDate?: string;
+}): Promise<{ success: boolean; directUrl?: string; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+
+    const { data: farmer, error: fetchErr } = await supabaseAdmin
+      .from('farmers')
+      .select('id, name, phone_number, farmer_type')
+      .eq('id', params.farmerId)
+      .single();
+
+    if (fetchErr || !farmer) throw new Error('Data petani tidak ditemukan');
+    if (!farmer.phone_number) throw new Error('Petani ini belum memiliki nomor HP');
+
+    const message = formatStockInquiryMessage({
+      farmerName: farmer.name,
+      farmerType: farmer.farmer_type,
+      targetDate: params.targetDate,
+    });
+
+    const directUrl = getWhatsAppDirectUrl(farmer.phone_number, message);
+
+    const result = await sendWhatsAppMessage({
+      target: farmer.phone_number,
+      message,
+    });
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'whatsapp_stock_inquiry',
+      entityId: farmer.id,
+      details: {
+        farmerName: farmer.name,
+        farmerType: farmer.farmer_type,
+        targetDate: params.targetDate,
+        sentViaFonnte: result.success && !result.data?.simulated,
+      },
+    });
+
+    return { success: true, directUrl };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

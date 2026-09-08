@@ -238,6 +238,18 @@ export default function InventoryPage() {
       },
     },
     {
+      id: 'rop',
+      header: 'ROP',
+      cell: ({ row }) => {
+        const rop = row.original.reorder_point || CATEGORY_CONFIG[row.original.item_type]?.rop || 0;
+        return (
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+            {rop.toLocaleString('id-ID')} kg
+          </span>
+        );
+      },
+    },
+    {
       id: 'updated',
       header: 'Update Terakhir',
       cell: ({ row }) => format(new Date(row.original.last_updated_at), 'dd/MM/yyyy HH:mm'),

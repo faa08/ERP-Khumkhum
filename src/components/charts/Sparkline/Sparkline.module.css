@@ -1,0 +1,36 @@
+/* Sparkline — garis tren mungil, tanpa sumbu */
+
+/*
+ * Warna diatur lewat `color` pada elemen svg, lalu diwarisi bentuk-bentuk di
+ * dalamnya via currentColor. Satu titik ganti untuk terang maupun gelap.
+ */
+.spark {
+  display: block;
+  overflow: visible;
+}
+
+.spark--positive { color: var(--color-success-600); }
+.spark--negative { color: var(--color-danger-600); }
+.spark--neutral  { color: var(--mushroom); }
+
+.line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.area {
+  fill: currentColor;
+  opacity: 0.16;
+  stroke: none;
+}
+
+.dot,
+.endpoint {
+  fill: currentColor;
+  stroke: none;
+}
+
+[data-theme="dark"] .area { opacity: 0.24; }

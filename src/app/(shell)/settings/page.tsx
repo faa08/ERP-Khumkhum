@@ -99,6 +99,35 @@ export default function SettingsPage() {
                   </div>
                 </Card>
               )
+            },
+            {
+              id: 'units',
+              label: 'Satuan & Presisi Operasional',
+              content: (
+                <Card>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: '600px' }}>
+                    <div style={{
+                      padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
+                      background: 'var(--color-info-50)', border: '1px solid var(--color-info-200)',
+                      fontSize: 'var(--text-sm)', color: 'var(--color-info-700)',
+                    }}>
+                      Seluruh pencatatan kuantitas bahan baku dan hasil produksi KhumKhum menggunakan satuan <strong>Kilogram (kg)</strong> dengan presisi minimal 2 digit desimal (akomodasi setoran mikro 2 ons / 0,20 kg).
+                    </div>
+                    <FormField label="Satuan Berat Standar">
+                      <Input value="Kilogram (kg)" disabled fullWidth />
+                    </FormField>
+                    <FormField label="Presisi Desimal">
+                      <Input value="2 digit (0,01 kg)" disabled fullWidth />
+                    </FormField>
+                    <FormField label="Berat Minimum Input">
+                      <Input value="0,01 kg" disabled fullWidth />
+                    </FormField>
+                    <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+                      Konfigurasi ini bersifat tetap sesuai standar operasional pabrik KhumKhum dan tidak dapat diubah melalui antarmuka ini.
+                    </p>
+                  </div>
+                </Card>
+              )
             }
           ]}
         />

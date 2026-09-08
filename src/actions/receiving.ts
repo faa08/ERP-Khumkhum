@@ -141,3 +141,82 @@ export async function createReceiving(input: CreateReceivingInput): Promise<{
     return { success: false, error: err.message };
   }
 }
+
+// ─────────────────────────────────────────────
+// KOREKSI TIMBANGAN (Revisi Dev 1)
+// Setiap koreksi dicatat ketat di audit trail karena
+// pembayaran petani dihitung dari rekap timbangan bulanan.
+// ─────────────────────────────────────────────
+
+export interface UpdateReceivingInput {
+  id: string;
+  weight: number;
+  weight_sent?: number;
+  notes?: string;
+  correction_reason: string;
+}
+
+export async function updateReceiving(input: UpdateReceivingInput): Promise<{
+  success: boolean;
+  data?: DbReceiving;
+  error?: string;
+}> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+
+    // Ambil data lama untuk perbandingan audit
+    const { data: oldData, error: fetchErr } = await supabaseAdmin
+      .from('receivings')
+      .select('id, weight, weight_sent, weight_difference, diff_percentage, batch_number')
+      .eq('id', input.id)
+      .single();
+
+    if (fetchErr || !oldData) throw new Error('Data penerimaan tidak ditemukan');
+
+    const weight_sent = input.weight_sent ?? oldData.weight_sent ?? input.weight;
+    const weight_difference = input.weight - weight_sent;
+    const diff_percentage = weight_sent > 0
+      ? ((input.weight - weight_sent) / weight_sent) * 100
+      : 0;
+
+    const { data, error } = await supabaseAdmin
+      .from('receivings')
+      .update({
+        weight: input.weight,
+        weight_sent,
+        weight_difference: parseFloat(weight_difference.toFixed(2)),
+        diff_percentage: parseFloat(diff_percentage.toFixed(2)),
+        notes: input.notes ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', input.id)
+      .select(`
+        *,
+        farmer:farmers(id, name, contact, phone_number)
+      `)
+      .single();
+
+    if (error) throw error;
+
+    // Audit trail ketat — mencatat selisih lama vs baru dan alasan koreksi
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'UPDATE',
+      entityType: 'RECEIVING',
+      entityId: input.id,
+      details: {
+        batch_number: oldData.batch_number,
+        old_weight: oldData.weight,
+        new_weight: input.weight,
+        old_weight_sent: oldData.weight_sent,
+        new_weight_sent: weight_sent,
+        correction_reason: input.correction_reason,
+      },
+    });
+
+    return { success: true, data: data as DbReceiving };
+  } catch (err: any) {
+    console.error('updateReceiving error:', err);
+    return { success: false, error: err.message };
+  }
+}

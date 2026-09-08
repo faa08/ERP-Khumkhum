@@ -1,0 +1,80 @@
+/* ParetoBars — sumber defect terbesar */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.insight {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--turmeric);
+  border-radius: var(--radius-md);
+  background-color: var(--turmeric-light);
+  color: var(--turmeric-deep);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.empty {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(80px, 132px) 1fr 40px;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.label {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  /* Nama kategori QC panjang-panjang; potong daripada merusak kolom */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track {
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface-3);
+  overflow: hidden;
+}
+
+.fill {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-primary-600);
+  transition: width 0.4s ease;
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-theme="dark"] .insight {
+  background-color: rgba(242, 169, 60, 0.14);
+  color: var(--turmeric);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill { transition: none; }
+}

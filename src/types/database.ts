@@ -27,6 +27,8 @@ export interface DbUser {
   updated_at: string;
 }
 
+export type FarmerType = 'SEKITAR' | 'MITRA_BESAR';
+
 export interface DbFarmer {
   id: string;
   name: string;
@@ -34,6 +36,7 @@ export interface DbFarmer {
   address?: string | null;
   phone_number?: string | null;
   price_per_kg?: number | null;
+  farmer_type?: FarmerType;
   created_at: string;
   updated_at: string;
 }
@@ -153,6 +156,19 @@ export interface DbWhatsappLog {
   status: 'PENDING' | 'SENT' | 'FAILED' | 'SIMULATED';
   gateway_response?: Record<string, any> | null;
   created_at: string;
+}
+
+/** Percakapan WhatsApp dengan Petani (Teks Asli) */
+export interface DbWhatsAppMessage {
+  id: string;
+  farmer_id?: string | null;
+  phone_number: string;
+  message: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  status: 'UNREAD' | 'READ' | 'PROCESSED';
+  created_at: string;
+  // Joined field
+  farmer?: Pick<DbFarmer, 'id' | 'name'> | null;
 }
 
 // ─────────────────────────────────────────────
@@ -490,7 +506,8 @@ export interface DbKpiMetrics {
   total_supply_kg: number;
   avg_yield_percentage: number;
   overall_defect_rate: number;
-  stock_accuracy_percentage: number;
+  /** null bila belum ada stock opname pada periode terpilih — bukan 0 */
+  stock_accuracy_percentage: number | null;
   total_sales_revenue: number;
   total_production_batches: number;
   period_from: string;
@@ -550,3 +567,10 @@ export interface DbSetting {
   updated_by?: string | null;
   updated_at: string;
 }
+
+export interface GeneralSettingsConfig {
+  default_weight_uom: 'kg';
+  decimal_precision: number;
+  min_weight_step: number;
+}
+

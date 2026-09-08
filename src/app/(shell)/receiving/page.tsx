@@ -15,9 +15,10 @@ import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircl
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { getReceivings, createReceiving, getInboundEstimates } from '@/actions/receiving';
+import { getReceivings, createReceiving } from '@/actions/receiving';
 import { getFarmers, getRawMaterials } from '@/actions/master';
-import type { DbReceiving, DbFarmerHarvestEstimate } from '@/types/database';
+import { getRecentFarmerMessages } from '@/actions/whatsapp';
+import type { DbReceiving, DbWhatsAppMessage } from '@/types/database';
 
 interface FormState {
   farmer_id: string;
@@ -39,7 +40,7 @@ export default function ReceivingPage() {
   const [data, setData] = useState<DbReceiving[]>([]);
   const [farmers, setFarmers] = useState<{ id: string; name: string; phone_number?: string | null }[]>([]);
   const [rawMaterials, setRawMaterials] = useState<{ id: string; name: string; code: string }[]>([]);
-  const [inboundEstimates, setInboundEstimates] = useState<any[]>([]);
+  const [recentMessages, setRecentMessages] = useState<DbWhatsAppMessage[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'menunggu' | 'selesai'>('menunggu');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -64,16 +65,16 @@ export default function ReceivingPage() {
   // ── Load data ───────────────────────────────────────────────────
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [recRes, farmRes, rmRes, estRes] = await Promise.all([
+    const [recRes, farmRes, rmRes, msgRes] = await Promise.all([
       getReceivings(),
       getFarmers(),
       getRawMaterials(),
-      getInboundEstimates(),
+      getRecentFarmerMessages(10),
     ]);
     if (recRes.success && recRes.data) setData(recRes.data);
     if (farmRes.success) setFarmers(farmRes.data as any);
     if (rmRes.success) setRawMaterials(rmRes.data as any);
-    if (estRes.success && estRes.estimates) setInboundEstimates(estRes.estimates);
+    if (msgRes.success && msgRes.data) setRecentMessages(msgRes.data as DbWhatsAppMessage[]);
     setIsLoading(false);
   }, []);
 
@@ -181,47 +182,56 @@ export default function ReceivingPage() {
     },
   ], []);
 
-  const estimateColumns = useMemo<ColumnDef<any>[]>(() => [
+  const messageColumns = useMemo<ColumnDef<DbWhatsAppMessage>[]>(() => [
     {
       id: 'farmer_name',
       header: 'Petani Mitra',
-      cell: ({ row }) => row.original.farmer?.name || row.original.farmer_id || '-',
+      cell: ({ row }) => row.original.farmer?.name || row.original.phone_number || '-',
     },
     {
-      accessorKey: 'expected_date',
-      header: 'Rencana Kedatangan',
-      cell: ({ row }) => format(new Date(row.original.expected_date), 'dd MMM yyyy', { locale: idLocale }),
+      accessorKey: 'message',
+      header: 'Isi Pesan Terakhir',
+      cell: ({ row }) => (
+        <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+          "{row.original.message}"
+        </span>
+      ),
     },
     {
-      accessorKey: 'estimated_kg',
-      header: 'Estimasi Kiriman',
-      cell: ({ row }) => <strong>{row.original.estimated_kg} kg</strong>,
+      accessorKey: 'created_at',
+      header: 'Waktu Diterima',
+      cell: ({ row }) => format(new Date(row.original.created_at), 'dd MMM yyyy HH:mm', { locale: idLocale }),
     },
     {
-      accessorKey: 'source',
-      header: 'Sumber',
-      cell: ({ row }) => <StatusBadge status={row.original.source === 'WA_BOT' ? 'success' : 'info'} label={row.original.source === 'WA_BOT' ? 'WhatsApp' : 'Manual'} />,
+      accessorKey: 'status',
+      header: 'Status Pesan',
+      cell: ({ row }) => <StatusBadge status={row.original.status === 'UNREAD' ? 'warning' : 'success'} label={row.original.status} />,
     },
     {
       id: 'actions',
       header: 'Aksi',
-      cell: ({ row }) => (
-        <Button 
-          variant="primary" 
-          size="sm" 
-          onClick={() => {
-            setForm(f => ({
-              ...f,
-              farmer_id: row.original.farmer_id,
-              weight_sent: String(row.original.estimated_kg),
-            }));
-            toast.info(`Data otomatis diisi untuk ${row.original.farmer?.name || 'Petani'}`);
-            setDrawerOpen(true);
-          }}
-        >
-          Terima Barang
-        </Button>
-      ),
+      cell: ({ row }) => {
+        const fId = row.original.farmer_id;
+        return (
+          <Button 
+            variant="primary" 
+            size="sm" 
+            disabled={!fId}
+            onClick={() => {
+              if (fId) {
+                setForm(f => ({
+                  ...f,
+                  farmer_id: fId,
+                }));
+                toast.info(`Petani diisi otomatis dari chat. Silakan masukkan berat timbangan.`);
+                setDrawerOpen(true);
+              }
+            }}
+          >
+            Timbang Sekarang
+          </Button>
+        );
+      },
     },
   ], [toast]);
 
@@ -269,12 +279,15 @@ export default function ReceivingPage() {
       {activeTab === 'menunggu' && (
         <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Rencana Pasokan Hari Ini</h3>
+            <div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Pesan WhatsApp Petani (Kesiapan Kirim)</h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginTop: '4px' }}>Info ketersediaan jamur dari petani via WhatsApp.</p>
+            </div>
             <Button variant="secondary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
               Catat Penerimaan Manual
             </Button>
           </div>
-          <DataTable columns={estimateColumns} data={inboundEstimates} />
+          <DataTable columns={messageColumns} data={recentMessages} />
         </div>
       )}
 

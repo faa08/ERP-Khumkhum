@@ -60,15 +60,12 @@ import {
   getProductionCapacityMetrics,
   createFryingBatch,
   completeFryingBatch,
+  startFryingBatchTimer,
   getAllFryingBatches,
   createPackingEntry,
   markLongsongPacked,
   getAllPackingEntries,
   getUnpackedLongsongReminder,
-  recordTimeStudySample,
-  getTimeStudySamples,
-  deleteTimeStudySample,
-  calculateAndSaveStandardTime,
   getFryingPackingMetrics,
   type CreateProductionOrderInput,
   type MaterialConsumptionItem,
@@ -78,7 +75,7 @@ import {
   type CreatePackingEntryInput,
 } from '@/actions/production';
 import { getPpicData } from '@/actions/ppic';
-import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry, DbTimeStudySample } from '@/types/database';
+import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry } from '@/types/database';
 import { FLAVOR_VARIANTS } from '@/types/database';
 
 // ─────────────────────────────────────────────
@@ -123,7 +120,6 @@ export default function ProductionPage() {
     wajan_number: '1',
     batch_weight_gram: '800',
     oil_temp_celsius: '170',
-    frying_duration_minutes: '15',
     notes: '',
   });
   const [completeFryingForm, setCompleteFryingForm] = useState({
@@ -147,17 +143,14 @@ export default function ProductionPage() {
     notes: '',
   });
 
-  // ── Time Study state (Enhanced for Senior Operators: Start, Pause, Resume, Reset) ──
-  const [timeStudyOpen, setTimeStudyOpen] = useState(false);
-  const [timeStudyOrderId, setTimeStudyOrderId] = useState('');
-  const [timeStudySamples, setTimeStudySamples] = useState<DbTimeStudySample[]>([]);
-  const [stopwatchState, setStopwatchState] = useState<'IDLE' | 'RUNNING' | 'PAUSED'>('IDLE');
-  const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
-  const stopwatchStartRef = useRef<number | null>(null);
-  const accumulatedElapsedRef = useRef<number>(0);
-  const stopwatchTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [ratingFactor, setRatingFactor] = useState(1.0);
-  const [allowanceFactor, setAllowanceFactor] = useState(0.15);
+  // ── Batch Stopwatch state (Per-batch inline timer: Running, Pause, Resume, Reset) ──
+  interface BatchTimerState {
+    status: 'RUNNING' | 'PAUSED' | 'IDLE';
+    accumulatedSeconds: number;
+    lastStartTime: number | null;
+  }
+  const [batchTimers, setBatchTimers] = useState<Record<string, BatchTimerState>>({});
+  const [nowTick, setNowTick] = useState(Date.now());
 
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -199,22 +192,112 @@ export default function ProductionPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // ── Stopwatch interval effect ──
-  useEffect(() => {
-    if (stopwatchState === 'RUNNING') {
-      stopwatchTimerRef.current = setInterval(() => {
-        if (stopwatchStartRef.current) {
-          const currentRun = (Date.now() - stopwatchStartRef.current) / 1000;
-          setStopwatchElapsed(accumulatedElapsedRef.current + currentRun);
-        }
-      }, 100);
-    } else {
-      if (stopwatchTimerRef.current) clearInterval(stopwatchTimerRef.current);
+  // ── Longsong Belum Packing (Reactive: Produced - Packed) ──
+  const unpackedLongsongCount = useMemo(() => {
+    const totalProduced = fryingBatches
+      .filter(b => b.finished_at && Number(b.longsong_count) > 0)
+      .reduce((sum, b) => sum + (Number(b.longsong_count) || 0), 0);
+
+    const totalPacked = packingEntries.filter(p => p.is_packed).length;
+    const diff = totalProduced - totalPacked;
+
+    if (fryingBatches.length > 0 || packingEntries.length > 0) {
+      return Math.max(0, diff);
     }
-    return () => {
-      if (stopwatchTimerRef.current) clearInterval(stopwatchTimerRef.current);
-    };
-  }, [stopwatchState]);
+    return fryingMetrics.unpackedLongsongCount || 0;
+  }, [fryingBatches, packingEntries, fryingMetrics.unpackedLongsongCount]);
+
+  // ── Multi-batch stopwatch tick effect ──
+  useEffect(() => {
+    const hasActive = fryingBatches.some(b => !b.finished_at);
+    if (!hasActive) return;
+    const interval = setInterval(() => {
+      setNowTick(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [fryingBatches]);
+
+  // ── Batch Timer Helpers ──
+  const getBatchElapsedSeconds = useCallback((batch: DbFryingBatch): number => {
+    if (batch.finished_at) {
+      return (batch.frying_duration_minutes || 0) * 60;
+    }
+    const timerState = batchTimers[batch.id];
+    if (timerState) {
+      if (timerState.status === 'RUNNING' && timerState.lastStartTime) {
+        return timerState.accumulatedSeconds + (nowTick - timerState.lastStartTime) / 1000;
+      }
+      if (timerState.status === 'PAUSED') {
+        return timerState.accumulatedSeconds;
+      }
+      if (timerState.status === 'IDLE') {
+        return 0;
+      }
+    }
+    const startStr = batch.timer_started_at;
+    if (startStr) {
+      const startMs = new Date(startStr).getTime();
+      return Math.max(0, (nowTick - startMs) / 1000);
+    }
+    return 0;
+  }, [batchTimers, nowTick]);
+
+  const getBatchTimerStatus = useCallback((batch: DbFryingBatch): 'DONE' | 'RUNNING' | 'PAUSED' | 'IDLE' => {
+    if (batch.finished_at) return 'DONE';
+    const timerState = batchTimers[batch.id];
+    if (timerState) return timerState.status;
+    if (batch.timer_started_at) return 'RUNNING';
+    return 'IDLE';
+  }, [batchTimers]);
+
+  const handlePauseBatchTimer = (batch: DbFryingBatch) => {
+    const currentElapsed = getBatchElapsedSeconds(batch);
+    setBatchTimers(prev => ({
+      ...prev,
+      [batch.id]: {
+        status: 'PAUSED',
+        accumulatedSeconds: currentElapsed,
+        lastStartTime: null,
+      },
+    }));
+  };
+
+  const handleResumeBatchTimer = (batch: DbFryingBatch) => {
+    const currentElapsed = getBatchElapsedSeconds(batch);
+    setBatchTimers(prev => ({
+      ...prev,
+      [batch.id]: {
+        status: 'RUNNING',
+        accumulatedSeconds: currentElapsed,
+        lastStartTime: Date.now(),
+      },
+    }));
+  };
+
+  const handleResetBatchTimer = (batch: DbFryingBatch) => {
+    setBatchTimers(prev => ({
+      ...prev,
+      [batch.id]: {
+        status: 'IDLE',
+        accumulatedSeconds: 0,
+        lastStartTime: null,
+      },
+    }));
+    toast.info(`Timer wajan #${batch.wajan_number} diulang ke 0 detik`);
+  };
+
+  const handleStartBatchTimer = async (batch: DbFryingBatch) => {
+    setBatchTimers(prev => ({
+      ...prev,
+      [batch.id]: {
+        status: 'RUNNING',
+        accumulatedSeconds: 0,
+        lastStartTime: Date.now(),
+      },
+    }));
+    toast.info(`Timer wajan #${batch.wajan_number} dimulai`);
+    await startFryingBatchTimer(batch.id);
+  };
 
   // ─────────────────────────────────────────────
   // HANDLERS — FRYING
@@ -231,12 +314,11 @@ export default function ProductionPage() {
       wajan_number: Number(fryingForm.wajan_number),
       batch_weight_gram: Number(fryingForm.batch_weight_gram) || 800,
       oil_temp_celsius: Number(fryingForm.oil_temp_celsius),
-      frying_duration_minutes: Number(fryingForm.frying_duration_minutes),
       notes: fryingForm.notes,
     });
 
     if (res.success) {
-      toast.success(`Batch goreng wajan #${fryingForm.wajan_number} berhasil dibuat`);
+      toast.success(`Batch goreng wajan #${fryingForm.wajan_number} berhasil dibuat. Klik 'Mulai' pada tabel saat mulai menggoreng.`);
       setCreateFryingOpen(false);
       loadData();
     } else {
@@ -251,15 +333,24 @@ export default function ProductionPage() {
       return;
     }
 
+    const durationSeconds = getBatchElapsedSeconds(selectedFryingBatch);
+    const durationMinutes = Math.round((durationSeconds / 60) * 100) / 100;
+
     const res = await completeFryingBatch({
       frying_batch_id: selectedFryingBatch.id,
       output_weight_gram: Number(completeFryingForm.output_weight_gram),
       longsong_count: Number(completeFryingForm.longsong_count),
       kremesan_weight_gram: Number(completeFryingForm.kremesan_weight_gram) || 0,
+      frying_duration_minutes: durationMinutes > 0 ? durationMinutes : undefined,
     });
 
     if (res.success) {
-      toast.success('Hasil goreng berhasil dicatat');
+      toast.success(`Hasil goreng wajan #${selectedFryingBatch.wajan_number} berhasil dicatat (${formatDuration(durationSeconds)})`);
+      setBatchTimers(prev => {
+        const next = { ...prev };
+        delete next[selectedFryingBatch.id];
+        return next;
+      });
       setCompleteFryingOpen(false);
       loadData();
     } else {
@@ -287,6 +378,7 @@ export default function ProductionPage() {
       packaging_weight_gram: packingForm.packaging_weight_gram,
       seasoning_used_gram: Number(packingForm.seasoning_used_gram) || 0,
       notes: packingForm.notes,
+      is_packed: true,
     });
 
     if (res.success) {
@@ -308,129 +400,7 @@ export default function ProductionPage() {
     }
   };
 
-  // ─────────────────────────────────────────────
-  // HANDLERS — TIME STUDY STOPWATCH (Mulai, Jeda, Lanjut, Ulang, Selesai)
-  // ─────────────────────────────────────────────
 
-  const handleStartStopwatch = () => {
-    accumulatedElapsedRef.current = 0;
-    stopwatchStartRef.current = Date.now();
-    setStopwatchElapsed(0);
-    setStopwatchState('RUNNING');
-  };
-
-  const handlePauseStopwatch = () => {
-    if (stopwatchState !== 'RUNNING') return;
-    if (stopwatchStartRef.current) {
-      accumulatedElapsedRef.current += (Date.now() - stopwatchStartRef.current) / 1000;
-    }
-    stopwatchStartRef.current = null;
-    if (stopwatchTimerRef.current) clearInterval(stopwatchTimerRef.current);
-    setStopwatchElapsed(accumulatedElapsedRef.current);
-    setStopwatchState('PAUSED');
-  };
-
-  const handleResumeStopwatch = () => {
-    if (stopwatchState !== 'PAUSED') return;
-    stopwatchStartRef.current = Date.now();
-    setStopwatchState('RUNNING');
-  };
-
-  const handleResetStopwatch = () => {
-    if (stopwatchTimerRef.current) clearInterval(stopwatchTimerRef.current);
-    stopwatchStartRef.current = null;
-    accumulatedElapsedRef.current = 0;
-    setStopwatchElapsed(0);
-    setStopwatchState('IDLE');
-    toast.info('Stopwatch diulang kembali ke 0 detik');
-  };
-
-  const handleStopStopwatch = async () => {
-    if (!timeStudyOrderId) {
-      toast.error('Pilih SPK Produksi terlebih dahulu');
-      return;
-    }
-
-    let finalDuration = accumulatedElapsedRef.current;
-    if (stopwatchState === 'RUNNING' && stopwatchStartRef.current) {
-      finalDuration += (Date.now() - stopwatchStartRef.current) / 1000;
-    }
-
-    if (finalDuration < 0.5) {
-      toast.error('Durasi terlalu singkat. Jika salah pencet, gunakan tombol Ulang.');
-      return;
-    }
-
-    if (stopwatchTimerRef.current) clearInterval(stopwatchTimerRef.current);
-    setStopwatchState('IDLE');
-    stopwatchStartRef.current = null;
-    accumulatedElapsedRef.current = 0;
-    setStopwatchElapsed(0);
-
-    const sampleNumber = timeStudySamples.length + 1;
-    const res = await recordTimeStudySample({
-      production_order_id: timeStudyOrderId,
-      stage: activeTab,
-      sample_number: sampleNumber,
-      started_at: new Date(Date.now() - finalDuration * 1000).toISOString(),
-      finished_at: new Date().toISOString(),
-      duration_seconds: Number(finalDuration.toFixed(2)),
-    });
-
-    if (res.success) {
-      toast.success(`Sample #${sampleNumber} tersimpan: ${formatDuration(finalDuration)}`);
-      // Reload samples
-      const samplesRes = await getTimeStudySamples(timeStudyOrderId, activeTab);
-      if (samplesRes.success && samplesRes.data) setTimeStudySamples(samplesRes.data);
-    } else {
-      toast.error(res.error || 'Gagal mencatat sample');
-    }
-  };
-
-  const handleCalculateStandardTime = async () => {
-    if (!timeStudyOrderId) return;
-    const res = await calculateAndSaveStandardTime({
-      production_order_id: timeStudyOrderId,
-      rating_factor: ratingFactor,
-      allowance_factor: allowanceFactor,
-    });
-
-    if (res.success) {
-      toast.success(`Waktu Baku dihitung: ${formatDuration(res.standard_time || 0)}`);
-      loadData();
-    } else {
-      toast.error(res.error || 'Gagal menghitung waktu baku');
-    }
-  };
-
-  const handleOpenTimeStudy = async (orderId: string) => {
-    setTimeStudyOrderId(orderId);
-    const samplesRes = await getTimeStudySamples(orderId, activeTab);
-    if (samplesRes.success && samplesRes.data) setTimeStudySamples(samplesRes.data);
-    setTimeStudyOpen(true);
-  };
-
-  const handleDeleteSample = async (sampleId: string) => {
-    const res = await deleteTimeStudySample(sampleId);
-    if (res.success) {
-      toast.success('Sample dihapus');
-      const samplesRes = await getTimeStudySamples(timeStudyOrderId, activeTab);
-      if (samplesRes.success && samplesRes.data) setTimeStudySamples(samplesRes.data);
-    }
-  };
-
-  // ─────────────────────────────────────────────
-  // COMPUTED VALUES
-  // ─────────────────────────────────────────────
-
-  const cycleTimeAvg = useMemo(() => {
-    const validSamples = timeStudySamples.filter(s => s.duration_seconds != null);
-    if (validSamples.length === 0) return 0;
-    return validSamples.reduce((sum, s) => sum + Number(s.duration_seconds || 0), 0) / validSamples.length;
-  }, [timeStudySamples]);
-
-  const normalTime = cycleTimeAvg * ratingFactor;
-  const standardTime = normalTime * (1 + allowanceFactor);
 
   // ─────────────────────────────────────────────
   // TABLE COLUMNS — FRYING
@@ -469,14 +439,191 @@ export default function ProductionPage() {
       ),
     },
     {
-      accessorKey: 'frying_duration_minutes',
-      header: 'Durasi (menit)',
-      cell: ({ row }) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <Timer className="w-3.5 h-3.5 text-[var(--color-primary-500)]" aria-hidden="true" />
-          <span>{row.original.frying_duration_minutes || '-'} mnt</span>
-        </div>
-      ),
+      id: 'timer',
+      header: 'Timer / Durasi',
+      cell: ({ row }) => {
+        const batch = row.original;
+        const isDone = !!batch.finished_at;
+        const elapsed = getBatchElapsedSeconds(batch);
+        const status = getBatchTimerStatus(batch);
+
+        if (isDone) {
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Timer className="w-4 h-4 text-[var(--color-success-600)]" aria-hidden="true" />
+              <strong style={{ fontFamily: 'monospace', fontSize: 'var(--text-sm)', color: 'var(--color-success-800)' }}>
+                {batch.frying_duration_minutes ? `${batch.frying_duration_minutes} mnt` : formatDuration(elapsed)}
+              </strong>
+            </div>
+          );
+        }
+
+        if (status === 'IDLE') {
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '3px 8px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-xs)',
+                fontWeight: 600,
+                background: 'var(--bg-subtle)',
+                color: 'var(--text-tertiary)',
+              }}>
+                <Timer className="w-3.5 h-3.5 text-[var(--text-tertiary)]" aria-hidden="true" />
+                <span style={{ fontFamily: 'monospace' }}>0m 00s</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleStartBatchTimer(batch)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '3px 8px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--color-success-600)',
+                  background: 'var(--color-success-600)',
+                  color: 'white',
+                  cursor: 'pointer',
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                }}
+                title="Mulai waktu goreng untuk wajan ini"
+              >
+                <Play className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
+                Mulai
+              </button>
+            </div>
+          );
+        }
+
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '2px 8px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-xs)',
+                fontWeight: 700,
+                background: status === 'RUNNING' ? 'var(--color-danger-100)' : 'var(--color-warning-100)',
+                color: status === 'RUNNING' ? 'var(--color-danger-700)' : 'var(--color-warning-800)',
+              }}>
+                {status === 'RUNNING' && <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--color-danger-600)' }} />}
+                {status === 'PAUSED' && <Pause className="w-3 h-3 text-[var(--color-warning-700)]" aria-hidden="true" />}
+                <span style={{ fontFamily: 'monospace', fontSize: 'var(--text-sm)' }}>
+                  {formatDuration(Math.floor(elapsed))}
+                </span>
+              </div>
+            </div>
+
+            {/* Inline controls: Jeda, Lanjut, Ulang */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              {status === 'RUNNING' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handlePauseBatchTimer(batch)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '2px 6px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-warning-400)',
+                      background: 'var(--color-warning-50)',
+                      color: 'var(--color-warning-800)',
+                      cursor: 'pointer',
+                    }}
+                    title="Jeda waktu goreng"
+                  >
+                    <Pause className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                    Jeda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleResetBatchTimer(batch)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '2px 6px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-default)',
+                      background: 'white',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                    title="Ulang timer dari 0 detik"
+                    aria-label={`Ulang timer wajan #${batch.wajan_number}`}
+                  >
+                    <RotateCcw className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                    Ulang
+                  </button>
+                </>
+              )}
+
+              {status === 'PAUSED' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleResumeBatchTimer(batch)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '2px 6px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-primary-500)',
+                      background: 'var(--color-primary-50)',
+                      color: 'var(--color-primary-700)',
+                      cursor: 'pointer',
+                    }}
+                    title="Lanjutkan timer goreng"
+                  >
+                    <Play className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                    Lanjut
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleResetBatchTimer(batch)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      padding: '2px 6px',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-default)',
+                      background: 'white',
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                    }}
+                    title="Ulang timer dari 0 detik"
+                    aria-label={`Ulang timer wajan #${batch.wajan_number}`}
+                  >
+                    <RotateCcw className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                    Ulang
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'output_weight_gram',
@@ -515,8 +662,19 @@ export default function ProductionPage() {
       id: 'status',
       header: 'Status',
       cell: ({ row }) => {
-        const isDone = !!row.original.finished_at;
-        return <StatusBadge status={isDone ? 'completed' : 'in_progress'} label={isDone ? 'Selesai' : 'Sedang Goreng'} />;
+        const batch = row.original;
+        const isDone = !!batch.finished_at;
+        const timerStatus = getBatchTimerStatus(batch);
+        if (isDone) {
+          return <StatusBadge status="completed" label="Selesai" />;
+        }
+        if (timerStatus === 'IDLE') {
+          return <StatusBadge status="pending" label="Siap Goreng" />;
+        }
+        if (timerStatus === 'PAUSED') {
+          return <StatusBadge status="warning" label="Dijeda" />;
+        }
+        return <StatusBadge status="in_progress" label="Sedang Goreng" />;
       },
     },
     {
@@ -541,7 +699,7 @@ export default function ProductionPage() {
         );
       },
     },
-  ], []);
+  ], [getBatchElapsedSeconds, getBatchTimerStatus, nowTick]);
 
   // ─────────────────────────────────────────────
   // TABLE COLUMNS — PACKING
@@ -716,13 +874,13 @@ export default function ProductionPage() {
 
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-                <AlertTriangle className={`w-5 h-5 ${fryingMetrics.unpackedLongsongCount > 0 ? 'text-[var(--color-danger-600)]' : 'text-[var(--color-success-600)]'}`} aria-hidden="true" />
+                <AlertTriangle className={`w-5 h-5 ${unpackedLongsongCount > 0 ? 'text-[var(--color-danger-600)]' : 'text-[var(--color-success-600)]'}`} aria-hidden="true" />
                 <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Longsong Belum Packing</span>
               </div>
-              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: fryingMetrics.unpackedLongsongCount > 0 ? 'var(--color-danger-700)' : 'var(--color-success-700)' }}>
-                {fryingMetrics.unpackedLongsongCount}
+              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: unpackedLongsongCount > 0 ? 'var(--color-danger-700)' : 'var(--color-success-700)' }}>
+                {unpackedLongsongCount}
               </div>
-              {fryingMetrics.unpackedLongsongCount > 0 && (
+              {unpackedLongsongCount > 0 && (
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-600)', marginTop: 'var(--space-1)' }}>
                   Perlu segera dipacking!
                 </div>
@@ -738,19 +896,12 @@ export default function ProductionPage() {
                 wajan_number: String((fryingBatches.length > 0 ? Math.max(...fryingBatches.map(b => b.wajan_number)) : 0) + 1),
                 batch_weight_gram: '800',
                 oil_temp_celsius: '170',
-                frying_duration_minutes: '15',
                 notes: '',
               });
               setCreateFryingOpen(true);
             }}>
               Buat Batch Goreng Baru
             </Button>
-
-            {orders.length > 0 && (
-              <Button variant="secondary" leftIcon={<Timer className="w-4 h-4" aria-hidden="true" />} onClick={() => handleOpenTimeStudy(orders[0]?.id || '')}>
-                Time Study (Stopwatch)
-              </Button>
-            )}
           </div>
 
           {/* Frying Data Table */}
@@ -764,7 +915,7 @@ export default function ProductionPage() {
       {activeTab === 'PACKING' && (
         <>
           {/* Reminder Banner */}
-          {fryingMetrics.unpackedLongsongCount > 0 && (
+          {unpackedLongsongCount > 0 && (
             <div style={{
               padding: 'var(--space-4)',
               borderRadius: 'var(--radius-md)',
@@ -775,7 +926,7 @@ export default function ProductionPage() {
               <AlertTriangle className="w-6 h-6 text-[var(--color-warning-600)] shrink-0" aria-hidden="true" />
               <div>
                 <div style={{ fontWeight: 700, color: 'var(--color-warning-800)', fontSize: 'var(--text-base)' }}>
-                  {fryingMetrics.unpackedLongsongCount} longsong belum dipacking!
+                  {unpackedLongsongCount} longsong belum dipacking!
                 </div>
                 <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-warning-700)' }}>
                   Segera lakukan packing rasa untuk longsong yang sudah selesai digoreng.
@@ -792,7 +943,7 @@ export default function ProductionPage() {
                 <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Longsong Menunggu</span>
               </div>
               <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-warning-700)' }}>
-                {fryingMetrics.unpackedLongsongCount}
+                {unpackedLongsongCount}
               </div>
             </Card>
 
@@ -892,25 +1043,17 @@ export default function ProductionPage() {
             </FormField>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-            <FormField label="Suhu Minyak (°C)" required>
-              <Input
-                type="number" min="100" max="250" step="5"
-                value={fryingForm.oil_temp_celsius}
-                onChange={(e) => setFryingForm({ ...fryingForm, oil_temp_celsius: e.target.value })}
-                placeholder="170"
-              />
-            </FormField>
-
-            <FormField label="Durasi Goreng (menit)" required>
-              <Input
-                type="number" min="1" step="0.5"
-                value={fryingForm.frying_duration_minutes}
-                onChange={(e) => setFryingForm({ ...fryingForm, frying_duration_minutes: e.target.value })}
-                placeholder="15"
-              />
-            </FormField>
-          </div>
+          <FormField label="Suhu Minyak (°C)" required>
+            <Input
+              type="number" min="100" max="250" step="5"
+              value={fryingForm.oil_temp_celsius}
+              onChange={(e) => setFryingForm({ ...fryingForm, oil_temp_celsius: e.target.value })}
+              placeholder="170"
+            />
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+              Rekomendasi suhu: 160°C - 180°C. Klik 'Mulai' pada baris tabel saat mulai menggoreng.
+            </span>
+          </FormField>
 
           <FormField label="Catatan Operator">
             <Textarea
@@ -942,10 +1085,27 @@ export default function ProductionPage() {
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           {selectedFryingBatch && (
-            <div style={{ padding: 'var(--space-3)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)' }}>
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Berat Input Wajan</span>
-              <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>
-                {selectedFryingBatch.batch_weight_gram.toLocaleString('id-ID')} gram ({(selectedFryingBatch.batch_weight_gram / 1000).toFixed(2)} kilogram)
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+              <div style={{ padding: 'var(--space-3)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Berat Input Wajan</span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700 }}>
+                  {selectedFryingBatch.batch_weight_gram.toLocaleString('id-ID')}g
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginLeft: '4px' }}>
+                    ({(selectedFryingBatch.batch_weight_gram / 1000).toFixed(2)} kg)
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ padding: 'var(--space-3)', background: 'var(--color-primary-50)', border: '1px solid var(--color-primary-200)', borderRadius: 'var(--radius-md)' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary-800)', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                  <Timer className="w-3.5 h-3.5 text-[var(--color-primary-600)]" aria-hidden="true" /> Durasi Goreng (Stopwatch)
+                </span>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-primary-900)' }}>
+                  {formatDuration(Math.floor(getBatchElapsedSeconds(selectedFryingBatch)))}
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginLeft: '4px', fontFamily: 'sans-serif', fontWeight: 500 }}>
+                    ({(getBatchElapsedSeconds(selectedFryingBatch) / 60).toFixed(1)} menit)
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -1109,309 +1269,7 @@ export default function ProductionPage() {
         </div>
       </Modal>
 
-      {/* ═══════════════════════════════════════════════ */}
-      {/* MODAL: TIME STUDY (STOPWATCH)                  */}
-      {/* ═══════════════════════════════════════════════ */}
-      <Modal
-        isOpen={timeStudyOpen}
-        onClose={() => {
-          setTimeStudyOpen(false);
-          if (stopwatchTimerRef.current) clearInterval(stopwatchTimerRef.current);
-          setStopwatchState('IDLE');
-          stopwatchStartRef.current = null;
-          accumulatedElapsedRef.current = 0;
-          setStopwatchElapsed(0);
-        }}
-        title="Time Study — Stopwatch & Perhitungan Waktu Baku"
-        size="lg"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setTimeStudyOpen(false)}>Tutup</Button>
-            {timeStudySamples.length >= 10 && (
-              <Button variant="primary" onClick={handleCalculateStandardTime} leftIcon={<BarChart3 className="w-4 h-4" aria-hidden="true" />}>
-                Hitung Waktu Baku ({timeStudySamples.length} Sample)
-              </Button>
-            )}
-          </>
-        }
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {/* SPK Selector in Modal if multiple orders */}
-          {orders.length > 1 && (
-            <FormField label="Pilih SPK Batch yang Diukur">
-              <Select
-                options={orders.map(o => ({
-                  value: o.id, label: `${o.batch_number} — ${o.product_variant || 'Jamur Crispy'}`,
-                }))}
-                value={timeStudyOrderId}
-                onChange={async (e) => {
-                  const id = e.target.value;
-                  setTimeStudyOrderId(id);
-                  const samplesRes = await getTimeStudySamples(id, activeTab);
-                  if (samplesRes.success && samplesRes.data) setTimeStudySamples(samplesRes.data);
-                }}
-              />
-            </FormField>
-          )}
 
-          {/* Stopwatch Display Panel (High contrast & large for senior operators) */}
-          <div style={{
-            textAlign: 'center',
-            padding: 'var(--space-6)',
-            background: stopwatchState === 'RUNNING'
-              ? 'var(--color-danger-50)'
-              : stopwatchState === 'PAUSED'
-                ? 'var(--color-warning-50)'
-                : 'var(--bg-subtle)',
-            borderRadius: 'var(--radius-lg)',
-            border: `2px solid ${stopwatchState === 'RUNNING' ? 'var(--color-danger-400)' : stopwatchState === 'PAUSED' ? 'var(--color-warning-400)' : 'var(--border-default)'}`,
-            transition: 'all 0.2s ease',
-          }}>
-            {/* Status pill badge */}
-            <div style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              padding: '4px 14px',
-              borderRadius: '20px',
-              fontSize: 'var(--text-xs)',
-              fontWeight: 700,
-              marginBottom: 'var(--space-2)',
-              background: stopwatchState === 'RUNNING' ? 'var(--color-danger-100)' : stopwatchState === 'PAUSED' ? 'var(--color-warning-100)' : 'var(--bg-default)',
-              color: stopwatchState === 'RUNNING' ? 'var(--color-danger-800)' : stopwatchState === 'PAUSED' ? 'var(--color-warning-800)' : 'var(--text-secondary)'
-            }}>
-              {stopwatchState === 'RUNNING' && <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-danger-600)', animation: 'pulse 1s infinite' }} />}
-              {stopwatchState === 'PAUSED' && <Pause className="w-3.5 h-3.5 text-[var(--color-warning-700)]" aria-hidden="true" />}
-              {stopwatchState === 'IDLE' && <Timer className="w-3.5 h-3.5 text-[var(--text-secondary)]" aria-hidden="true" />}
-              {stopwatchState === 'RUNNING' ? 'SEDANG BERJALAN' : stopwatchState === 'PAUSED' ? 'DIJEDA (ISTIRAHAT / TERTUNDA)' : 'SIAP DIUKUR'}
-            </div>
-
-            {/* Giant digital timer */}
-            <div style={{
-              fontSize: '3.5rem',
-              fontWeight: 800,
-              fontFamily: 'monospace',
-              color: stopwatchState === 'RUNNING' ? 'var(--color-danger-700)' : stopwatchState === 'PAUSED' ? 'var(--color-warning-800)' : 'var(--text-primary)',
-              letterSpacing: '2px',
-              lineHeight: 1.1,
-            }}>
-              {formatDuration(stopwatchElapsed)}
-            </div>
-
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 'var(--space-2)' }}>
-              Sample #{timeStudySamples.length + 1} • Tahap: <strong>{activeTab === 'FRYING' ? 'Goreng Jamur' : 'Packing Rasa'}</strong>
-            </div>
-
-            {/* Action Buttons: Mulai, Jeda, Lanjut, Ulang, Selesai (Strictly NO Emojis in text) */}
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--space-3)', marginTop: 'var(--space-5)', flexWrap: 'wrap' }}>
-              {stopwatchState === 'IDLE' && (
-                <Button
-                  variant="primary"
-                  size="lg"
-                  leftIcon={<Play className="w-5 h-5" aria-hidden="true" />}
-                  onClick={handleStartStopwatch}
-                  style={{ minWidth: '160px', padding: '12px 28px', fontSize: 'var(--text-base)', fontWeight: 700 }}
-                >
-                  Mulai
-                </Button>
-              )}
-
-              {stopwatchState === 'RUNNING' && (
-                <>
-                  {/* Tombol Jeda */}
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    leftIcon={<Pause className="w-5 h-5" aria-hidden="true" />}
-                    onClick={handlePauseStopwatch}
-                    style={{ minWidth: '120px', borderColor: 'var(--color-warning-500)', color: 'var(--color-warning-800)', background: 'var(--color-warning-100)' }}
-                  >
-                    Jeda
-                  </Button>
-
-                  {/* Tombol Ulang / Reset (Jika salah pencet) */}
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    leftIcon={<RotateCcw className="w-4 h-4" aria-hidden="true" />}
-                    onClick={handleResetStopwatch}
-                    style={{ color: 'var(--text-secondary)' }}
-                    title="Ulangi dari 0 jika tidak sengaja terpencet"
-                  >
-                    Ulang
-                  </Button>
-
-                  {/* Tombol Selesai */}
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    leftIcon={<CheckCircle2 className="w-5 h-5" aria-hidden="true" />}
-                    onClick={handleStopStopwatch}
-                    style={{ background: 'var(--color-success-600)', minWidth: '140px' }}
-                  >
-                    Selesai & Simpan
-                  </Button>
-                </>
-              )}
-
-              {stopwatchState === 'PAUSED' && (
-                <>
-                  {/* Tombol Lanjut */}
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    leftIcon={<Play className="w-5 h-5" aria-hidden="true" />}
-                    onClick={handleResumeStopwatch}
-                    style={{ minWidth: '130px', background: 'var(--color-primary-600)' }}
-                  >
-                    Lanjut
-                  </Button>
-
-                  {/* Tombol Ulang / Reset */}
-                  <Button
-                    variant="secondary"
-                    size="lg"
-                    leftIcon={<RotateCcw className="w-4 h-4" aria-hidden="true" />}
-                    onClick={handleResetStopwatch}
-                    style={{ color: 'var(--text-secondary)' }}
-                  >
-                    Ulang
-                  </Button>
-
-                  {/* Tombol Selesai dari jeda */}
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    leftIcon={<CheckCircle2 className="w-5 h-5" aria-hidden="true" />}
-                    onClick={handleStopStopwatch}
-                    style={{ background: 'var(--color-success-600)' }}
-                  >
-                    Selesai & Simpan
-                  </Button>
-                </>
-              )}
-            </div>
-
-            {/* Senior Friendly Safety Tip with Lucide Info Icon */}
-            <div style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-              <Info className="w-3.5 h-3.5 text-[var(--color-primary-600)] shrink-0" aria-hidden="true" />
-              <span>Jika salah pencet atau ingin mengulang dari awal, klik tombol <strong>Ulang</strong> agar waktu kembali ke 0 detik tanpa tersimpan.</span>
-            </div>
-          </div>
-
-          {/* Progress indicator */}
-          <div style={{
-            padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
-            background: timeStudySamples.length >= 10 ? 'var(--color-success-50)' : 'var(--color-primary-50)',
-            border: `1px solid ${timeStudySamples.length >= 10 ? 'var(--color-success-300)' : 'var(--color-primary-300)'}`,
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 'var(--text-sm)' }}>
-              <span>Sample tercatat: {timeStudySamples.length} / 10 minimum</span>
-              <span>{timeStudySamples.length >= 10 ? 'Siap hitung!' : `Perlu ${10 - timeStudySamples.length} sample lagi`}</span>
-            </div>
-            <div style={{ marginTop: '6px', height: '6px', borderRadius: '3px', background: 'var(--bg-subtle)', overflow: 'hidden' }}>
-              <div style={{
-                height: '100%', borderRadius: '3px', transition: 'width 0.3s ease',
-                width: `${Math.min(100, (timeStudySamples.length / 10) * 100)}%`,
-                background: timeStudySamples.length >= 10 ? 'var(--color-success-500)' : 'var(--color-primary-500)',
-              }} />
-            </div>
-          </div>
-
-          {/* Samples Table */}
-          {timeStudySamples.length > 0 && (
-            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-              <table style={{ width: '100%', fontSize: 'var(--text-xs)', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid var(--border-default)' }}>
-                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>#</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>Durasi</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>Waktu</th>
-                    <th style={{ padding: '6px 8px', textAlign: 'right' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {timeStudySamples.map((s) => (
-                    <tr key={s.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                      <td style={{ padding: '6px 8px', fontWeight: 700 }}>#{s.sample_number}</td>
-                      <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 600 }}>
-                        {formatDuration(Number(s.duration_seconds || 0))}
-                      </td>
-                      <td style={{ padding: '6px 8px', color: 'var(--text-tertiary)' }}>
-                        {s.started_at ? format(new Date(s.started_at), 'HH:mm:ss') : '-'}
-                      </td>
-                      <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                        <Button variant="ghost" size="sm" onClick={() => handleDeleteSample(s.id)} aria-label={`Hapus sample #${s.sample_number}`}>
-                          <Trash2 className="w-3.5 h-3.5 text-[var(--color-danger-500)]" aria-hidden="true" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Rating & Allowance Sliders */}
-          {timeStudySamples.length >= 10 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-4)', background: 'var(--color-primary-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-primary-200)' }}>
-              <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--color-primary-800)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <BarChart3 className="w-4 h-4 text-currentColor" aria-hidden="true" /> Perhitungan Waktu Baku
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                    Rating Faktor: <strong style={{ color: 'var(--color-primary-700)' }}>{ratingFactor.toFixed(2)}</strong>
-                  </label>
-                  <input
-                    type="range" min="0.50" max="1.50" step="0.05"
-                    value={ratingFactor}
-                    onChange={(e) => setRatingFactor(Number(e.target.value))}
-                    style={{ width: '100%' }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>
-                    <span>Lambat (0.50)</span><span>Normal (1.00)</span><span>Cepat (1.50)</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                    Kelonggaran: <strong style={{ color: 'var(--color-primary-700)' }}>{(allowanceFactor * 100).toFixed(0)}%</strong>
-                  </label>
-                  <input
-                    type="range" min="0" max="0.30" step="0.01"
-                    value={allowanceFactor}
-                    onChange={(e) => setAllowanceFactor(Number(e.target.value))}
-                    style={{ width: '100%' }}
-                  />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>
-                    <span>0%</span><span>15%</span><span>30%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Results Preview */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)', marginTop: 'var(--space-2)' }}>
-                <div style={{ textAlign: 'center', padding: 'var(--space-3)', background: 'white', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: '2px' }}>Waktu Siklus (Rata-rata)</div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 700, fontFamily: 'monospace' }}>{formatDuration(cycleTimeAvg)}</div>
-                </div>
-                <div style={{ textAlign: 'center', padding: 'var(--space-3)', background: 'white', borderRadius: 'var(--radius-md)' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: '2px' }}>Waktu Normal</div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-primary-700)' }}>{formatDuration(normalTime)}</div>
-                  <div style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>Siklus x {ratingFactor.toFixed(2)}</div>
-                </div>
-                <div style={{ textAlign: 'center', padding: 'var(--space-3)', background: 'white', borderRadius: 'var(--radius-md)', border: '2px solid var(--color-success-300)' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: '2px' }}>Waktu Baku</div>
-                  <div style={{ fontSize: '1.1rem', fontWeight: 700, fontFamily: 'monospace', color: 'var(--color-success-700)' }}>{formatDuration(standardTime)}</div>
-                  <div style={{ fontSize: '0.6rem', color: 'var(--text-tertiary)' }}>Normal x (1 + {(allowanceFactor * 100).toFixed(0)}%)</div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </Modal>
 
       {/* Confirm Dialog */}
       <ConfirmDialog

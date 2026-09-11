@@ -238,6 +238,7 @@ export interface DbFryingBatch {
   operator_id?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  timer_started_at?: string | null;
   created_at: string;
   // Joined
   operator?: { id: string; name: string } | null;

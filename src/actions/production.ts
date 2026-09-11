@@ -933,7 +933,6 @@ export interface CreateFryingBatchInput {
   wajan_number: number;
   batch_weight_gram?: number;
   oil_temp_celsius: number;
-  frying_duration_minutes: number;
   notes?: string;
 }
 
@@ -947,6 +946,8 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
 
     let createdBatch: DbFryingBatch | undefined;
 
+    const nowIso = new Date().toISOString();
+
     const { data, error } = await supabaseAdmin
       .from('production_frying_batches')
       .insert({
@@ -954,10 +955,10 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
         wajan_number: input.wajan_number,
         batch_weight_gram: input.batch_weight_gram || 800,
         oil_temp_celsius: input.oil_temp_celsius,
-        frying_duration_minutes: input.frying_duration_minutes,
         notes: input.notes,
         operator_id: session.user.id,
-        started_at: new Date().toISOString(),
+        started_at: null,
+        timer_started_at: null,
       })
       .select()
       .single();
@@ -970,13 +971,13 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
         wajan_number: input.wajan_number,
         batch_weight_gram: input.batch_weight_gram || 800,
         oil_temp_celsius: input.oil_temp_celsius,
-        frying_duration_minutes: input.frying_duration_minutes,
         longsong_count: 0,
         kremesan_weight_gram: 0,
         notes: input.notes || null,
         operator_id: session.user.id,
-        started_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
+        started_at: null,
+        timer_started_at: null,
+        created_at: nowIso,
         operator: { id: session.user.id, name: session.user.name || 'Operator Produksi' },
       };
       memoryFryingBatches.unshift(fallbackItem);
@@ -989,7 +990,7 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
     try {
       await supabaseAdmin
         .from('production_orders')
-        .update({ status: 'IN_PROGRESS', updated_at: new Date().toISOString() })
+        .update({ status: 'IN_PROGRESS' })
         .eq('id', input.production_order_id)
         .eq('status', 'DRAFT');
     } catch (_) {}
@@ -997,13 +998,9 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
     await logAuditEvent({
       action: 'CREATE',
       entityType: 'production_frying_batch',
-      entityId: createdBatch?.id,
+      entityId: createdBatch?.id || 'unknown',
       userId: session.user.id,
-      details: {
-        wajan_number: input.wajan_number,
-        batch_weight_gram: input.batch_weight_gram || 800,
-        oil_temp_celsius: input.oil_temp_celsius,
-      },
+      details: { wajan_number: input.wajan_number, batch_weight_gram: input.batch_weight_gram },
     });
 
     revalidatePath('/production');
@@ -1014,11 +1011,59 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
   }
 }
 
+export async function startFryingBatchTimer(fryingBatchId: string): Promise<{
+  success: boolean;
+  data?: DbFryingBatch;
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const nowIso = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('production_frying_batches')
+      .update({
+        timer_started_at: nowIso,
+        started_at: nowIso,
+      })
+      .eq('id', fryingBatchId)
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Fallback memory for startFryingBatchTimer:', error.message);
+      const idx = memoryFryingBatches.findIndex(b => b.id === fryingBatchId);
+      if (idx !== -1) {
+        memoryFryingBatches[idx] = {
+          ...memoryFryingBatches[idx],
+          timer_started_at: nowIso,
+          started_at: nowIso,
+        };
+      }
+    }
+
+    await logAuditEvent({
+      action: 'UPDATE',
+      entityType: 'production_frying_batch',
+      entityId: fryingBatchId,
+      userId: session.user.id,
+      details: { action: 'START_TIMER', timer_started_at: nowIso },
+    });
+
+    revalidatePath('/production');
+    return { success: true };
+  } catch (err: any) {
+    console.error('startFryingBatchTimer error:', err);
+    return { success: false, error: err.message || 'Gagal memulai timer' };
+  }
+}
+
 export interface CompleteFryingBatchInput {
   frying_batch_id: string;
   output_weight_gram: number;
   longsong_count: number;
   kremesan_weight_gram?: number;
+  frying_duration_minutes?: number;
 }
 
 export async function completeFryingBatch(input: CompleteFryingBatchInput): Promise<{
@@ -1031,13 +1076,35 @@ export async function completeFryingBatch(input: CompleteFryingBatchInput): Prom
 
     let updatedBatch: DbFryingBatch | undefined;
 
+    const finishedAt = new Date();
+    const finishedAtIso = finishedAt.toISOString();
+
+    // Duration: use explicit duration if provided, or calculate from timer_started_at
+    let durationMinutes: number | null = input.frying_duration_minutes != null ? input.frying_duration_minutes : null;
+    if (durationMinutes == null) {
+      try {
+        const { data: existingBatch } = await supabaseAdmin
+          .from('production_frying_batches')
+          .select('timer_started_at, started_at')
+          .eq('id', input.frying_batch_id)
+          .single();
+        if (existingBatch) {
+          const timerStart = existingBatch.timer_started_at;
+          if (timerStart) {
+            durationMinutes = Math.round(((finishedAt.getTime() - new Date(timerStart).getTime()) / 60000) * 100) / 100;
+          }
+        }
+      } catch (_) {}
+    }
+
     const { data, error } = await supabaseAdmin
       .from('production_frying_batches')
       .update({
         output_weight_gram: input.output_weight_gram,
         longsong_count: input.longsong_count,
         kremesan_weight_gram: input.kremesan_weight_gram || 0,
-        finished_at: new Date().toISOString(),
+        finished_at: finishedAtIso,
+        ...(durationMinutes != null ? { frying_duration_minutes: durationMinutes } : {}),
       })
       .eq('id', input.frying_batch_id)
       .select()
@@ -1047,12 +1114,18 @@ export async function completeFryingBatch(input: CompleteFryingBatchInput): Prom
       console.warn('Fallback memory for completeFryingBatch:', error.message);
       const idx = memoryFryingBatches.findIndex(b => b.id === input.frying_batch_id);
       if (idx !== -1) {
+        const memBatch = memoryFryingBatches[idx];
+        const memTimerStart = memBatch.timer_started_at;
+        const memDuration = durationMinutes != null
+          ? durationMinutes
+          : (memTimerStart ? Math.round(((finishedAt.getTime() - new Date(memTimerStart).getTime()) / 60000) * 100) / 100 : null);
         memoryFryingBatches[idx] = {
-          ...memoryFryingBatches[idx],
+          ...memBatch,
           output_weight_gram: input.output_weight_gram,
           longsong_count: input.longsong_count,
           kremesan_weight_gram: input.kremesan_weight_gram || 0,
-          finished_at: new Date().toISOString(),
+          finished_at: finishedAtIso,
+          ...(memDuration != null ? { frying_duration_minutes: memDuration } : {}),
         };
         updatedBatch = memoryFryingBatches[idx];
       }
@@ -1131,6 +1204,7 @@ export interface CreatePackingEntryInput {
   packaging_weight_gram?: string;
   seasoning_used_gram: number;
   notes?: string;
+  is_packed?: boolean;
 }
 
 export async function createPackingEntry(input: CreatePackingEntryInput): Promise<{
@@ -1142,6 +1216,8 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
     await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     let createdPacking: DbPackingEntry | undefined;
+    const isPacked = input.is_packed !== undefined ? input.is_packed : true;
+    const packedAt = isPacked ? new Date().toISOString() : null;
 
     const { data, error } = await supabaseAdmin
       .from('production_packing_entries')
@@ -1154,7 +1230,8 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
         packaged_toples_count: input.packaged_toples_count,
         packaging_weight_gram: input.packaging_weight_gram || '100g',
         seasoning_used_gram: input.seasoning_used_gram,
-        is_packed: false,
+        is_packed: isPacked,
+        packed_at: packedAt,
         notes: input.notes,
       })
       .select()
@@ -1172,7 +1249,8 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
         packaged_toples_count: input.packaged_toples_count,
         packaging_weight_gram: input.packaging_weight_gram || '100g',
         seasoning_used_gram: input.seasoning_used_gram,
-        is_packed: false,
+        is_packed: isPacked,
+        packed_at: packedAt,
         notes: input.notes || null,
         created_at: new Date().toISOString(),
       };
@@ -1568,27 +1646,55 @@ export async function getFryingPackingMetrics(): Promise<{
       }
     } catch (_) {}
 
-    // Unpacked and packed
+    // Longsong produced across completed frying batches
+    let totalLongsongProduced = 0;
     try {
-      const { count } = await supabaseAdmin
-        .from('production_packing_entries')
-        .select('id', { count: 'exact', head: true })
-        .eq('is_packed', false);
-      unpackedCount = count || memoryPackingEntries.filter(p => !p.is_packed).length;
+      const { data: allBatches, error: bErr } = await supabaseAdmin
+        .from('production_frying_batches')
+        .select('longsong_count, finished_at');
 
-      const { data: packingToday } = await supabaseAdmin
-        .from('production_packing_entries')
-        .select('packaged_toples_count, seasoning_used_gram')
-        .gte('created_at', todayISO)
-        .eq('is_packed', true);
+      if (!bErr && allBatches) {
+        totalLongsongProduced = allBatches
+          .filter(b => b.finished_at && Number(b.longsong_count) > 0)
+          .reduce((s, b) => s + (Number(b.longsong_count) || 0), 0);
+      } else {
+        totalLongsongProduced = memoryFryingBatches
+          .filter(b => b.finished_at && Number(b.longsong_count) > 0)
+          .reduce((s, b) => s + (Number(b.longsong_count) || 0), 0);
+      }
+    } catch (_) {
+      totalLongsongProduced = memoryFryingBatches
+        .filter(b => b.finished_at && Number(b.longsong_count) > 0)
+        .reduce((s, b) => s + (Number(b.longsong_count) || 0), 0);
+    }
 
-      if (packingToday) {
+    // Packing entries & unpacked calculation
+    let totalLongsongPacked = 0;
+    try {
+      const { data: allPacking, error: packErr } = await supabaseAdmin
+        .from('production_packing_entries')
+        .select('id, is_packed, packaged_toples_count, seasoning_used_gram, created_at');
+
+      if (!packErr && allPacking) {
+        totalLongsongPacked = allPacking.filter(p => p.is_packed).length;
+
+        const packingToday = allPacking.filter(p => p.is_packed && p.created_at && p.created_at >= todayISO);
+        packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
+        totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
+      } else {
+        totalLongsongPacked = memoryPackingEntries.filter(p => p.is_packed).length;
+        const packingToday = memoryPackingEntries.filter(p => p.is_packed && p.created_at && p.created_at >= todayISO);
         packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
         totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
       }
     } catch (_) {
-      unpackedCount = memoryPackingEntries.filter(p => !p.is_packed).length;
+      totalLongsongPacked = memoryPackingEntries.filter(p => p.is_packed).length;
+      const packingToday = memoryPackingEntries.filter(p => p.is_packed && p.created_at && p.created_at >= todayISO);
+      packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
+      totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
     }
+
+    unpackedCount = Math.max(0, totalLongsongProduced - totalLongsongPacked);
 
     return {
       success: true,

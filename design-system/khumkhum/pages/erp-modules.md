@@ -53,16 +53,15 @@ Setiap halaman modul operasional ERP mengikuti struktur standar berikut:
      - Input berat longsong, bumbu tabur yang digunakan (gram), jumlah toples, dan ukuran gramatur kemasan (50g, 100g, 150g, 250g).
      - Reminder visual banner jika ada longsong matang yang belum dipacking.
      - Aksi `Tandai Selesai` per entri longsong.
-- **Time Study Stopwatch (Ramah Operator Lanjut Usia):**
-  - Stopwatch digital built-in dengan display timer besar (`font-mono text-4xl`).
-  - Fitur kontrol lengkap tanpa emoji:
-    - `Mulai` (`Play className="w-5 h-5" aria-hidden="true"`)
-    - `Jeda` & `Lanjut` (`Pause className="w-5 h-5"` / `Play className="w-5 h-5"`) untuk istirahat/jeda.
-    - `Ulang` (`RotateCcw className="w-4 h-4"`) untuk mereset waktu ke 0 jika salah pencet tanpa menyimpan sample cacat.
-    - `Selesai & Simpan` (`CheckCircle2 className="w-5 h-5"`) untuk menyimpan sample.
-  - Perhitungan Waktu Baku otomatis setelah minimal 10 sample:
-    - `Waktu Normal = Waktu Siklus Rata-rata × Rating Faktor`
-    - `Waktu Baku = Waktu Normal × (1 + Kelonggaran/Allowance)`
+- **Time Study Stopwatch Terintegrasi per Batch (Ramah Operator Lanjut Usia):**
+  - Stopwatch digital terintegrasi langsung pada setiap baris batch wajan goreng di DataTable (bukan modal terpisah).
+  - Waktu mulai terekam otomatis saat batch dibuat (`timer_started_at`) dan waktu berjalan secara real-time.
+  - Fitur kontrol inline per baris ramah operator senior tanpa emoji:
+    - Status Badge: `Sedang Berjalan` (merah), `Dijeda` (kuning), `Siap` (abu-abu), `Selesai` (hijau).
+    - `Jeda` & `Lanjut` (`Pause className="w-3 h-3 text-currentColor" aria-hidden="true"` / `Play className="w-3 h-3 text-currentColor" aria-hidden="true"`) untuk jeda operasional.
+    - `Ulang` (`RotateCcw className="w-3 h-3 text-currentColor" aria-hidden="true" aria-label="Ulang timer..."`) untuk mereset waktu ke 0 jika salah pencet.
+    - `Input Hasil` (`Scale className="w-3.5 h-3.5 text-currentColor" aria-hidden="true"`) membuka modal input hasil dengan durasi otomatis dari stopwatch.
+  - Durasi goreng otomatis tersimpan ke `frying_duration_minutes` saat batch diselesaikan.
 - **Icon Standar:**
   - `Flame`, `Package`, `Timer`, `Play`, `Pause`, `RotateCcw`, `CheckCircle2`, `BarChart3`, `Scale`, `Thermometer`, `Trash2`, `Info`, `Sparkles`, `Box`, `CookingPot`, `AlertTriangle`.
 

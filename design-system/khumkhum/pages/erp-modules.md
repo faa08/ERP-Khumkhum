@@ -50,20 +50,37 @@ Setiap halaman modul operasional ERP mengikuti struktur standar berikut:
      - KPI Cards: Batch Wajan Hari Ini, Rata-rata Rendemen, Total Kremesan (kilogram), Reminder Longsong Belum Dipacking.
   2. **Tab Produksi Packing Rasa:**
      - Pencatatan packing per longsong (Varian rasa: Original, Balado, BBQ, Pedas Manis, Super Pedas).
-     - Input berat longsong, bumbu tabur yang digunakan (gram), jumlah toples, dan ukuran gramatur kemasan (50g, 100g, 150g, 250g).
+     - **Integrasi Penuh dengan Hasil Goreng Jamur:**
+       - Pemilihan SPK Produksi secara eksklusif hanya menampilkan SPK yang telah menyelesaikan tahap penggorengan jamur (memiliki output wajan & longsong matang).
+       - Dropdown SPK menampilkan status: `{SPK} — {Varian} ({sisa} Longsong Siap Packing / {total} Longsong Masak)`.
+       - Kartu status integrasi menampilkan: `Total Longsong Masak`, `Sudah Dipacking`, dan `Sisa Siap Packing`.
+       - Pemilihan Wajan Asal (`frying_batch_id`) opsional untuk melacak asal wajan spesifik atau campuran SPK.
+       - Auto-suggest nomor urut longsong berikutnya dan estimasi berat rata-rata per longsong.
+     - Input data kemasan: Tipe Packaging (Standing Pouch, Toples, Pouch, Plastik Bantal, Box / Dus), berat per kemasan (50g, 75g, 100g, 150g, 250g), jumlah kemasan/packaging yang dihasilkan (pcs), berat longsong (gram), dan bumbu tabur yang digunakan (gram).
      - Reminder visual banner jika ada longsong matang yang belum dipacking.
-     - Aksi `Tandai Selesai` per entri longsong.
-- **Time Study Stopwatch Terintegrasi per Batch (Ramah Operator Lanjut Usia):**
-  - Stopwatch digital terintegrasi langsung pada setiap baris batch wajan goreng di DataTable (bukan modal terpisah).
-  - Waktu mulai terekam otomatis saat batch dibuat (`timer_started_at`) dan waktu berjalan secara real-time.
-  - Fitur kontrol inline per baris ramah operator senior tanpa emoji:
-    - Status Badge: `Sedang Berjalan` (merah), `Dijeda` (kuning), `Siap` (abu-abu), `Selesai` (hijau).
-    - `Jeda` & `Lanjut` (`Pause className="w-3 h-3 text-currentColor" aria-hidden="true"` / `Play className="w-3 h-3 text-currentColor" aria-hidden="true"`) untuk jeda operasional.
-    - `Ulang` (`RotateCcw className="w-3 h-3 text-currentColor" aria-hidden="true" aria-label="Ulang timer..."`) untuk mereset waktu ke 0 jika salah pencet.
-    - `Input Hasil` (`Scale className="w-3.5 h-3.5 text-currentColor" aria-hidden="true"`) membuka modal input hasil dengan durasi otomatis dari stopwatch.
-  - Durasi goreng otomatis tersimpan ke `frying_duration_minutes` saat batch diselesaikan.
+     - Tabel packing menampilkan kolom terintegrasi `SPK & Wajan Asal` untuk penelusuran (*traceability*) batch produksi.
+- **Alur Pembuatan Batch Terpisah (Regular vs HACCP Time Study):**
+  - **1. Batch Goreng Biasa (Standar Operasional Wajan):**
+    - Tombol: `Buat Batch Goreng Baru` (Primary, icon `Plus`).
+    - Formulir persiapan operasional wajan cepat: SPK Produksi, Nomor Wajan, Berat Input (gram, default: 800g), Suhu Minyak (°C, default: 170°C), dan Catatan Operator.
+    - Status awal: `Siap Goreng` dengan durasi stopwatch `0m 00s` (IDLE) dan tombol hijau `Mulai`.
+    - Waktu tidak berjalan otomatis; operator menekan tombol `Mulai` saat mulai menggoreng, lalu mencatat hasil wajan via tombol `Input Hasil` (icon `Scale`) setelah selesai digoreng.
+    - Pada modal `Input Hasil Goreng`, form input manual jam dinding ditiadakan. Operator cukup menginput `Berat Output Jamur *`, `Jumlah Longsong *`, dan `Berat Kremesan *`. Sistem secara otomatis mengkalkulasi waktu mulai, waktu selesai, dan durasi memasak wajan saat hasil disimpan.
+  - **2. Batch HACCP Time Study (Kepatuhan Audit Bebas Handphone):**
+    - Tombol: `Batch HACCP Time Study` (Secondary, icon `ClipboardCheck`).
+    - Formulir khusus audit HACCP pencatatan dari jam dinding area steril: SPK, No Wajan, Input, Suhu.
+    - Catatan Waktu Memasak HACCP: `Waktu Mulai Masak *` & `Waktu Selesai Masak *` (format `HH:mm`) dengan shortcut `Jam Sekarang` dan `+15 Menit`, auto-calculate durasi dan standar kepatuhan (15±5 mnt).
+    - Hasil Goreng (Wajib Diisi): `Berat Output Jamur (gram) *` (> 0g), `Jumlah Longsong yang Dihasilkan *` (> 0), `Berat Kremesan/Remukan (gram) *` (≥ 0g), dan estimasi rendemen (≥ 80%).
+    - Status langsung: `Selesai` dengan tampilan rentang jam HACCP pada kolom durasi dan tombol aksi `Edit Hasil` (icon `Pencil`).
+- **Fitur Koreksi & Edit Hasil Batch (Pencil Action):**
+  - Tersedia untuk seluruh batch wajan melalui tombol aksi `Edit Hasil` (icon `Pencil`).
+  - Operator dapat mengoreksi data: `Berat Output Jamur (gram)`, `Jumlah Longsong yang Dihasilkan`, `Berat Kremesan (gram)`, dan `Catatan Operator`.
+  - Perubahan data secara reaktif memperbarui tabel dan seluruh metrik KPI operasional (termasuk *Longsong Belum Packing* dan *Total Kremesan*) secara instan tanpa reload halaman.
+- **Stopwatch Digital Terintegrasi:**
+  - Stopwatch digital interaktif per baris wajan bagi terminal batas aman area produksi.
+  - Kontrol inline per baris: `Mulai` (hijau), `Jeda` (kuning), `Lanjut` (biru), `Ulang` (abu-abu) tanpa emoji.
 - **Icon Standar:**
-  - `Flame`, `Package`, `Timer`, `Play`, `Pause`, `RotateCcw`, `CheckCircle2`, `BarChart3`, `Scale`, `Thermometer`, `Trash2`, `Info`, `Sparkles`, `Box`, `CookingPot`, `AlertTriangle`.
+  - `Flame`, `Package`, `Timer`, `Clock`, `Play`, `Pause`, `RotateCcw`, `CheckCircle2`, `BarChart3`, `Scale`, `Thermometer`, `Trash2`, `Info`, `Sparkles`, `Box`, `CookingPot`, `AlertTriangle`, `Pencil`, `ClipboardCheck`.
 
 ### D. Modul Penerimaan & Timbangan (`/receiving`)
 - **Fitur Utama:**

@@ -252,6 +252,7 @@ export interface DbPackingEntry {
   longsong_number: number;
   longsong_weight_gram?: number | null;
   packaged_toples_count: number;
+  packaging_type?: string | null;
   packaging_weight_gram?: string | null;
   seasoning_used_gram: number;
   is_packed: boolean;
@@ -260,6 +261,7 @@ export interface DbPackingEntry {
   created_at: string;
   // Joined
   frying_batch?: Pick<DbFryingBatch, 'id' | 'wajan_number' | 'batch_weight_gram'> | null;
+  production_order?: Pick<DbProductionOrder, 'id' | 'batch_number' | 'product_variant'> | null;
 }
 
 export interface DbTimeStudySample {
@@ -280,6 +282,18 @@ export interface DbTimeStudySample {
 export type FlavorVariant = 'Original' | 'Balado' | 'BBQ' | 'Pedas Manis' | 'Super Pedas';
 
 export const FLAVOR_VARIANTS: FlavorVariant[] = ['Original', 'Balado', 'BBQ', 'Pedas Manis', 'Super Pedas'];
+
+export const PACKAGING_TYPES = ['Standing Pouch', 'Toples', 'Pouch', 'Plastik Bantal', 'Box / Dus'] as const;
+export type PackagingType = (typeof PACKAGING_TYPES)[number];
+
+export const PACKAGING_WEIGHTS = [
+  { value: '50g', label: '50 gram' },
+  { value: '75g', label: '75 gram' },
+  { value: '100g', label: '100 gram' },
+  { value: '150g', label: '150 gram' },
+  { value: '250g', label: '250 gram' },
+] as const;
+export type PackagingWeightOption = (typeof PACKAGING_WEIGHTS)[number];
 
 // ─────────────────────────────────────────────
 // QC MODULE TYPES

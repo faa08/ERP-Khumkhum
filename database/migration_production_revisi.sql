@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS production_packing_entries (
   longsong_number INTEGER NOT NULL DEFAULT 1,
   longsong_weight_gram INTEGER,
   packaged_toples_count INTEGER DEFAULT 0,
+  packaging_type TEXT DEFAULT 'Standing Pouch',
   packaging_weight_gram TEXT DEFAULT '100g',
   seasoning_used_gram DECIMAL DEFAULT 0,
   is_packed BOOLEAN DEFAULT FALSE,
@@ -50,6 +51,8 @@ CREATE TABLE IF NOT EXISTS production_packing_entries (
   notes TEXT,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+ALTER TABLE production_packing_entries ADD COLUMN IF NOT EXISTS packaging_type TEXT DEFAULT 'Standing Pouch';
 
 -- 4. Tabel time_study_samples (stopwatch per sample)
 CREATE TABLE IF NOT EXISTS time_study_samples (

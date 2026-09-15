@@ -22,6 +22,7 @@ import {
   TrendingUp,
   AlertTriangle,
   CheckCircle2,
+  ShieldCheck,
   Scale,
   Flame,
   PackageCheck,
@@ -69,6 +70,7 @@ import {
   getAllPackingEntries,
   getUnpackedLongsongReminder,
   getFryingPackingMetrics,
+  submitBatchToQc,
   type CreateProductionOrderInput,
   type MaterialConsumptionItem,
   type SpkSuggestion,
@@ -262,6 +264,32 @@ export default function ProductionPage() {
     variant: 'danger' | 'primary';
   }>({ isOpen: false, title: '', description: '', onConfirm: () => {}, variant: 'primary' });
 
+  // ── QC Submission state ──
+  const [submitQcOpen, setSubmitQcOpen] = useState(false);
+  const [selectedSpkForQc, setSelectedSpkForQc] = useState<any>(null);
+  const [submitQcNotes, setSubmitQcNotes] = useState('');
+
+  const handleOpenSubmitQc = (spkData: any) => {
+    setSelectedSpkForQc(spkData);
+    setSubmitQcNotes('');
+    setSubmitQcOpen(true);
+  };
+
+  const handleConfirmSubmitQc = async () => {
+    if (!selectedSpkForQc) return;
+    const orderId = selectedSpkForQc.order?.id || selectedSpkForQc.id;
+    const res = await submitBatchToQc(orderId, submitQcNotes);
+    if (res.success) {
+      toast.success(`SPK ${selectedSpkForQc.order?.batch_number || 'Produksi'} berhasil diajukan ke antrean QC!`);
+      setSubmitQcOpen(false);
+      setSelectedSpkForQc(null);
+      setSubmitQcNotes('');
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal mengajukan SPK ke QC');
+    }
+  };
+
   // ─────────────────────────────────────────────
   // DATA LOADING
   // ─────────────────────────────────────────────
@@ -347,6 +375,7 @@ export default function ProductionPage() {
       totalOutputGram: number;
       packedCount: number;
       unpackedCount: number;
+      totalPackagedPcs: number;
     }[] = [];
 
     orders.forEach(o => {
@@ -354,6 +383,9 @@ export default function ProductionPage() {
         const frying = fryingByOrder[o.id];
         const packedCount = packingByOrder[o.id] || 0;
         const unpackedCount = Math.max(0, frying.totalLongsongProduced - packedCount);
+        const packagedPcs = packingEntries
+          .filter(p => p.production_order_id === o.id && p.is_packed)
+          .reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
         result.push({
           order: o,
           batches: frying.batches.sort((a, b) => a.wajan_number - b.wajan_number),
@@ -361,6 +393,7 @@ export default function ProductionPage() {
           totalOutputGram: frying.totalOutputGram,
           packedCount,
           unpackedCount,
+          totalPackagedPcs: packagedPcs,
         });
       }
     });
@@ -371,6 +404,9 @@ export default function ProductionPage() {
         const frying = fryingByOrder[orderId];
         const packedCount = packingByOrder[orderId] || 0;
         const unpackedCount = Math.max(0, frying.totalLongsongProduced - packedCount);
+        const packagedPcs = packingEntries
+          .filter(p => p.production_order_id === orderId && p.is_packed)
+          .reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
         result.push({
           order: {
             id: orderId,
@@ -387,6 +423,7 @@ export default function ProductionPage() {
           totalOutputGram: frying.totalOutputGram,
           packedCount,
           unpackedCount,
+          totalPackagedPcs: packagedPcs,
         });
       }
     });
@@ -1515,15 +1552,170 @@ export default function ProductionPage() {
             </Card>
           </div>
 
-          {/* Action Bar */}
-          <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-            <Button variant="primary" leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />} onClick={handleOpenCreatePacking}>
-              Input Packing Rasa
-            </Button>
-          </div>
+          {/* REWORK ALERT BANNER */}
+          {friedOrdersData.some(d => d.order.status === 'REWORK') && (
+            <div style={{
+              padding: 'var(--space-3) var(--space-4)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-warning-50)',
+              border: '1px solid var(--color-warning-300)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 'var(--space-2)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, color: 'var(--color-warning-900)', fontSize: 'var(--text-sm)' }}>
+                <AlertTriangle className="w-5 h-5 text-[var(--color-warning-600)] shrink-0" aria-hidden="true" />
+                Peringatan QC: Terdapat Batch Kemasan yang Memerlukan Perbaikan (REWORK)
+              </div>
+              {friedOrdersData.filter(d => d.order.status === 'REWORK').map(d => (
+                <div key={d.order.id} style={{ fontSize: 'var(--text-xs)', color: 'var(--color-warning-900)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '28px' }}>
+                  <div>
+                    <strong>SPK {d.order.batch_number}:</strong> {d.order.anomaly_reason || d.order.notes || 'Periksa kerapatan seal kemasan dan kerataan bumbu tabur'}
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leftIcon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
+                    onClick={() => handleOpenSubmitQc(d)}
+                  >
+                    Ajukan Ulang ke QC
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
 
-          {/* Packing Data Table */}
-          <DataTable columns={packingColumns} data={packingEntries} />
+          {/* Card: Status Alur Mutu & Pengajuan QC per SPK */}
+          <Card>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldCheck className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
+                  Status Alur Mutu &amp; Pengajuan QC per SPK
+                </h3>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  SPK kemasan yang telah selesai dipacking wajib diajukan ke Quality Control untuk sampling mutu sebelum rilis ke penjualan.
+                </div>
+              </div>
+
+              <Button variant="primary" leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />} onClick={handleOpenCreatePacking}>
+                Input Packing Rasa
+              </Button>
+            </div>
+
+            {friedOrdersData.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 'var(--space-4)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
+                Belum ada SPK yang melewati tahap goreng jamur. Selesaikan penggorengan di Tab 1 terlebih dahulu.
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid var(--border-default)', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>No. SPK Batch</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Varian Produk</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Longsong Selesai</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Hasil Kemasan (pcs)</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Status Alur QC</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {friedOrdersData.map((item) => {
+                      const s = item.order.status;
+                      const hasPackaged = item.totalPackagedPcs > 0 || item.packedCount > 0;
+                      return (
+                        <tr key={item.order.id} style={{ borderBottom: '1px solid var(--border-default)' }}>
+                          <td style={{ padding: '10px 12px' }}>
+                            <strong style={{ fontFamily: 'monospace', color: 'var(--color-primary-800)' }}>
+                              {item.order.batch_number}
+                            </strong>
+                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                              {item.order.created_at ? format(new Date(item.order.created_at), 'dd MMM yyyy') : '-'}
+                            </div>
+                          </td>
+                          <td style={{ padding: '10px 12px', fontWeight: 500 }}>
+                            {item.order.product_variant || 'Jamur Crispy'}
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <span style={{ fontWeight: 600 }}>
+                              {item.packedCount} / {item.totalLongsongProduced} longsong
+                            </span>
+                            {item.unpackedCount > 0 && (
+                              <div style={{ fontSize: '11px', color: 'var(--color-danger-600)', fontWeight: 500 }}>
+                                {item.unpackedCount} longsong belum packing
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-800)' }}>
+                              {item.totalPackagedPcs} pcs
+                            </strong>
+                          </td>
+                          <td style={{ padding: '10px 12px' }}>
+                            {s === 'RELEASED' ? (
+                              <StatusBadge status="completed" label="RELEASED (Lolos QC)" />
+                            ) : s === 'REWORK' ? (
+                              <StatusBadge status="pending" label="REWORK (Perbaikan)" />
+                            ) : s === 'REJECTED' ? (
+                              <StatusBadge status="cancelled" label="REJECTED (Afkir)" />
+                            ) : s === 'QC_PENDING' ? (
+                              <StatusBadge status="info" label="Menunggu Uji QC" />
+                            ) : (
+                              <StatusBadge status="active" label="Sedang Dipacking" />
+                            )}
+                          </td>
+                          <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                            {s === 'RELEASED' ? (
+                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success-700)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" /> Siap Jual
+                              </span>
+                            ) : s === 'REJECTED' ? (
+                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-700)', fontWeight: 600 }}>
+                                Dialihkan ke Karantina
+                              </span>
+                            ) : s === 'QC_PENDING' ? (
+                              <Button variant="secondary" size="sm" disabled>
+                                Dalam Antrean QC
+                              </Button>
+                            ) : s === 'REWORK' ? (
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                leftIcon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
+                                onClick={() => handleOpenSubmitQc(item)}
+                              >
+                                Ajukan Ulang ke QC
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                leftIcon={<ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />}
+                                onClick={() => handleOpenSubmitQc(item)}
+                                disabled={!hasPackaged}
+                                title={!hasPackaged ? 'Input packing terlebih dahulu' : 'Ajukan batch kemasan ini ke QC'}
+                              >
+                                Ajukan ke QC
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          {/* Section: Daftar Rincian Entri Packing per Longsong */}
+          <div style={{ marginTop: 'var(--space-2)' }}>
+            <h4 style={{ margin: '0 0 var(--space-2) 0', fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-secondary)' }}>
+              Riwayat Rincian Packing per Longsong ({packingEntries.length} entri)
+            </h4>
+            <DataTable columns={packingColumns} data={packingEntries} />
+          </div>
         </>
       )}
 
@@ -2271,6 +2463,90 @@ export default function ProductionPage() {
             />
           </FormField>
         </div>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════ */}
+      {/* MODAL: AJUKAN BATCH KEMASAN KE QUALITY CONTROL */}
+      {/* ═══════════════════════════════════════════════ */}
+      <Modal
+        isOpen={submitQcOpen}
+        onClose={() => setSubmitQcOpen(false)}
+        title="Ajukan Batch Kemasan ke Quality Control (QC)"
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+            <Button variant="secondary" onClick={() => setSubmitQcOpen(false)}>Batal</Button>
+            <Button
+              variant="primary"
+              onClick={handleConfirmSubmitQc}
+              leftIcon={<ShieldCheck className="w-4 h-4" aria-hidden="true" />}
+            >
+              Kirim ke Antrean QC
+            </Button>
+          </div>
+        }
+      >
+        {selectedSpkForQc && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <div style={{
+              padding: 'var(--space-3)',
+              borderRadius: 'var(--radius-md)',
+              background: selectedSpkForQc.order?.status === 'REWORK' ? 'var(--color-warning-50)' : 'var(--color-primary-50)',
+              border: `1px solid ${selectedSpkForQc.order?.status === 'REWORK' ? 'var(--color-warning-300)' : 'var(--color-primary-200)'}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <strong style={{ fontSize: 'var(--text-sm)' }}>
+                  SPK: {selectedSpkForQc.order?.batch_number}
+                </strong>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  background: selectedSpkForQc.order?.status === 'REWORK' ? 'var(--color-warning-200)' : 'var(--color-primary-200)',
+                  color: selectedSpkForQc.order?.status === 'REWORK' ? 'var(--color-warning-900)' : 'var(--color-primary-900)',
+                }}>
+                  {selectedSpkForQc.order?.status === 'REWORK' ? 'PENGAJUAN ULANG REWORK' : 'PENGAJUAN PERTAMA'}
+                </span>
+              </div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                <strong>Varian:</strong> {selectedSpkForQc.order?.product_variant || 'Jamur Crispy'}
+              </div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary-800)', fontWeight: 600 }}>
+                Total Kemasan: {selectedSpkForQc.totalPackagedPcs || selectedSpkForQc.order?.target_quantity || 0} pcs kemasan siap sampling
+              </div>
+              {selectedSpkForQc.order?.anomaly_reason && (
+                <div style={{
+                  marginTop: '4px',
+                  padding: '6px 8px',
+                  borderRadius: 'var(--radius-xs)',
+                  background: '#fff',
+                  border: '1px solid var(--color-warning-400)',
+                  color: 'var(--color-warning-900)',
+                  fontSize: '11px',
+                }}>
+                  <strong>Catatan QC Sebelumnya:</strong> {selectedSpkForQc.order.anomaly_reason}
+                </div>
+              )}
+            </div>
+
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+              Setelah diajukan, status SPK akan berubah menjadi <strong>Menunggu QC (QC_PENDING)</strong> dan batch kemasan akan muncul di antrean inspeksi petugas Quality Control untuk uji sampling organoleptik &amp; kerapatan kemasan.
+            </div>
+
+            <FormField label="Catatan Tambahan untuk Petugas QC (Opsional)">
+              <Textarea
+                rows={2}
+                value={submitQcNotes}
+                onChange={(e) => setSubmitQcNotes(e.target.value)}
+                placeholder="Misal: Sudah diperbaiki seal kemasan nomor 1-10, rasa balado ekstra bumbu..."
+              />
+            </FormField>
+          </div>
+        )}
       </Modal>
 
 

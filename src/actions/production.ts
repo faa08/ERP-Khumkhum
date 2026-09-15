@@ -924,6 +924,10 @@ let memoryFryingBatches: DbFryingBatch[] = [];
 let memoryPackingEntries: DbPackingEntry[] = [];
 let memoryTimeStudySamples: DbTimeStudySample[] = [];
 
+export async function getMemoryPackingEntries(): Promise<DbPackingEntry[]> {
+  return memoryPackingEntries;
+}
+
 // ─────────────────────────────────────────────
 // FRYING BATCH CRUD
 // ─────────────────────────────────────────────
@@ -1662,6 +1666,69 @@ export async function getUnpackedLongsongReminder(): Promise<{
     console.error('getUnpackedLongsongReminder error:', err);
     const unpacked = memoryPackingEntries.filter(p => !p.is_packed);
     return { success: true, data: unpacked, count: unpacked.length };
+  }
+}
+
+export async function submitBatchToQc(
+  productionOrderId: string,
+  notes?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const now = new Date().toISOString();
+
+    const { data: order, error: orderErr } = await supabaseAdmin
+      .from('production_orders')
+      .select('id, batch_number, status, notes')
+      .eq('id', productionOrderId)
+      .single();
+
+    if (orderErr || !order) {
+      return { success: false, error: 'SPK Produksi tidak ditemukan' };
+    }
+
+    const appendNote = notes ? `[Pengajuan QC: ${notes}]` : '[Diajukan ke QC]';
+    const updatedNotes = order.notes ? `${order.notes} | ${appendNote}` : appendNote;
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('production_orders')
+      .update({
+        status: 'QC_PENDING',
+        notes: updatedNotes,
+        updated_at: now,
+      })
+      .eq('id', productionOrderId);
+
+    if (updateErr) {
+      console.warn('submitBatchToQc DB update error:', updateErr.message);
+    }
+
+    await logAuditEvent({
+      action: 'UPDATE',
+      entityType: 'production_order',
+      entityId: productionOrderId,
+      userId: session.user.userId,
+      details: {
+        status: 'QC_PENDING',
+        batch_number: order.batch_number,
+        notes: notes || 'Batch packing diajukan ke antrean QC untuk uji mutu',
+      },
+    });
+
+    revalidatePath('/production');
+    revalidatePath('/quality-control');
+    return { success: true };
+  } catch (err: any) {
+    console.error('submitBatchToQc error:', err);
+    return { success: false, error: err.message || 'Gagal mengajukan SPK ke antrean QC' };
+  }
+}
+
+export async function removeMemoryPackedStockByBatch(batchNumber: string): Promise<void> {
+  for (const key of Object.keys(memoryFinishedGoodsStock)) {
+    if (memoryFinishedGoodsStock[key].batch_number === batchNumber) {
+      delete memoryFinishedGoodsStock[key];
+    }
   }
 }
 

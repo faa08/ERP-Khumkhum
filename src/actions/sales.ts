@@ -90,16 +90,18 @@ export async function getSalesRealtimeTracking(): Promise<{
       console.warn('getSalesRealtimeTracking query products fallback:', err);
     }
 
-    // 2. Ambil inventaris produk jadi (item_type: 'PRODUCT')
+    // 2. Ambil inventaris produk jadi (item_type: 'PRODUCT', tidak termasuk Gudang Karantina & Afkir)
     let inventoryMap = new Map<string, number>();
     try {
       const { data: invItems } = await supabaseAdmin
         .from('inventory')
-        .select('item_id, quantity')
+        .select('item_id, quantity, warehouse_id')
         .eq('item_type', 'PRODUCT');
 
       if (invItems) {
         for (const item of invItems) {
+          // Jangan hitung stok dari Gudang Karantina & Afkir ke etalase penjualan
+          if (item.warehouse_id === '44444444-0000-0000-0000-000000000003') continue;
           const current = inventoryMap.get(item.item_id) || 0;
           inventoryMap.set(item.item_id, current + Number(item.quantity || 0));
         }

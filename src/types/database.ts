@@ -167,7 +167,7 @@ export interface DbProductionOrder {
   batch_number: string;
   product_id?: string | null;
   target_quantity?: number | null;
-  status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED_WIP' | 'QC_PENDING' | 'RELEASED' | 'COMPLETED' | 'CANCELLED';
+  status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED_WIP' | 'QC_PENDING' | 'RELEASED' | 'COMPLETED' | 'CANCELLED' | 'REWORK' | 'REJECTED';
   product_variant?: string | null;
   input_weight?: number | null;
   output_weight?: number | null;
@@ -178,10 +178,13 @@ export interface DbProductionOrder {
   start_date?: string | null;
   end_date?: string | null;
   created_by?: string | null;
-  // Revisi: kolom tambahan produksi goreng & packing
+  // Revisi: kolom tambahan produksi goreng & packing & QC
   total_kremesan_gram?: number | null;
   total_longsong_count?: number | null;
   unpacked_longsong_count?: number | null;
+  total_packaged_count?: number | null;
+  qc_rework_notes?: string | null;
+  qc_inspection_id?: string | null;
   cycle_time_avg_seconds?: number | null;
   normal_time_seconds?: number | null;
   standard_time_seconds?: number | null;

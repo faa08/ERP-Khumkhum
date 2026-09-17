@@ -17,6 +17,7 @@ export type UserRole =
   | 'PRODUCTION'
   | 'MANAGEMENT'
   | 'SALES'
+  | 'SORTING'
   | 'FARMER';
 
 export interface User {
@@ -52,6 +53,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   PRODUCTION:  'Petugas Produksi',
   MANAGEMENT:  'Manajemen (Viewer)',
   SALES:       'Sales & Pengiriman',
+  SORTING:     'Petugas Sortasi',
   FARMER:      'Petani Mitra',
 };
 
@@ -62,5 +64,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   PRODUCTION:  ['dashboard', 'production', 'ppic', 'inventory', 'traceability'],
   MANAGEMENT:  ['dashboard', 'reports', 'traceability', 'master', 'production', 'inventory', 'warehouse', 'qc', 'sales', 'audit', 'forecast'],
   SALES:       ['dashboard', 'master', 'sales', 'inventory', 'traceability'],
+  SORTING:     ['sorting'],
   FARMER:      [], // Petani tidak login ke web — interaksi via WhatsApp
 };

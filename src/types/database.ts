@@ -13,6 +13,7 @@ export type UserRole =
   | 'PRODUCTION'
   | 'MANAGEMENT'
   | 'SALES'
+  | 'SORTING'
   | 'FARMER';
 
 export interface DbUser {
@@ -482,7 +483,8 @@ export interface DbSalesOrder {
   order_number?: string | null;       // SO-YYYYMMDD-XXX
   customer_id: string;
   order_date: string;
-  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
+  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED' | 'RETURNED';
+  location?: string | null;
   total_amount?: number | null;
   notes?: string | null;
   created_by?: string | null;

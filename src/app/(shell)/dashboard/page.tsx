@@ -11,6 +11,8 @@ import { format, subDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { getKpiMetrics, type KpiFilter } from '@/actions/management';
 import type { DbKpiMetrics } from '@/types/database';
+import { useAuth } from '@/hooks/useAuth';
+import { useRouter } from 'next/navigation';
 
 type DateRangeOption = 'today' | '7days' | 'month' | 'custom';
 
@@ -22,6 +24,17 @@ const DATE_OPTIONS: { value: DateRangeOption; label: string }[] = [
 ];
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (user?.role === 'SORTING') {
+      router.replace('/sorting');
+    }
+  }, [user, router]);
+
+  if (user?.role === 'SORTING') return null;
+
   return (
     <div>
       <PageHeader

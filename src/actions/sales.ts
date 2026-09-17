@@ -327,6 +327,7 @@ export async function getSalesOrders(): Promise<{
 
 export interface CreateSalesOrderInput {
   customer_id: string;
+  location?: string;
   notes?: string;
   items: { product_id: string; quantity: number; unit_price?: number }[];
 }
@@ -361,6 +362,7 @@ export async function createSalesOrder(input: CreateSalesOrderInput): Promise<{
         order_number,
         order_date: now,
         status: 'PENDING',
+        location: input.location || null,
         total_amount,
         notes: input.notes || null,
         created_by: user.userId,
@@ -387,6 +389,7 @@ export async function createSalesOrder(input: CreateSalesOrderInput): Promise<{
         order_number,
         order_date: now,
         status: 'PENDING',
+        location: input.location || null,
         total_amount,
         notes: input.notes || null,
         created_by: user.userId,
@@ -429,7 +432,7 @@ export async function createSalesOrder(input: CreateSalesOrderInput): Promise<{
       action: 'CREATE',
       entityType: 'sales_order',
       entityId: createdId,
-      details: { order_number, customer_id: input.customer_id, items_count: input.items.length, total_amount },
+      details: { order_number, customer_id: input.customer_id, location: input.location, items_count: input.items.length, total_amount },
     });
 
     revalidatePath('/sales');
@@ -557,5 +560,52 @@ export async function updateSalesOrderStatus(
   } catch (err: any) {
     console.error('updateSalesOrderStatus error:', err);
     return { success: false, error: err.message || 'Gagal mengubah status pesanan' };
+  }
+}
+
+// ─────────────────────────────────────────────
+// RETURN SALES ORDER (RETUR / PENGEMBALIAN)
+// ─────────────────────────────────────────────
+
+export async function returnSalesOrder(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['SALES', 'SUPER_ADMIN']);
+    const now = new Date().toISOString();
+
+    // 1. Update status to 'RETURNED' in Supabase
+    const { error } = await supabaseAdmin
+      .from('sales_orders')
+      .update({ status: 'RETURNED', updated_at: now })
+      .eq('id', id);
+
+    if (error) {
+      console.warn('Fallback memory for returnSalesOrder:', error.message);
+      const idx = memorySalesOrders.findIndex(o => o.id === id);
+      if (idx !== -1) {
+        memorySalesOrders[idx].status = 'RETURNED';
+        memorySalesOrders[idx].updated_at = now;
+      }
+    } else {
+      // Update memory if exists
+      const idx = memorySalesOrders.findIndex(o => o.id === id);
+      if (idx !== -1) {
+        memorySalesOrders[idx].status = 'RETURNED';
+        memorySalesOrders[idx].updated_at = now;
+      }
+    }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'UPDATE',
+      entityType: 'sales_order',
+      entityId: id,
+      details: { new_status: 'RETURNED', notes: 'Pesanan diretur / dikembalikan' },
+    });
+
+    revalidatePath('/sales');
+    return { success: true };
+  } catch (err: any) {
+    console.error('returnSalesOrder error:', err);
+    return { success: false, error: err.message || 'Gagal melakukan retur pesanan' };
   }
 }

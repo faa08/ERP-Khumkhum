@@ -40,6 +40,7 @@ import {
   getSalesOrders,
   createSalesOrder,
   updateSalesOrderStatus,
+  returnSalesOrder,
   getSalesRealtimeTracking,
   type SalesRealtimeTrackingData,
   type FinishedGoodSalesStock,
@@ -55,12 +56,13 @@ interface OrderItem {
 
 interface FormState {
   customer_id: string;
+  location: string;
   notes: string;
   items: OrderItem[];
 }
 
 const EMPTY_ITEM: OrderItem = { product_id: '', quantity: '1', unit_price: '' };
-const EMPTY_FORM: FormState = { customer_id: '', notes: '', items: [{ ...EMPTY_ITEM }] };
+const EMPTY_FORM: FormState = { customer_id: '', location: '', notes: '', items: [{ ...EMPTY_ITEM }] };
 
 const STATUS_FLOW: DbSalesOrder['status'][] = ['PENDING', 'PROCESSING', 'SHIPPED', 'COMPLETED'];
 const NEXT_STATUS: Partial<Record<DbSalesOrder['status'], DbSalesOrder['status']>> = {
@@ -193,6 +195,7 @@ export default function SalesPage() {
   const handleQuickOrder = (pStock: FinishedGoodSalesStock) => {
     setForm({
       customer_id: customers[0]?.id || '',
+      location: '',
       notes: `Pesanan khusus varian ${pStock.name} (Hasil Packing)`,
       items: [
         {
@@ -218,6 +221,7 @@ export default function SalesPage() {
     setIsSaving(true);
     const res = await createSalesOrder({
       customer_id: form.customer_id,
+      location: form.location || undefined,
       notes: form.notes || undefined,
       items: form.items.map(it => ({
         product_id: it.product_id,
@@ -289,6 +293,11 @@ export default function SalesPage() {
           {row.original.customer?.contact && (
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
               Kontak: {row.original.customer.contact}
+            </div>
+          )}
+          {row.original.location && (
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+              Tempat: {row.original.location}
             </div>
           )}
         </div>
@@ -449,6 +458,33 @@ export default function SalesPage() {
                           <CheckCircle className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
                         ),
                       onClick: () => handleAdvanceStatus(row.original),
+                    },
+                  ]
+                : []),
+              ...(row.original.status === 'SHIPPED' || row.original.status === 'COMPLETED'
+                ? [
+                    {
+                      id: 'return',
+                      label: 'Tandai Retur/Pengembalian',
+                      icon: <AlertTriangle className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />,
+                      onClick: () => {
+                        setConfirmDialog({
+                          isOpen: true,
+                          title: 'Tandai Pesanan Retur',
+                          description: `Apakah Anda yakin ingin menandai pesanan ${row.original.order_number || row.original.id.slice(0, 8)} sebagai retur?`,
+                          variant: 'danger',
+                          onConfirm: async () => {
+                            const res = await returnSalesOrder(row.original.id);
+                            if (res.success) {
+                              toast.success('Pesanan berhasil ditandai sebagai retur');
+                              loadData();
+                            } else {
+                              toast.error(res.error || 'Gagal meretur pesanan');
+                            }
+                            setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                          },
+                        });
+                      },
                     },
                   ]
                 : []),
@@ -920,6 +956,7 @@ export default function SalesPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
           <FormField label="Customer / Distributor" required>
             <select
               value={form.customer_id}
@@ -942,6 +979,15 @@ export default function SalesPage() {
               ))}
             </select>
           </FormField>
+
+          <FormField label="Nama Tempat / Lokasi">
+            <Input
+              placeholder="Contoh: Toko Cabang A, Gudang Utama..."
+              value={form.location}
+              onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+            />
+          </FormField>
+        </div>
 
           <div>
             <div
@@ -1132,6 +1178,7 @@ export default function SalesPage() {
             {[
               { label: 'Nomor Order', value: viewItem.order_number || viewItem.id.slice(0, 8).toUpperCase() },
               { label: 'Customer', value: viewItem.customer?.name || viewItem.customer_id },
+              { label: 'Tempat / Lokasi', value: viewItem.location || '-' },
               { label: 'Tanggal Pesanan', value: format(new Date(viewItem.order_date), 'dd/MM/yyyy HH:mm') },
               { label: 'Status Saat Ini', value: viewItem.status },
               {

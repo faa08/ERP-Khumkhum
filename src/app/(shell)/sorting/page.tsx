@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -50,7 +50,7 @@ export default function SortingPage() {
 
   const toast = useToast();
 
-  // ── Live kalkulasi ─────────────────────────────────────────────
+  // ΓöÇΓöÇ Live kalkulasi ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const leafW = parseFloat(form.leaf_weight) || 0;
   const stemW = parseFloat(form.stem_weight) || 0;
   const total = leafW + stemW;
@@ -59,7 +59,7 @@ export default function SortingPage() {
   const isStandard = leafPct >= 75;
   const gradeColor = grade === 'A' ? 'var(--color-success-600)' : grade === 'B' ? 'var(--color-warning-600)' : 'var(--color-danger-600)';
 
-  // ── Load data ──────────────────────────────────────────────────
+  // ΓöÇΓöÇ Load data ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const loadData = useCallback(async () => {
     setIsLoading(true);
     const [sortRes, unsortRes] = await Promise.all([
@@ -95,7 +95,7 @@ export default function SortingPage() {
     }
   };
 
-  // ── Live kalkulasi Edit ─────────────────────────────────────────
+  // ΓöÇΓöÇ Live kalkulasi Edit ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const editLeafW = parseFloat(editForm.leaf_weight) || 0;
   const editStemW = parseFloat(editForm.stem_weight) || 0;
   const editTotal = editLeafW + editStemW;
@@ -135,7 +135,7 @@ export default function SortingPage() {
     }
   };
 
-  // ── Summary harian ──────────────────────────────────────────────
+  // ΓöÇΓöÇ Summary harian ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const todaySummary = useMemo(() => {
     const todayItems = data.filter(d => isToday(new Date(d.sorting_date)));
     const totalLeaf = todayItems.reduce((s, d) => s + (d.leaf_weight ?? d.accepted_quantity ?? 0), 0);
@@ -147,7 +147,7 @@ export default function SortingPage() {
     return { count: todayItems.length, totalLeaf, totalStem, totalWeight, avgLeafPct };
   }, [data]);
 
-  // ── Columns ────────────────────────────────────────────────────
+  // ΓöÇΓöÇ Columns ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   const columns = useMemo<ColumnDef<DbSorting>[]>(() => [
     {
       id: 'receiving_no',
@@ -232,7 +232,7 @@ export default function SortingPage() {
         }
       />
 
-      {/* ── Summary Harian ── */}
+      {/* ΓöÇΓöÇ Summary Harian ΓöÇΓöÇ */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
         <Card>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -282,7 +282,7 @@ export default function SortingPage() {
 
       <DataTable columns={columns} data={data} />
 
-      {/* ── CREATE MODAL (POP UP) ── */}
+      {/* ΓöÇΓöÇ CREATE MODAL (POP UP) ΓöÇΓöÇ */}
       <Modal
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -309,7 +309,7 @@ export default function SortingPage() {
               <option value="">-- Pilih Nomor Penerimaan --</option>
               {unsortedReceivings.map(r => (
                 <option key={r.id} value={r.id}>
-                  {r.batch_number} — {(r as any).farmer?.name || 'Petani'} ({r.weight} kg)
+                  {r.batch_number} ΓÇö {(r as any).farmer?.name || 'Petani'} ({r.weight} kg)
                 </option>
               ))}
             </select>
@@ -343,7 +343,7 @@ export default function SortingPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)', fontWeight: 600,
                 color: isStandard ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>
                 {isStandard ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
-                {isStandard ? 'Lolos Standar (≥ 75%)' : 'Di Bawah Standar (< 75%)'}
+                {isStandard ? 'Lolos Standar (ΓëÑ 75%)' : 'Di Bawah Standar (< 75%)'}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
                 <div style={{ textAlign: 'center' }}>
@@ -360,7 +360,7 @@ export default function SortingPage() {
                 </div>
               </div>
               <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-                Formula: %Daun = W_daun / (W_daun + W_batang) × 100 = {leafW} / ({leafW} + {stemW}) × 100 = {leafPct.toFixed(2)}%
+                Formula: %Daun = W_daun / (W_daun + W_batang) ├ù 100 = {leafW} / ({leafW} + {stemW}) ├ù 100 = {leafPct.toFixed(2)}%
               </div>
             </div>
           )}
@@ -369,7 +369,7 @@ export default function SortingPage() {
         </div>
       </Modal>
 
-      {/* ── VIEW MODAL (POP UP) ── */}
+      {/* ΓöÇΓöÇ VIEW MODAL (POP UP) ΓöÇΓöÇ */}
       <Modal
         isOpen={viewOpen}
         onClose={() => setViewOpen(false)}
@@ -386,7 +386,7 @@ export default function SortingPage() {
               { label: 'Berat Batang', value: viewItem.stem_weight != null ? `${viewItem.stem_weight} kg` : `${viewItem.waste} kg` },
               { label: '% Daun', value: viewItem.leaf_percentage != null ? `${viewItem.leaf_percentage.toFixed(2)}%` : '-' },
               { label: 'Grade', value: viewItem.quality_grade || '-' },
-              { label: 'Status Standar', value: viewItem.is_standard_compliant != null ? (viewItem.is_standard_compliant ? <span style={{ color: 'var(--color-success-600)', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={14} /> Lolos (≥75%)</span> : <span style={{ color: 'var(--color-danger-600)', display: 'flex', alignItems: 'center', gap: '4px' }}><AlertTriangle size={14} /> Di Bawah Standar</span>) : '-' },
+              { label: 'Status Standar', value: viewItem.is_standard_compliant != null ? (viewItem.is_standard_compliant ? <span style={{ color: 'var(--color-success-600)', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle size={14} /> Lolos (ΓëÑ75%)</span> : <span style={{ color: 'var(--color-danger-600)', display: 'flex', alignItems: 'center', gap: '4px' }}><AlertTriangle size={14} /> Di Bawah Standar</span>) : '-' },
               { label: 'Tanggal Sortasi', value: format(new Date(viewItem.sorting_date), 'dd/MM/yyyy HH:mm') },
             ].map(row => (
               <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 'var(--space-2)', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -398,7 +398,7 @@ export default function SortingPage() {
         )}
       </Modal>
 
-      {/* ── EDIT / KOREKSI MODAL (POP UP) ── */}
+      {/* ΓöÇΓöÇ EDIT / KOREKSI MODAL (POP UP) ΓöÇΓöÇ */}
       <Modal
         isOpen={editOpen}
         onClose={() => setEditOpen(false)}
@@ -454,7 +454,7 @@ export default function SortingPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)', fontWeight: 600,
                   color: editIsStandard ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>
                   {editIsStandard ? <CheckCircle size={16} /> : <AlertTriangle size={16} />}
-                  {editIsStandard ? 'Lolos Standar (≥ 75%)' : 'Di Bawah Standar (< 75%)'}
+                  {editIsStandard ? 'Lolos Standar (ΓëÑ 75%)' : 'Di Bawah Standar (< 75%)'}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-3)' }}>
                   <div style={{ textAlign: 'center' }}>

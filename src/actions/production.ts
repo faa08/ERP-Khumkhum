@@ -924,6 +924,10 @@ let memoryFryingBatches: DbFryingBatch[] = [];
 let memoryPackingEntries: DbPackingEntry[] = [];
 let memoryTimeStudySamples: DbTimeStudySample[] = [];
 
+export async function getMemoryPackingEntries(): Promise<DbPackingEntry[]> {
+  return memoryPackingEntries;
+}
+
 // ─────────────────────────────────────────────
 // FRYING BATCH CRUD
 // ─────────────────────────────────────────────
@@ -933,8 +937,13 @@ export interface CreateFryingBatchInput {
   wajan_number: number;
   batch_weight_gram?: number;
   oil_temp_celsius: number;
-  frying_duration_minutes: number;
   notes?: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+  frying_duration_minutes?: number | null;
+  output_weight_gram?: number | null;
+  longsong_count?: number | null;
+  kremesan_weight_gram?: number | null;
 }
 
 export async function createFryingBatch(input: CreateFryingBatchInput): Promise<{
@@ -947,18 +956,30 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
 
     let createdBatch: DbFryingBatch | undefined;
 
+    const nowIso = new Date().toISOString();
+    const startedAt = input.started_at !== undefined ? input.started_at : null;
+    const finishedAt = input.finished_at !== undefined ? input.finished_at : null;
+    const durationMinutes = input.frying_duration_minutes !== undefined ? input.frying_duration_minutes : null;
+
+    const insertPayload: any = {
+      production_order_id: input.production_order_id,
+      wajan_number: input.wajan_number,
+      batch_weight_gram: input.batch_weight_gram || 800,
+      oil_temp_celsius: input.oil_temp_celsius,
+      notes: input.notes,
+      operator_id: session.user.id,
+      started_at: startedAt,
+      timer_started_at: null, // Timer wajib IDLE (0m 00s) saat buat batch baru, baru berjalan jika operator klik 'Mulai'
+      finished_at: finishedAt,
+      frying_duration_minutes: durationMinutes,
+      output_weight_gram: input.output_weight_gram ?? null,
+      longsong_count: input.longsong_count ?? 0,
+      kremesan_weight_gram: input.kremesan_weight_gram ?? 0,
+    };
+
     const { data, error } = await supabaseAdmin
       .from('production_frying_batches')
-      .insert({
-        production_order_id: input.production_order_id,
-        wajan_number: input.wajan_number,
-        batch_weight_gram: input.batch_weight_gram || 800,
-        oil_temp_celsius: input.oil_temp_celsius,
-        frying_duration_minutes: input.frying_duration_minutes,
-        notes: input.notes,
-        operator_id: session.user.id,
-        started_at: new Date().toISOString(),
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
@@ -970,13 +991,16 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
         wajan_number: input.wajan_number,
         batch_weight_gram: input.batch_weight_gram || 800,
         oil_temp_celsius: input.oil_temp_celsius,
-        frying_duration_minutes: input.frying_duration_minutes,
-        longsong_count: 0,
-        kremesan_weight_gram: 0,
+        longsong_count: input.longsong_count ?? 0,
+        kremesan_weight_gram: input.kremesan_weight_gram ?? 0,
+        output_weight_gram: input.output_weight_gram ?? null,
+        frying_duration_minutes: durationMinutes,
         notes: input.notes || null,
         operator_id: session.user.id,
-        started_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
+        started_at: startedAt,
+        finished_at: finishedAt,
+        timer_started_at: null, // Tetap null agar tidak langsung berjalan 1 menit
+        created_at: nowIso,
         operator: { id: session.user.id, name: session.user.name || 'Operator Produksi' },
       };
       memoryFryingBatches.unshift(fallbackItem);
@@ -989,7 +1013,7 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
     try {
       await supabaseAdmin
         .from('production_orders')
-        .update({ status: 'IN_PROGRESS', updated_at: new Date().toISOString() })
+        .update({ status: 'IN_PROGRESS' })
         .eq('id', input.production_order_id)
         .eq('status', 'DRAFT');
     } catch (_) {}
@@ -997,13 +1021,9 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
     await logAuditEvent({
       action: 'CREATE',
       entityType: 'production_frying_batch',
-      entityId: createdBatch?.id,
+      entityId: createdBatch?.id || 'unknown',
       userId: session.user.id,
-      details: {
-        wajan_number: input.wajan_number,
-        batch_weight_gram: input.batch_weight_gram || 800,
-        oil_temp_celsius: input.oil_temp_celsius,
-      },
+      details: { wajan_number: input.wajan_number, batch_weight_gram: input.batch_weight_gram },
     });
 
     revalidatePath('/production');
@@ -1014,11 +1034,62 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
   }
 }
 
+export async function startFryingBatchTimer(fryingBatchId: string): Promise<{
+  success: boolean;
+  data?: DbFryingBatch;
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const nowIso = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('production_frying_batches')
+      .update({
+        timer_started_at: nowIso,
+        started_at: nowIso,
+      })
+      .eq('id', fryingBatchId)
+      .select()
+      .single();
+
+    if (error) {
+      console.warn('Fallback memory for startFryingBatchTimer:', error.message);
+      const idx = memoryFryingBatches.findIndex(b => b.id === fryingBatchId);
+      if (idx !== -1) {
+        memoryFryingBatches[idx] = {
+          ...memoryFryingBatches[idx],
+          timer_started_at: nowIso,
+          started_at: nowIso,
+        };
+      }
+    }
+
+    await logAuditEvent({
+      action: 'UPDATE',
+      entityType: 'production_frying_batch',
+      entityId: fryingBatchId,
+      userId: session.user.id,
+      details: { action: 'START_TIMER', timer_started_at: nowIso },
+    });
+
+    revalidatePath('/production');
+    return { success: true };
+  } catch (err: any) {
+    console.error('startFryingBatchTimer error:', err);
+    return { success: false, error: err.message || 'Gagal memulai timer' };
+  }
+}
+
 export interface CompleteFryingBatchInput {
   frying_batch_id: string;
   output_weight_gram: number;
   longsong_count: number;
   kremesan_weight_gram?: number;
+  frying_duration_minutes?: number;
+  started_at?: string;
+  finished_at?: string;
+  notes?: string;
 }
 
 export async function completeFryingBatch(input: CompleteFryingBatchInput): Promise<{
@@ -1031,14 +1102,53 @@ export async function completeFryingBatch(input: CompleteFryingBatchInput): Prom
 
     let updatedBatch: DbFryingBatch | undefined;
 
+    const finishedAtIso = input.finished_at || new Date().toISOString();
+
+    // Duration: use explicit duration if provided, or calculate from timer_started_at / started_at
+    let durationMinutes: number | null = input.frying_duration_minutes != null ? input.frying_duration_minutes : null;
+    let startedAtIso: string | undefined = input.started_at;
+
+    try {
+      const { data: existingBatch } = await supabaseAdmin
+        .from('production_frying_batches')
+        .select('timer_started_at, started_at, frying_duration_minutes')
+        .eq('id', input.frying_batch_id)
+        .single();
+      if (existingBatch) {
+        if (!startedAtIso && (existingBatch.started_at || existingBatch.timer_started_at)) {
+          startedAtIso = existingBatch.started_at || existingBatch.timer_started_at;
+        }
+        if (durationMinutes == null) {
+          if (existingBatch.frying_duration_minutes) {
+            durationMinutes = existingBatch.frying_duration_minutes;
+          } else if (startedAtIso) {
+            durationMinutes = Math.round(((new Date(finishedAtIso).getTime() - new Date(startedAtIso).getTime()) / 60000) * 100) / 100;
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Fallback default duration if still null (15 minutes standard)
+    if (durationMinutes == null || isNaN(durationMinutes) || durationMinutes <= 0) {
+      durationMinutes = 15;
+    }
+    if (!startedAtIso) {
+      startedAtIso = new Date(new Date(finishedAtIso).getTime() - durationMinutes * 60000).toISOString();
+    }
+
+    const updatePayload: any = {
+      output_weight_gram: input.output_weight_gram,
+      longsong_count: input.longsong_count,
+      kremesan_weight_gram: input.kremesan_weight_gram || 0,
+      finished_at: finishedAtIso,
+      started_at: startedAtIso,
+      frying_duration_minutes: durationMinutes,
+      ...(input.notes !== undefined ? { notes: input.notes } : {}),
+    };
+
     const { data, error } = await supabaseAdmin
       .from('production_frying_batches')
-      .update({
-        output_weight_gram: input.output_weight_gram,
-        longsong_count: input.longsong_count,
-        kremesan_weight_gram: input.kremesan_weight_gram || 0,
-        finished_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq('id', input.frying_batch_id)
       .select()
       .single();
@@ -1047,12 +1157,20 @@ export async function completeFryingBatch(input: CompleteFryingBatchInput): Prom
       console.warn('Fallback memory for completeFryingBatch:', error.message);
       const idx = memoryFryingBatches.findIndex(b => b.id === input.frying_batch_id);
       if (idx !== -1) {
+        const memBatch = memoryFryingBatches[idx];
+        const memTimerStart = startedAtIso || memBatch.timer_started_at || memBatch.started_at;
+        const memDuration = durationMinutes != null
+          ? durationMinutes
+          : (memBatch.frying_duration_minutes || (memTimerStart ? Math.round(((new Date(finishedAtIso).getTime() - new Date(memTimerStart).getTime()) / 60000) * 100) / 100 : 15));
         memoryFryingBatches[idx] = {
-          ...memoryFryingBatches[idx],
+          ...memBatch,
           output_weight_gram: input.output_weight_gram,
           longsong_count: input.longsong_count,
           kremesan_weight_gram: input.kremesan_weight_gram || 0,
-          finished_at: new Date().toISOString(),
+          finished_at: finishedAtIso,
+          started_at: memTimerStart || new Date(new Date(finishedAtIso).getTime() - memDuration * 60000).toISOString(),
+          frying_duration_minutes: memDuration,
+          ...(input.notes !== undefined ? { notes: input.notes } : {}),
         };
         updatedBatch = memoryFryingBatches[idx];
       }
@@ -1067,6 +1185,8 @@ export async function completeFryingBatch(input: CompleteFryingBatchInput): Prom
     return { success: false, error: err.message || 'Gagal menyelesaikan batch goreng' };
   }
 }
+
+export const updateFryingBatchOutput = completeFryingBatch;
 
 export async function getFryingBatchesByOrder(orderId: string): Promise<{
   success: boolean;
@@ -1128,9 +1248,224 @@ export interface CreatePackingEntryInput {
   longsong_number: number;
   longsong_weight_gram?: number;
   packaged_toples_count: number;
+  packaging_type?: string;
   packaging_weight_gram?: string;
   seasoning_used_gram: number;
   notes?: string;
+  is_packed?: boolean;
+}
+
+/**
+ * In-memory store untuk stok produk jadi hasil packing
+ * Memastikan modul Sales & Order dapat membaca real-time bahkan jika ada kendala database
+ */
+export interface MemoryFinishedGoodsStockItem {
+  id: string;
+  product_id: string;
+  product_name: string;
+  sku: string;
+  flavor: string;
+  weight: string;
+  packaging_type: string;
+  quantity: number;
+  batch_number: string;
+  last_updated_at: string;
+}
+
+let memoryFinishedGoodsStock: Record<string, MemoryFinishedGoodsStockItem> = {};
+
+export async function getMemoryPackedStock(): Promise<MemoryFinishedGoodsStockItem[]> {
+  return Object.values(memoryFinishedGoodsStock);
+}
+
+export async function deductMemoryPackedStock(productId: string, quantity: number): Promise<void> {
+  for (const key of Object.keys(memoryFinishedGoodsStock)) {
+    if (memoryFinishedGoodsStock[key].product_id === productId) {
+      memoryFinishedGoodsStock[key].quantity = Math.max(
+        0,
+        memoryFinishedGoodsStock[key].quantity - Number(quantity)
+      );
+    }
+  }
+}
+
+export async function syncPackedGoodsToSalesInventory(
+  entry: {
+    id: string;
+    production_order_id: string;
+    flavor_variant: string;
+    packaging_weight_gram?: string | null;
+    packaging_type?: string | null;
+    packaged_toples_count: number;
+  },
+  userId?: string
+): Promise<{ success: boolean; product_id?: string; product_name?: string }> {
+  try {
+    const flavor = entry.flavor_variant || 'Original';
+    const weight = entry.packaging_weight_gram || '100g';
+    const pkgType = entry.packaging_type || 'Standing Pouch';
+    const count = Math.max(0, Number(entry.packaged_toples_count) || 0);
+
+    if (count <= 0) return { success: false };
+
+    // 1. Ambil nomor batch SPK untuk ketertelusuran
+    let batchNumber = 'PRD';
+    try {
+      const { data: order } = await supabaseAdmin
+        .from('production_orders')
+        .select('batch_number')
+        .eq('id', entry.production_order_id)
+        .maybeSingle();
+
+      if (order?.batch_number) {
+        batchNumber = order.batch_number;
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Cari produk yang cocok di tabel products
+    let matchedProduct: any = null;
+    try {
+      const { data: prods } = await supabaseAdmin.from('products').select('*');
+      if (prods && prods.length > 0) {
+        // Coba cari nama produk yang memuat nama rasa dan berat
+        matchedProduct = prods.find((p: any) => {
+          const n = p.name.toLowerCase();
+          return n.includes(flavor.toLowerCase()) && n.includes(weight.toLowerCase());
+        });
+        // Jika belum cocok, cari berdasarkan rasa
+        if (!matchedProduct) {
+          matchedProduct = prods.find((p: any) => p.name.toLowerCase().includes(flavor.toLowerCase()));
+        }
+      }
+    } catch (err) {
+      console.warn('Could not query products table:', err);
+    }
+
+    // 3. Jika belum terdaftar di master produk, buat produk baru
+    if (!matchedProduct) {
+      const cleanWeight = weight.replace(/\D/g, '') || '100';
+      const flavorCode = flavor.slice(0, 3).toUpperCase();
+      const typeCode = pkgType.replace(/[^a-zA-Z]/g, '').slice(0, 3).toUpperCase();
+      const sku = `FG-KHK-${flavorCode}-${cleanWeight}G-${typeCode || 'PK'}`;
+      const name = `Jamur Crispy ${flavor} ${weight} (${pkgType})`;
+
+      try {
+        const { data: newProd } = await supabaseAdmin
+          .from('products')
+          .insert({
+            sku,
+            name,
+            description: `KhumKhum Jamur Crispy ${flavor} kemasan ${pkgType} ${weight}`,
+          })
+          .select()
+          .single();
+
+        if (newProd) matchedProduct = newProd;
+      } catch (insertErr) {
+        console.warn('Failed to insert new product in Supabase:', insertErr);
+        matchedProduct = {
+          id: 'prod-' + flavorCode.toLowerCase() + '-' + cleanWeight,
+          sku,
+          name,
+        };
+      }
+    }
+
+    const productId = matchedProduct?.id || '22222222-0000-0000-0000-000000000001';
+    const productName = matchedProduct?.name || `Jamur Crispy ${flavor} ${weight}`;
+    const productSku = matchedProduct?.sku || 'FG-KHK-ORIG-100G';
+
+    // 4. Update in-memory fallback store
+    const memKey = `${productId}_${flavor}_${weight}_${pkgType}`;
+    const prevMemQty = memoryFinishedGoodsStock[memKey]?.quantity || 0;
+    memoryFinishedGoodsStock[memKey] = {
+      id: memKey,
+      product_id: productId,
+      product_name: productName,
+      sku: productSku,
+      flavor,
+      weight,
+      packaging_type: pkgType,
+      quantity: prevMemQty + count,
+      batch_number: batchNumber,
+      last_updated_at: new Date().toISOString(),
+    };
+
+    // 5. Update / Insert ke tabel inventory Supabase
+    try {
+      let fgWarehouseId = '44444444-0000-0000-0000-000000000002'; // default Gudang Produk Jadi
+      const { data: whs } = await supabaseAdmin.from('warehouses').select('id, name');
+      const foundWh = (whs || []).find((w: any) =>
+        w.name.toLowerCase().includes('produk jadi') || w.name.toLowerCase().includes('siap jual')
+      );
+      if (foundWh?.id) fgWarehouseId = foundWh.id;
+
+      const { data: existingInv } = await supabaseAdmin
+        .from('inventory')
+        .select('*')
+        .eq('item_type', 'PRODUCT')
+        .eq('item_id', productId)
+        .limit(1);
+
+      let inventoryId = '';
+      const now = new Date().toISOString();
+
+      if (existingInv && existingInv.length > 0) {
+        const inv = existingInv[0];
+        inventoryId = inv.id;
+        const newQty = Number(inv.quantity || 0) + count;
+        await supabaseAdmin
+          .from('inventory')
+          .update({
+            quantity: newQty,
+            batch_number: batchNumber,
+            last_updated_at: now,
+          })
+          .eq('id', inv.id);
+      } else {
+        const { data: newInv } = await supabaseAdmin
+          .from('inventory')
+          .insert({
+            warehouse_id: fgWarehouseId,
+            item_type: 'PRODUCT',
+            item_id: productId,
+            batch_number: batchNumber,
+            quantity: count,
+            reorder_point: 50,
+            lead_time_days: 0,
+            last_updated_at: now,
+          })
+          .select('id')
+          .single();
+        inventoryId = newInv?.id || '';
+      }
+
+      // 6. Catat kartu stok masuk di stock_movements
+      if (inventoryId) {
+        await supabaseAdmin.from('stock_movements').insert({
+          inventory_id: inventoryId,
+          movement_type: 'IN',
+          quantity: count,
+          reference_id: entry.id,
+          reference_type: 'PRODUCTION_PACKING',
+          notes: `Hasil Packing Siap Jual: ${count} pcs ${productName} dari SPK ${batchNumber}`,
+          movement_date: now,
+          created_by: userId || null,
+        });
+      }
+    } catch (dbErr) {
+      console.warn('Database sync for inventory/stock_movements skipped or failed:', dbErr);
+    }
+
+    revalidatePath('/sales');
+    revalidatePath('/inventory');
+    return { success: true, product_id: productId, product_name: productName };
+  } catch (err: any) {
+    console.error('syncPackedGoodsToSalesInventory error:', err);
+    return { success: false };
+  }
 }
 
 export async function createPackingEntry(input: CreatePackingEntryInput): Promise<{
@@ -1139,9 +1474,12 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     let createdPacking: DbPackingEntry | undefined;
+    const isPacked = input.is_packed !== undefined ? input.is_packed : true;
+    const packedAt = isPacked ? new Date().toISOString() : null;
+    const packagingType = input.packaging_type || 'Standing Pouch';
 
     const { data, error } = await supabaseAdmin
       .from('production_packing_entries')
@@ -1152,9 +1490,11 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
         longsong_number: input.longsong_number,
         longsong_weight_gram: input.longsong_weight_gram || null,
         packaged_toples_count: input.packaged_toples_count,
+        packaging_type: packagingType,
         packaging_weight_gram: input.packaging_weight_gram || '100g',
         seasoning_used_gram: input.seasoning_used_gram,
-        is_packed: false,
+        is_packed: isPacked,
+        packed_at: packedAt,
         notes: input.notes,
       })
       .select()
@@ -1170,9 +1510,11 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
         longsong_number: input.longsong_number,
         longsong_weight_gram: input.longsong_weight_gram || null,
         packaged_toples_count: input.packaged_toples_count,
+        packaging_type: packagingType,
         packaging_weight_gram: input.packaging_weight_gram || '100g',
         seasoning_used_gram: input.seasoning_used_gram,
-        is_packed: false,
+        is_packed: isPacked,
+        packed_at: packedAt,
         notes: input.notes || null,
         created_at: new Date().toISOString(),
       };
@@ -1182,7 +1524,14 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
       createdPacking = data;
     }
 
+    // ── Sinkronisasi Otomatis ke Stok Produk Jadi & Sales & Order ──
+    if (isPacked && createdPacking) {
+      await syncPackedGoodsToSalesInventory(createdPacking, user.userId);
+    }
+
     revalidatePath('/production');
+    revalidatePath('/sales');
+    revalidatePath('/inventory');
     return { success: true, data: createdPacking };
   } catch (err: any) {
     console.error('createPackingEntry error:', err);
@@ -1204,8 +1553,10 @@ export async function markLongsongPacked(packingEntryId: string): Promise<{
         packed_at: new Date().toISOString(),
       })
       .eq('id', packingEntryId)
-      .select('production_order_id')
+      .select('*')
       .single();
+
+    let targetPacking: DbPackingEntry | undefined = data;
 
     if (error) {
       console.warn('Fallback memory for markLongsongPacked:', error.message);
@@ -1216,18 +1567,26 @@ export async function markLongsongPacked(packingEntryId: string): Promise<{
           is_packed: true,
           packed_at: new Date().toISOString(),
         };
+        targetPacking = memoryPackingEntries[idx];
       }
+    }
+
+    // ── Sinkronisasi ke Stok Produk Jadi & Sales & Order ──
+    if (targetPacking) {
+      await syncPackedGoodsToSalesInventory(targetPacking, session.user.userId);
     }
 
     await logAuditEvent({
       action: 'UPDATE',
       entityType: 'production_packing_entry',
       entityId: packingEntryId,
-      userId: session.user.id,
+      userId: session.user.userId,
       details: { status: 'PACKED', packed_at: new Date().toISOString() },
     });
 
     revalidatePath('/production');
+    revalidatePath('/sales');
+    revalidatePath('/inventory');
     return { success: true };
   } catch (err: any) {
     console.error('markLongsongPacked error:', err);
@@ -1269,7 +1628,7 @@ export async function getAllPackingEntries(): Promise<{
 
     const { data, error } = await supabaseAdmin
       .from('production_packing_entries')
-      .select('*, frying_batch:production_frying_batches(id, wajan_number, batch_weight_gram)')
+      .select('*, frying_batch:production_frying_batches(id, wajan_number, batch_weight_gram), production_order:production_orders(id, batch_number, product_variant)')
       .order('created_at', { ascending: false })
       .limit(200);
 
@@ -1307,6 +1666,69 @@ export async function getUnpackedLongsongReminder(): Promise<{
     console.error('getUnpackedLongsongReminder error:', err);
     const unpacked = memoryPackingEntries.filter(p => !p.is_packed);
     return { success: true, data: unpacked, count: unpacked.length };
+  }
+}
+
+export async function submitBatchToQc(
+  productionOrderId: string,
+  notes?: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const now = new Date().toISOString();
+
+    const { data: order, error: orderErr } = await supabaseAdmin
+      .from('production_orders')
+      .select('id, batch_number, status, notes')
+      .eq('id', productionOrderId)
+      .single();
+
+    if (orderErr || !order) {
+      return { success: false, error: 'SPK Produksi tidak ditemukan' };
+    }
+
+    const appendNote = notes ? `[Pengajuan QC: ${notes}]` : '[Diajukan ke QC]';
+    const updatedNotes = order.notes ? `${order.notes} | ${appendNote}` : appendNote;
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('production_orders')
+      .update({
+        status: 'QC_PENDING',
+        notes: updatedNotes,
+        updated_at: now,
+      })
+      .eq('id', productionOrderId);
+
+    if (updateErr) {
+      console.warn('submitBatchToQc DB update error:', updateErr.message);
+    }
+
+    await logAuditEvent({
+      action: 'UPDATE',
+      entityType: 'production_order',
+      entityId: productionOrderId,
+      userId: session.user.userId,
+      details: {
+        status: 'QC_PENDING',
+        batch_number: order.batch_number,
+        notes: notes || 'Batch packing diajukan ke antrean QC untuk uji mutu',
+      },
+    });
+
+    revalidatePath('/production');
+    revalidatePath('/quality-control');
+    return { success: true };
+  } catch (err: any) {
+    console.error('submitBatchToQc error:', err);
+    return { success: false, error: err.message || 'Gagal mengajukan SPK ke antrean QC' };
+  }
+}
+
+export async function removeMemoryPackedStockByBatch(batchNumber: string): Promise<void> {
+  for (const key of Object.keys(memoryFinishedGoodsStock)) {
+    if (memoryFinishedGoodsStock[key].batch_number === batchNumber) {
+      delete memoryFinishedGoodsStock[key];
+    }
   }
 }
 
@@ -1568,27 +1990,55 @@ export async function getFryingPackingMetrics(): Promise<{
       }
     } catch (_) {}
 
-    // Unpacked and packed
+    // Longsong produced across completed frying batches
+    let totalLongsongProduced = 0;
     try {
-      const { count } = await supabaseAdmin
-        .from('production_packing_entries')
-        .select('id', { count: 'exact', head: true })
-        .eq('is_packed', false);
-      unpackedCount = count || memoryPackingEntries.filter(p => !p.is_packed).length;
+      const { data: allBatches, error: bErr } = await supabaseAdmin
+        .from('production_frying_batches')
+        .select('longsong_count, finished_at');
 
-      const { data: packingToday } = await supabaseAdmin
-        .from('production_packing_entries')
-        .select('packaged_toples_count, seasoning_used_gram')
-        .gte('created_at', todayISO)
-        .eq('is_packed', true);
+      if (!bErr && allBatches) {
+        totalLongsongProduced = allBatches
+          .filter(b => b.finished_at && Number(b.longsong_count) > 0)
+          .reduce((s, b) => s + (Number(b.longsong_count) || 0), 0);
+      } else {
+        totalLongsongProduced = memoryFryingBatches
+          .filter(b => b.finished_at && Number(b.longsong_count) > 0)
+          .reduce((s, b) => s + (Number(b.longsong_count) || 0), 0);
+      }
+    } catch (_) {
+      totalLongsongProduced = memoryFryingBatches
+        .filter(b => b.finished_at && Number(b.longsong_count) > 0)
+        .reduce((s, b) => s + (Number(b.longsong_count) || 0), 0);
+    }
 
-      if (packingToday) {
+    // Packing entries & unpacked calculation
+    let totalLongsongPacked = 0;
+    try {
+      const { data: allPacking, error: packErr } = await supabaseAdmin
+        .from('production_packing_entries')
+        .select('id, is_packed, packaged_toples_count, seasoning_used_gram, created_at');
+
+      if (!packErr && allPacking) {
+        totalLongsongPacked = allPacking.filter(p => p.is_packed).length;
+
+        const packingToday = allPacking.filter(p => p.is_packed && p.created_at && p.created_at >= todayISO);
+        packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
+        totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
+      } else {
+        totalLongsongPacked = memoryPackingEntries.filter(p => p.is_packed).length;
+        const packingToday = memoryPackingEntries.filter(p => p.is_packed && p.created_at && p.created_at >= todayISO);
         packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
         totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
       }
     } catch (_) {
-      unpackedCount = memoryPackingEntries.filter(p => !p.is_packed).length;
+      totalLongsongPacked = memoryPackingEntries.filter(p => p.is_packed).length;
+      const packingToday = memoryPackingEntries.filter(p => p.is_packed && p.created_at && p.created_at >= todayISO);
+      packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
+      totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
     }
+
+    unpackedCount = Math.max(0, totalLongsongProduced - totalLongsongPacked);
 
     return {
       success: true,

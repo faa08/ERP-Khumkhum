@@ -156,7 +156,7 @@ export async function inquireFarmerStockAction(params: {
 
 export async function getProducts(): Promise<{ success: boolean; data?: DbProduct[]; error?: string }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'SALES', 'PRODUCTION']);
     const { data, error } = await supabaseAdmin
       .from('products')
       .select('*')

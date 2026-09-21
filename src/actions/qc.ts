@@ -4,6 +4,11 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
 import { logAuditEvent } from '@/actions/audit';
 import { revalidatePath } from 'next/cache';
+import {
+  getMemoryPackingEntries,
+  removeMemoryPackedStockByBatch,
+  syncPackedGoodsToSalesInventory,
+} from '@/actions/production';
 import type {
   DbQcInspection,
   DbProductionOrder,
@@ -94,13 +99,45 @@ export async function getPendingQcBatches(): Promise<{
   try {
     await requireAuth(['QC', 'SUPER_ADMIN', 'PRODUCTION']);
 
+    // 1. Ambil orders yang berstatus QC_PENDING, COMPLETED_WIP, REWORK, atau IN_PROGRESS
     const { data: orders, error } = await supabaseAdmin
       .from('production_orders')
       .select('*')
-      .in('status', ['COMPLETED_WIP', 'QC_PENDING'])
+      .in('status', ['QC_PENDING', 'COMPLETED_WIP', 'REWORK', 'IN_PROGRESS'])
       .order('created_at', { ascending: false });
 
     if (error) throw error;
+
+    // 2. Ambil data packing entries (baik dari Supabase jika ada, atau dari memoryPackingEntries)
+    let packingByOrder: Record<string, any[]> = {};
+    try {
+      const { data: peData, error: peErr } = await supabaseAdmin
+        .from('production_packing_entries')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!peErr && peData) {
+        peData.forEach((p: any) => {
+          if (!packingByOrder[p.production_order_id]) packingByOrder[p.production_order_id] = [];
+          packingByOrder[p.production_order_id].push(p);
+        });
+      }
+    } catch {
+      // ignore
+    }
+
+    // Enrich dari memory fallback
+    try {
+      const memPackings = await getMemoryPackingEntries();
+      memPackings.forEach((p: any) => {
+        if (!packingByOrder[p.production_order_id]) packingByOrder[p.production_order_id] = [];
+        if (!packingByOrder[p.production_order_id].some((x: any) => x.id === p.id)) {
+          packingByOrder[p.production_order_id].push(p);
+        }
+      });
+    } catch {
+      // ignore
+    }
 
     const orderIds = (orders || []).map((o: any) => o.id);
     let resultsByOrder: Record<string, any> = {};
@@ -116,14 +153,44 @@ export async function getPendingQcBatches(): Promise<{
       });
     }
 
-    const enriched: DbProductionOrder[] = (orders || []).map((order: any) => {
+    // Filter orders:
+    // - Jika status adalah QC_PENDING, COMPLETED_WIP, atau REWORK -> SELALU masuk antrean QC
+    // - Jika status adalah IN_PROGRESS -> tampilkan jika ada hasil kemasan packing
+    const filteredOrders = (orders || []).filter((order: any) => {
+      if (order.status === 'QC_PENDING' || order.status === 'COMPLETED_WIP' || order.status === 'REWORK') {
+        return true;
+      }
+      return (packingByOrder[order.id]?.length || 0) > 0;
+    });
+
+    const enriched: DbProductionOrder[] = filteredOrders.map((order: any) => {
       const res = resultsByOrder[order.id];
+      const packings = packingByOrder[order.id] || [];
+      const totalPackaged = packings.reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
+
+      // Ringkasan varian kemasan
+      let packagingSummary = '';
+      if (packings.length > 0) {
+        const variantCounts: Record<string, number> = {};
+        packings.forEach(p => {
+          const key = `${p.flavor_variant || 'Original'} ${p.packaging_weight_gram || '100g'} (${p.packaging_type || 'Pouch'})`;
+          variantCounts[key] = (variantCounts[key] || 0) + (Number(p.packaged_toples_count) || 0);
+        });
+        packagingSummary = Object.entries(variantCounts)
+          .map(([k, v]) => `${v} pcs ${k}`)
+          .join(', ');
+      }
+
+      const reworkNotes = order.anomaly_reason || (order.notes?.includes('QC REWORK') ? order.notes : null);
+
       return {
         ...order,
         product: res?.product || null,
         product_id: res?.product_id || null,
-        product_variant: res?.product?.name || 'Jamur Crispy Original 100g',
-        target_quantity: res?.finished_goods_quantity || 500,
+        product_variant: packagingSummary || res?.product?.name || order.product_variant || 'Jamur Crispy Original 100g',
+        target_quantity: totalPackaged > 0 ? totalPackaged : (res?.finished_goods_quantity || order.target_quantity || 500),
+        total_packaged_count: totalPackaged,
+        qc_rework_notes: reworkNotes,
         yield_percentage: res?.yield_percentage != null ? Number(res.yield_percentage) : null,
         materials: [],
         results: res ? [res] : [],
@@ -169,6 +236,13 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
       return { success: false, error: 'Ukuran sampel inspeksi (N_sample) harus lebih dari 0' };
     }
 
+    if ((input.decision === 'REWORK' || input.decision === 'REJECTED') && !input.notes?.trim()) {
+      return {
+        success: false,
+        error: `Wajib mengisi catatan instruksi mutu untuk keputusan ${input.decision === 'REWORK' ? 'REWORK (Perbaikan)' : 'REJECTED (Afkir)'}`,
+      };
+    }
+
     const burnt = Number(input.defect_burnt || 0);
     const salty = Number(input.defect_salty || 0);
     const leaking = Number(input.defect_leaking_pack || 0);
@@ -185,17 +259,25 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
       ? `Gosong: ${burnt}, Asin: ${salty}, Bocor: ${leaking}, Remuk: ${crushed}, Melempem: ${soggy} (Total: ${totalDefects})` 
       : 'NIHIL DEFECT');
 
-    // 1. Simpan rekam inspeksi ke qc_inspections (kolom valid di schema database)
+    // 1. Simpan rekam inspeksi ke qc_inspections (termasuk kolom cacat lengkap)
     const inspectionPayload = {
       reference_type: input.reference_type,
       reference_id: input.reference_id,
+      batch_id: input.batch_id || null,
       sample_size: input.sample_size,
+      defect_burnt: burnt,
+      defect_salty: salty,
+      defect_leaking_pack: leaking,
+      defect_crushed: crushed,
+      defect_soggy: soggy,
+      total_defects: totalDefects,
       defect_rate: defectRate,
       decision: input.decision,
       is_passed: isPassed,
       defect_type: defectSummary,
       notes: input.notes || null,
       inspected_by: user.userId,
+      inspector_id: user.userId,
       inspection_date: now,
       created_at: now,
     };
@@ -208,7 +290,7 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
 
     if (insErr) throw insErr;
 
-    // 2. Tangani Efek Samping Berdasarkan Keputusan Mutu
+    // 2. Tangani Keputusan Mutu Berdasarkan Input
     if (input.reference_type === 'PRODUCTION') {
       const { data: prodOrder } = await supabaseAdmin
         .from('production_orders')
@@ -217,98 +299,164 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
         .single();
 
       if (prodOrder) {
+        // Ambil packing entries terkait SPK ini
+        let orderPackings: any[] = [];
+        try {
+          const { data: dbPackings } = await supabaseAdmin
+            .from('production_packing_entries')
+            .select('*')
+            .eq('production_order_id', prodOrder.id);
+          if (dbPackings && dbPackings.length > 0) orderPackings = dbPackings;
+        } catch {}
+
+        try {
+          const memPackings = await getMemoryPackingEntries();
+          const matchedMem = memPackings.filter(p => p.production_order_id === prodOrder.id);
+          matchedMem.forEach(p => {
+            if (!orderPackings.some(x => x.id === p.id)) orderPackings.push(p);
+          });
+        } catch {}
+
         if (input.decision === 'RELEASED') {
-          // A. Update status order menjadi COMPLETED
+          // A. Status SPK -> RELEASED
           await supabaseAdmin
             .from('production_orders')
-            .update({ status: 'COMPLETED', updated_at: now })
+            .update({
+              status: 'RELEASED',
+              notes: (prodOrder.notes ? prodOrder.notes + ' | ' : '') + `[QC RELEASED: Lolos Mutu Sampling - ${defectRate}% Defect]`,
+              updated_at: now,
+            })
             .eq('id', prodOrder.id);
 
-          // B. Otomatis tambahkan stok ke Gudang Produk Jadi
-          const { data: warehouses } = await supabaseAdmin
-            .from('warehouses')
-            .select('id, name')
-            .ilike('name', '%Produk Jadi%')
-            .limit(1);
+          // B. Rilis resmi ke Gudang Produk Jadi (Siap Jual) & Sales & Order
+          if (orderPackings.length > 0) {
+            for (const p of orderPackings) {
+              await syncPackedGoodsToSalesInventory(p, user.userId);
+            }
+          } else {
+            // Fallback jika tidak ada breakdown packing spesifik
+            const targetProductId = prodOrder.results?.[0]?.product_id || prodOrder.product_id;
+            const fgQty = prodOrder.results?.[0]?.finished_goods_quantity || prodOrder.target_quantity || 500;
+            const fgWarehouseId = '44444444-0000-0000-0000-000000000002'; // Gudang Produk Jadi Siap Jual
 
-          let targetWarehouseId = warehouses && warehouses.length > 0 ? warehouses[0].id : null;
-          if (!targetWarehouseId) {
-            const { data: anyWh } = await supabaseAdmin.from('warehouses').select('id').limit(1).single();
-            targetWarehouseId = anyWh?.id;
-          }
-
-          const targetProductId = prodOrder.results?.[0]?.product_id;
-
-          if (targetWarehouseId && targetProductId) {
-            const finishedQty = prodOrder.results?.[0]?.finished_goods_quantity || 500;
-
-            const { data: existingInv } = await supabaseAdmin
-              .from('inventory')
-              .select('*')
-              .eq('warehouse_id', targetWarehouseId)
-              .eq('item_type', 'PRODUCT')
-              .eq('item_id', targetProductId)
-              .limit(1);
-
-            let inventoryId = '';
-            if (existingInv && existingInv.length > 0) {
-              inventoryId = existingInv[0].id;
-              const newQty = Number(existingInv[0].quantity) + Number(finishedQty);
-              await supabaseAdmin
+            if (targetProductId) {
+              const { data: existingInv } = await supabaseAdmin
                 .from('inventory')
-                .update({ quantity: newQty, last_updated_at: now })
-                .eq('id', inventoryId);
-            } else {
-              const { data: newInv } = await supabaseAdmin
-                .from('inventory')
-                .insert([
-                  {
-                    warehouse_id: targetWarehouseId,
+                .select('*')
+                .eq('warehouse_id', fgWarehouseId)
+                .eq('item_type', 'PRODUCT')
+                .eq('item_id', targetProductId)
+                .limit(1);
+
+              let invId = '';
+              if (existingInv && existingInv.length > 0) {
+                invId = existingInv[0].id;
+                await supabaseAdmin
+                  .from('inventory')
+                  .update({ quantity: Number(existingInv[0].quantity) + Number(fgQty), last_updated_at: now })
+                  .eq('id', invId);
+              } else {
+                const { data: newInv } = await supabaseAdmin
+                  .from('inventory')
+                  .insert([{
+                    warehouse_id: fgWarehouseId,
                     item_type: 'PRODUCT',
                     item_id: targetProductId,
                     batch_number: prodOrder.batch_number,
-                    quantity: finishedQty,
+                    quantity: fgQty,
                     last_updated_at: now,
-                  },
-                ])
-                .select('id')
-                .single();
-              inventoryId = newInv?.id || '';
-            }
+                  }])
+                  .select('id')
+                  .single();
+                invId = newInv?.id || '';
+              }
 
-            if (inventoryId) {
-              await supabaseAdmin.from('stock_movements').insert([
-                {
-                  inventory_id: inventoryId,
+              if (invId) {
+                await supabaseAdmin.from('stock_movements').insert([{
+                  inventory_id: invId,
                   movement_type: 'IN',
-                  quantity: finishedQty,
+                  quantity: fgQty,
                   reference_id: inspection.id,
                   reference_type: 'QC_RELEASE',
-                  notes: `Rilis lolos QC batch ${prodOrder.batch_number}`,
+                  notes: `Rilis lolos mutu QC batch ${prodOrder.batch_number}`,
                   movement_date: now,
                   created_by: user.userId,
-                },
-              ]);
+                }]);
+              }
             }
           }
         } else if (input.decision === 'REWORK') {
-          // Update status order kembali ke IN_PROGRESS untuk perbaikan
+          // Update status SPK -> REWORK dengan catatan instruksi perbaikan
+          const reworkReason = input.notes || 'Perlu perbaikan cacat mutu kemasan/seal/bumbu';
           await supabaseAdmin
             .from('production_orders')
             .update({
-              status: 'IN_PROGRESS',
+              status: 'REWORK',
+              anomaly_reason: reworkReason,
+              notes: (prodOrder.notes ? prodOrder.notes + ' | ' : '') + `[QC REWORK: ${reworkReason}]`,
               updated_at: now,
             })
             .eq('id', prodOrder.id);
+
+          // Tarik sementara dari memory stock sales agar tidak bisa dipesan
+          await removeMemoryPackedStockByBatch(prodOrder.batch_number);
+
         } else if (input.decision === 'REJECTED') {
-          // Update status order menjadi CANCELLED/REJECTED
+          // Update status SPK -> REJECTED
+          const rejectReason = input.notes || 'Afkir Mutu - Cacat melebihi ambang batas';
           await supabaseAdmin
             .from('production_orders')
             .update({
-              status: 'CANCELLED',
+              status: 'REJECTED',
+              anomaly_reason: rejectReason,
+              notes: (prodOrder.notes ? prodOrder.notes + ' | ' : '') + `[QC REJECTED: ${rejectReason}]`,
               updated_at: now,
             })
             .eq('id', prodOrder.id);
+
+          // Hapus dari stok sales
+          await removeMemoryPackedStockByBatch(prodOrder.batch_number);
+
+          // Alihkan ke Gudang Karantina & Afkir
+          const quarantineWhId = '44444444-0000-0000-0000-000000000003';
+          const targetProductId = prodOrder.results?.[0]?.product_id || prodOrder.product_id;
+          const rejectQty = orderPackings.reduce((s, p) => s + (Number(p.packaged_toples_count) || 0), 0)
+            || prodOrder.results?.[0]?.finished_goods_quantity
+            || prodOrder.target_quantity
+            || 0;
+
+          if (targetProductId && rejectQty > 0) {
+            try {
+              const { data: qInv } = await supabaseAdmin
+                .from('inventory')
+                .insert([{
+                  warehouse_id: quarantineWhId,
+                  item_type: 'PRODUCT',
+                  item_id: targetProductId,
+                  batch_number: prodOrder.batch_number,
+                  quantity: rejectQty,
+                  notes: `Afkir QC: ${rejectReason}`,
+                  last_updated_at: now,
+                }])
+                .select('id')
+                .single();
+
+              if (qInv?.id) {
+                await supabaseAdmin.from('stock_movements').insert([{
+                  inventory_id: qInv.id,
+                  movement_type: 'IN',
+                  quantity: rejectQty,
+                  reference_id: inspection.id,
+                  reference_type: 'QC_REJECT',
+                  notes: `Barang afkir QC dialihkan ke Karantina: ${rejectReason}`,
+                  movement_date: now,
+                  created_by: user.userId,
+                }]);
+              }
+            } catch (qErr) {
+              console.warn('Quarantine inventory insert fallback:', qErr);
+            }
+          }
         }
       }
     }
@@ -324,11 +472,13 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
         totalDefects,
         sampleSize: input.sample_size,
         referenceId: input.reference_id,
+        notes: input.notes,
       },
     });
 
     revalidatePath('/quality-control');
     revalidatePath('/production');
+    revalidatePath('/sales');
     revalidatePath('/inventory');
     return { success: true, data: inspection as DbQcInspection };
   } catch (err: any) {

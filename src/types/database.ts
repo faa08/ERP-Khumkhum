@@ -13,6 +13,7 @@ export type UserRole =
   | 'PRODUCTION'
   | 'MANAGEMENT'
   | 'SALES'
+  | 'SORTING'
   | 'FARMER';
 
 export interface DbUser {
@@ -183,7 +184,7 @@ export interface DbProductionOrder {
   batch_number: string;
   product_id?: string | null;
   target_quantity?: number | null;
-  status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED_WIP' | 'QC_PENDING' | 'RELEASED' | 'COMPLETED' | 'CANCELLED';
+  status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED_WIP' | 'QC_PENDING' | 'RELEASED' | 'COMPLETED' | 'CANCELLED' | 'REWORK' | 'REJECTED';
   product_variant?: string | null;
   input_weight?: number | null;
   output_weight?: number | null;
@@ -194,10 +195,13 @@ export interface DbProductionOrder {
   start_date?: string | null;
   end_date?: string | null;
   created_by?: string | null;
-  // Revisi: kolom tambahan produksi goreng & packing
+  // Revisi: kolom tambahan produksi goreng & packing & QC
   total_kremesan_gram?: number | null;
   total_longsong_count?: number | null;
   unpacked_longsong_count?: number | null;
+  total_packaged_count?: number | null;
+  qc_rework_notes?: string | null;
+  qc_inspection_id?: string | null;
   cycle_time_avg_seconds?: number | null;
   normal_time_seconds?: number | null;
   standard_time_seconds?: number | null;
@@ -254,6 +258,7 @@ export interface DbFryingBatch {
   operator_id?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  timer_started_at?: string | null;
   created_at: string;
   // Joined
   operator?: { id: string; name: string } | null;
@@ -267,6 +272,7 @@ export interface DbPackingEntry {
   longsong_number: number;
   longsong_weight_gram?: number | null;
   packaged_toples_count: number;
+  packaging_type?: string | null;
   packaging_weight_gram?: string | null;
   seasoning_used_gram: number;
   is_packed: boolean;
@@ -275,6 +281,7 @@ export interface DbPackingEntry {
   created_at: string;
   // Joined
   frying_batch?: Pick<DbFryingBatch, 'id' | 'wajan_number' | 'batch_weight_gram'> | null;
+  production_order?: Pick<DbProductionOrder, 'id' | 'batch_number' | 'product_variant'> | null;
 }
 
 export interface DbTimeStudySample {
@@ -295,6 +302,18 @@ export interface DbTimeStudySample {
 export type FlavorVariant = 'Original' | 'Balado' | 'BBQ' | 'Pedas Manis' | 'Super Pedas';
 
 export const FLAVOR_VARIANTS: FlavorVariant[] = ['Original', 'Balado', 'BBQ', 'Pedas Manis', 'Super Pedas'];
+
+export const PACKAGING_TYPES = ['Standing Pouch', 'Toples', 'Pouch', 'Plastik Bantal', 'Box / Dus'] as const;
+export type PackagingType = (typeof PACKAGING_TYPES)[number];
+
+export const PACKAGING_WEIGHTS = [
+  { value: '50g', label: '50 gram' },
+  { value: '75g', label: '75 gram' },
+  { value: '100g', label: '100 gram' },
+  { value: '150g', label: '150 gram' },
+  { value: '250g', label: '250 gram' },
+] as const;
+export type PackagingWeightOption = (typeof PACKAGING_WEIGHTS)[number];
 
 // ─────────────────────────────────────────────
 // QC MODULE TYPES
@@ -480,7 +499,8 @@ export interface DbSalesOrder {
   order_number?: string | null;       // SO-YYYYMMDD-XXX
   customer_id: string;
   order_date: string;
-  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED';
+  status: 'PENDING' | 'PROCESSING' | 'SHIPPED' | 'COMPLETED' | 'CANCELLED' | 'RETURNED';
+  location?: string | null;
   total_amount?: number | null;
   notes?: string | null;
   created_by?: string | null;

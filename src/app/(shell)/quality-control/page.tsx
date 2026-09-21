@@ -127,9 +127,15 @@ export default function QualityControlPage() {
   }, [formState]);
 
   const handleOpenInspection = (batch?: DbProductionOrder) => {
+    const targetBatch = batch || pendingBatches[0];
+    const totalPack = targetBatch?.total_packaged_count || 0;
+    const suggestedSample = totalPack > 0
+      ? String(Math.max(10, Math.min(50, Math.round(totalPack * 0.1) || 20)))
+      : '20';
+
     setFormState({
-      referenceId: batch?.id || (pendingBatches[0]?.id || ''),
-      sampleSize: '50',
+      referenceId: targetBatch?.id || '',
+      sampleSize: suggestedSample,
       defectBurnt: '0',
       defectSalty: '0',
       defectLeaking: '0',
@@ -150,6 +156,10 @@ export default function QualityControlPage() {
       toast.error('Ukuran sampel inspeksi harus > 0');
       return;
     }
+    if ((formState.decision === 'REWORK' || formState.decision === 'REJECTED') && !formState.notes.trim()) {
+      toast.error(`Wajib mengisi catatan evaluasi/instruksi untuk keputusan ${formState.decision === 'REWORK' ? 'REWORK (Perbaikan)' : 'REJECTED (Afkir)'}`);
+      return;
+    }
 
     const payload: CreateQcInspectionInput = {
       reference_type: 'PRODUCTION',
@@ -166,7 +176,7 @@ export default function QualityControlPage() {
 
     const res = await createQcInspection(payload);
     if (res.success) {
-      toast.success(`Hasil inspeksi disimpan! Keputusan: ${formState.decision}`);
+      toast.success(`Hasil inspeksi disimpan! Keputusan Mutu: ${formState.decision}`);
       setInspectionModalOpen(false);
       loadData();
     } else {
@@ -197,38 +207,73 @@ export default function QualityControlPage() {
     },
     {
       accessorKey: 'product_variant',
-      header: 'Varian Produk',
-      cell: ({ row }) => row.original.product_variant || row.original.product?.name || 'Jamur Crispy Original',
+      header: 'Rincian Kemasan & Varian',
+      cell: ({ row }) => (
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 'var(--text-sm)' }}>
+            {row.original.product_variant || row.original.product?.name || 'Jamur Crispy Original'}
+          </div>
+          {row.original.total_packaged_count ? (
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary-700)', fontWeight: 600, marginTop: '2px' }}>
+              Total: {row.original.total_packaged_count} pcs kemasan siap uji
+            </div>
+          ) : null}
+        </div>
+      ),
     },
     {
       accessorKey: 'output_weight',
-      header: 'Berat Jamur Matang',
+      header: 'Hasil Jamur & Rendemen',
       cell: ({ row }) => (
-        <strong>{row.original.output_weight ? `${Number(row.original.output_weight).toFixed(1)} kg` : '-'}</strong>
+        <div>
+          <strong>{row.original.output_weight ? `${Number(row.original.output_weight).toFixed(1)} kg` : '-'}</strong>
+          {row.original.yield_percentage != null && (
+            <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-success-700)' }}>
+              Rendemen: {row.original.yield_percentage}%
+            </div>
+          )}
+        </div>
       ),
     },
     {
-      accessorKey: 'yield_percentage',
-      header: 'Rendemen Produksi',
-      cell: ({ row }) => (
-        <span style={{ fontWeight: 600, color: 'var(--color-success-700)' }}>
-          {row.original.yield_percentage ? `${row.original.yield_percentage}%` : '-'}
-        </span>
-      ),
+      accessorKey: 'status',
+      header: 'Status Alur Mutu',
+      cell: ({ row }) => {
+        const s = row.original.status;
+        const reworkNotes = row.original.qc_rework_notes;
+
+        if (s === 'REWORK') {
+          return (
+            <div>
+              <StatusBadge status="pending" label="REWORK (Uji Ulang)" />
+              {reworkNotes && (
+                <div style={{ fontSize: '11px', color: 'var(--color-warning-800)', marginTop: '3px', maxWidth: '240px', lineHeight: 1.3 }}>
+                  <strong>Catatan:</strong> {reworkNotes}
+                </div>
+              )}
+            </div>
+          );
+        } else if (s === 'QC_PENDING') {
+          return <StatusBadge status="info" label="Menunggu QC" />;
+        } else {
+          return <StatusBadge status="active" label="Kemasan Siap" />;
+        }
+      },
     },
     {
       id: 'action',
       header: '',
       cell: ({ row }) => {
         if (isManagement) return null;
+        const isRework = row.original.status === 'REWORK';
         return (
           <Button
-            variant="primary"
+            variant={isRework ? 'secondary' : 'primary'}
             size="sm"
             onClick={() => handleOpenInspection(row.original)}
             leftIcon={<ShieldCheck size={14} />}
           >
-            Uji Mutu Sampling
+            {isRework ? 'Uji Ulang Mutu' : 'Uji Mutu Sampling'}
           </Button>
         );
       },
@@ -499,21 +544,90 @@ export default function QualityControlPage() {
                 pendingBatches.length > 0
                   ? pendingBatches.map((b) => ({
                       value: b.id,
-                      label: `${b.batch_number} — ${b.product_variant || 'Jamur Crispy'} (${b.output_weight || 0} kg)`,
+                      label: `${b.batch_number} — ${b.product_variant || 'Jamur Crispy'} (${b.total_packaged_count ? `${b.total_packaged_count} pcs` : `${b.output_weight || 0} kg`})`,
                     }))
                   : [{ value: '', label: 'Tidak ada antrean batch' }]
               }
               value={formState.referenceId}
-              onChange={(e) => setFormState({ ...formState, referenceId: e.target.value })}
+              onChange={(e) => {
+                const targetId = e.target.value;
+                const batch = pendingBatches.find((b) => b.id === targetId);
+                const totalPack = batch?.total_packaged_count || 0;
+                const suggestedSample = totalPack > 0
+                  ? String(Math.max(10, Math.min(50, Math.round(totalPack * 0.1) || 20)))
+                  : formState.sampleSize;
+                setFormState({ ...formState, referenceId: targetId, sampleSize: suggestedSample });
+              }}
             />
           </FormField>
+
+          {/* Selected Batch Context Banner */}
+          {(() => {
+            const selectedBatch = pendingBatches.find((b) => b.id === formState.referenceId);
+            if (!selectedBatch) return null;
+            const isRework = selectedBatch.status === 'REWORK';
+            return (
+              <div
+                style={{
+                  padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  background: isRework ? 'var(--color-warning-50)' : 'var(--color-primary-50)',
+                  border: `1px solid ${isRework ? 'var(--color-warning-300)' : 'var(--color-primary-200)'}`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                    Batch: {selectedBatch.batch_number}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      background: isRework ? 'var(--color-warning-200)' : 'var(--color-primary-200)',
+                      color: isRework ? 'var(--color-warning-900)' : 'var(--color-primary-900)',
+                    }}
+                  >
+                    {isRework ? 'REWORK / UJI ULANG' : 'SIAP INSPEKSI MUTU'}
+                  </span>
+                </div>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                  <strong>Rincian Kemasan:</strong> {selectedBatch.product_variant}
+                </div>
+                {selectedBatch.total_packaged_count ? (
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary-800)', fontWeight: 600 }}>
+                    Populasi Batch: {selectedBatch.total_packaged_count} pcs kemasan (Disarankan sampel: min. 10%)
+                  </div>
+                ) : null}
+                {selectedBatch.qc_rework_notes && (
+                  <div
+                    style={{
+                      marginTop: '4px',
+                      padding: '6px 8px',
+                      borderRadius: 'var(--radius-xs)',
+                      background: '#fff',
+                      border: '1px solid var(--color-warning-400)',
+                      color: 'var(--color-warning-900)',
+                      fontSize: '11px',
+                    }}
+                  >
+                    <strong>Instruksi Rework Sebelumnya:</strong> {selectedBatch.qc_rework_notes}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           <FormField label="Ukuran Sampel Uji (N_sample pcs kemasan)" required>
             <Input
               type="number"
               value={formState.sampleSize}
               onChange={(e) => setFormState({ ...formState, sampleSize: e.target.value })}
-              placeholder="50"
+              placeholder="20"
             />
           </FormField>
 
@@ -573,7 +687,7 @@ export default function QualityControlPage() {
             <div style={{ marginTop: 'var(--space-3)', padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between' }}>
               <span>Total Cacat Terhitung: <strong>{liveDefects.total} pcs</strong></span>
               <strong style={{ color: liveDefects.rate <= 5.0 ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>
-                Defect Rate: {liveDefects.rate}% (Maks. toleransi: 5.0%)
+                Defect Rate: {liveDefects.rate}% (Maks. toleransi lolos: 5.0%)
               </strong>
             </div>
           </div>
@@ -605,14 +719,25 @@ export default function QualityControlPage() {
                 REJECTED (Afkir)
               </Button>
             </div>
+            {(formState.decision === 'REWORK' || formState.decision === 'REJECTED') && (
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-600)', marginTop: '4px', display: 'block', fontWeight: 600 }}>
+                * Wajib mengisi Catatan Evaluasi di bawah sebagai instruksi perbaikan ke lini produksi atau alasan afkir.
+              </span>
+            )}
           </FormField>
 
-          <FormField label="Catatan Evaluasi & Rekomendasi Mutu">
+          <FormField label={`Catatan Evaluasi & Rekomendasi Mutu ${formState.decision !== 'RELEASED' ? '(Wajib)' : ''}`} required={formState.decision !== 'RELEASED'}>
             <Textarea
               rows={2}
               value={formState.notes}
               onChange={(e) => setFormState({ ...formState, notes: e.target.value })}
-              placeholder="Catatan parameter kerenyahan, aroma, rasa, dan kerapatan seal..."
+              placeholder={
+                formState.decision === 'REWORK'
+                  ? 'Tulis instruksi perbaikan untuk operator (misal: perbaiki seal kemasan nomor 1-20, bumbu tabur kurang merata)...'
+                  : formState.decision === 'REJECTED'
+                  ? 'Tulis alasan penolakan/afkir (misal: defect rate melebihi 10%, aroma tengik, melempem parah)...'
+                  : 'Catatan parameter kerenyahan, aroma, rasa, dan kerapatan seal...'
+              }
             />
           </FormField>
         </div>

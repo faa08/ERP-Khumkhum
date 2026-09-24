@@ -246,6 +246,7 @@ export async function importSalesOrderBulk(
       const { data, error } = await supabaseAdmin.from('sales_orders').insert(chunk).select('id, order_number');
       if (error) {
         console.error('SO insert chunk error', error);
+        throw new Error(`Gagal menyimpan data: ${error.message}`);
       } else if (data) {
         insertedOrders = [...insertedOrders, ...data];
       }
@@ -275,7 +276,10 @@ export async function importSalesOrderBulk(
     // Chunk insert for SO items
     for (let i = 0; i < itemsPayload.length; i += CHUNK_SIZE) {
       const chunk = itemsPayload.slice(i, i + CHUNK_SIZE);
-      await supabaseAdmin.from('sales_order_items').insert(chunk);
+      const { error } = await supabaseAdmin.from('sales_order_items').insert(chunk);
+      if (error) {
+        throw new Error(`Gagal menyimpan item pesanan: ${error.message}`);
+      }
     }
 
     revalidatePath('/sales');

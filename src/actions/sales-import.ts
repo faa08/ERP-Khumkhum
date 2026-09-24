@@ -57,11 +57,30 @@ export async function importSalesOrderBulk(
       // --- LEGACY KHUMKHUM EXPORT FORMAT ---
       // Row 5: Headers
       // Data starts Row 6
+      let lastDate: any = null;
+      let lastCust: string = '';
+
+      function extractText(cell: ExcelJS.Cell): string {
+        if (!cell) return '';
+        if (typeof cell.value === 'string') return cell.value.trim();
+        if (cell.value && typeof cell.value === 'object' && (cell.value as any).richText) {
+          return (cell.value as any).richText.map((rt: any) => rt.text).join('').trim();
+        }
+        return cell.text ? cell.text.trim() : '';
+      }
+
       for (let i = 6; i <= rowCount; i++) {
         const row = sheet.getRow(i);
-        const dateCell = row.getCell(3).value;
-        const custRaw = row.getCell(4).text?.trim();
-        const skuNameRaw = row.getCell(5).text?.trim();
+        
+        let dateCell = row.getCell(3).value;
+        if (!dateCell) dateCell = lastDate;
+        else lastDate = dateCell;
+
+        let custRaw = extractText(row.getCell(4));
+        if (!custRaw || custRaw === '[object Object]') custRaw = lastCust;
+        else lastCust = custRaw;
+
+        const skuNameRaw = extractText(row.getCell(5));
         const qtyCell = row.getCell(7).value;
         const priceCell = row.getCell(8).value;
 

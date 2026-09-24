@@ -231,7 +231,6 @@ export async function importSalesOrderBulk(
         customer_id: resolvedCustomerId,
         order_date: orderData.date,
         status: 'COMPLETED' as any, // Historical data is treated as completed
-        location: orderData.location,
         total_amount: totalAmount,
         notes: isKhumkhumLegacy ? 'Impor Histori Khumkhum' : 'Bulk Upload',
         created_by: user.userId

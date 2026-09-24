@@ -32,9 +32,14 @@ function LoginForm() {
     clearError();
     const success = await login(data);
     if (success) {
-      const redirectUrl = searchParams.get('redirect');
+      let redirectUrl = searchParams.get('redirect');
+      if (!redirectUrl && typeof window !== 'undefined') {
+        const urlParams = new URLSearchParams(window.location.search);
+        redirectUrl = urlParams.get('redirect');
+      }
+
       if (redirectUrl && redirectUrl.startsWith('/')) {
-        router.push(redirectUrl);
+        window.location.href = redirectUrl;
       } else {
         router.push(ROUTES.DASHBOARD);
       }

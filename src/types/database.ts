@@ -59,6 +59,7 @@ export interface DbRawMaterial {
   code: string;
   name: string;
   uom: string;
+  material_category?: string | null;
   min_stock?: number | null;
   rop?: number | null;
   created_at: string;

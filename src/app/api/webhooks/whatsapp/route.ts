@@ -3,13 +3,15 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
 import { logAuditEvent } from '@/actions/audit';
 
+import { parseFarmerMessage } from '@/lib/ai-parser';
+
 /**
  * WhatsApp Webhook — Fonnte Inbound
  *
- * Revisi Developer 1:
- * - Tidak memaksakan format kaku (SETOR [KG], LIBUR).
- * - Tidak membuat antrean forecast palsu ke PPIC.
- * - Cukup log pesan masuk dan balas santai jika nomor petani terdaftar.
+ * Revisi Hybrid AI-Human:
+ * - Menggunakan AI NLP (Gemini) untuk memparsing teks bebas / foto dari petani
+ * - Membuat draf estimasi kedatangan secara otomatis
+ * - Membalas luwes menggunakan response dari AI
  */
 export async function POST(req: NextRequest) {
   try {
@@ -56,10 +58,24 @@ export async function POST(req: NextRequest) {
     let replyMessage: string;
 
     if (farmer) {
-      // Petani terdaftar — balas santai informatif
-      replyMessage =
-        `Halo Pak/Bu ${farmer.name}, chat/info setoran jamur Anda telah kami terima. ` +
-        `Tim gudang KhumKhum akan memproses penimbangan saat jamur fisik tiba di pabrik. Terima kasih!`;
+      // Parse pesan dengan AI
+      const aiResult = await parseFarmerMessage(message);
+      
+      // Jika AI mendeteksi ini adalah estimasi kirim, buat draft di DB
+      if (aiResult.intent === 'ESTIMATE') {
+        const todayStr = new Date().toISOString().split('T')[0];
+        
+        await supabaseAdmin.from('farmer_harvest_estimates').insert({
+          farmer_id: farmer.id,
+          expected_date: todayStr,
+          estimated_kg: aiResult.weight_kg || 0, // 0 jika AI tidak nemu angka/hanya foto
+          source: 'WA_BOT',
+        });
+        
+        console.log(`Created draft estimate for ${farmer.name}: ${aiResult.weight_kg} kg`);
+      }
+      
+      replyMessage = aiResult.suggested_reply;
     } else {
       // Nomor tidak dikenal — balas ramah
       replyMessage =

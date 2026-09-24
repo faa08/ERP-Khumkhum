@@ -45,6 +45,7 @@ import {
   type SalesRealtimeTrackingData,
   type FinishedGoodSalesStock,
 } from '@/actions/sales';
+import { importSalesOrderBulk } from '@/actions/sales-import';
 import { getCustomers, getProducts } from '@/actions/master';
 import type { DbSalesOrder, DbProduct } from '@/types/database';
 
@@ -94,7 +95,11 @@ export default function SalesPage() {
 
   // Drawers & Modals
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadCustomer, setUploadCustomer] = useState('');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [viewItem, setViewItem] = useState<DbSalesOrder | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
@@ -238,6 +243,29 @@ export default function SalesPage() {
       loadData();
     } else {
       toast.error(res.error || 'Gagal menyimpan pesanan penjualan');
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!uploadCustomer) {
+      toast.error('Pilih Platform / Customer terlebih dahulu');
+      return;
+    }
+    if (!uploadFile) {
+      toast.error('Pilih file Excel yang akan diunggah');
+      return;
+    }
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', uploadFile);
+    const res = await importSalesOrderBulk(formData, uploadCustomer);
+    setIsUploading(false);
+    if (res.success) {
+      toast.success(res.error || `Berhasil mengimpor ${res.count} pesanan!`);
+      setUploadOpen(false);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal mengimpor data');
     }
   };
 
@@ -504,6 +532,17 @@ export default function SalesPage() {
         breadcrumbs={[{ label: 'Operasional' }, { label: 'Sales & Orders' }]}
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setUploadCustomer('');
+                setUploadFile(null);
+                setUploadOpen(true);
+              }}
+              leftIcon={<FileText className="w-4 h-4 text-currentColor" aria-hidden="true" />}
+            >
+              Upload Excel
+            </Button>
             <Button
               variant="secondary"
               onClick={() => loadData(true)}
@@ -1254,6 +1293,71 @@ export default function SalesPage() {
         description={confirmDialog.description}
         variant={confirmDialog.variant}
       />
+
+      {/* ── UPLOAD EXCEL DRAWER ── */}
+      <Drawer
+        isOpen={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        title="Upload Bulk Sales Order (Excel)"
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+            <a href="/api/sales-template" target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" leftIcon={<FileText className="w-4 h-4" />}>
+                Download Template
+              </Button>
+            </a>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <Button variant="secondary" onClick={() => setUploadOpen(false)}>Batal</Button>
+              <Button variant="primary" onClick={handleUpload} loading={isUploading}>
+                Upload & Proses
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div style={{ padding: 'var(--space-3)', background: 'var(--color-primary-50)', borderRadius: 'var(--radius-md)', color: 'var(--color-primary-800)', fontSize: 'var(--text-sm)' }}>
+            Gunakan fitur ini untuk mengunggah ratusan pesanan dari Shopee, Tokopedia, TikTok Shop, atau distributor sekaligus tanpa perlu input manual satu per satu.
+          </div>
+          
+          <FormField label="Pilih Customer / Platform Asal Order" required>
+            <select
+              value={uploadCustomer}
+              onChange={e => setUploadCustomer(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-default)',
+                background: 'var(--bg-default)',
+              }}
+            >
+              <option value="">-- Pilih Customer / Marketplace --</option>
+              {customers.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
+
+          <FormField label="File Excel (.xlsx)" required>
+            <Input
+              type="file"
+              accept=".xlsx"
+              onChange={e => {
+                if (e.target.files && e.target.files.length > 0) {
+                  setUploadFile(e.target.files[0]);
+                }
+              }}
+            />
+            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+              Pastikan format kolom sesuai dengan template (Maksimal 5MB).
+            </div>
+          </FormField>
+        </div>
+      </Drawer>
     </div>
   );
 }

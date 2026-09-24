@@ -627,3 +627,74 @@ export async function testSendReminderAction(picId: string): Promise<{ success: 
     return { success: false, error: err.message };
   }
 }
+
+// ─────────────────────────────────────────────
+// WIZARD INIT INVENTORY
+// ─────────────────────────────────────────────
+
+export async function initializeInventory(items: { item_id: string; item_type: 'RAW_MATERIAL' | 'PRODUCT'; quantity: number }[]): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['SUPER_ADMIN']);
+    
+    // Get the first warehouse
+    const { data: wh, error: whErr } = await supabaseAdmin.from('warehouses').select('id').limit(1).single();
+    if (whErr || !wh) throw new Error('Gudang belum tersedia');
+
+    for (const item of items) {
+      if (item.quantity <= 0) continue;
+
+      // Cegah duplikasi dengan mengecek apakah baris inventory sudah ada
+      const { data: existingInv } = await supabaseAdmin
+        .from('inventory')
+        .select('id, quantity')
+        .eq('warehouse_id', wh.id)
+        .eq('item_id', item.item_id)
+        .eq('item_type', item.item_type)
+        .maybeSingle();
+
+      let inv;
+      if (existingInv) {
+        // Update stok jika sudah ada
+        const { data: updatedInv, error: updateErr } = await supabaseAdmin
+          .from('inventory')
+          .update({
+            quantity: existingInv.quantity + item.quantity,
+            last_updated_at: new Date().toISOString()
+          })
+          .eq('id', existingInv.id)
+          .select()
+          .single();
+        if (updateErr) throw updateErr;
+        inv = updatedInv;
+      } else {
+        // Insert jika belum ada
+        const { data: newInv, error: insertErr } = await supabaseAdmin
+          .from('inventory')
+          .insert({
+            warehouse_id: wh.id,
+            item_id: item.item_id,
+            item_type: item.item_type,
+            quantity: item.quantity,
+            batch_number: 'INIT-' + new Date().getTime()
+          })
+          .select()
+          .single();
+        if (insertErr) throw insertErr;
+        inv = newInv;
+      }
+
+      await supabaseAdmin.from('stock_movements').insert({
+        inventory_id: inv.id,
+        movement_type: 'IN',
+        quantity: item.quantity,
+        reference_type: 'MANUAL_INBOUND',
+        notes: 'Saldo Awal via Setup Wizard',
+        created_by: user.userId
+      });
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

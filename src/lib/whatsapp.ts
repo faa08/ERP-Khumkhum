@@ -114,9 +114,6 @@ export function formatStockInquiryMessage(params: {
   );
 }
 
-/**
- * Nota Penerimaan Bahan Baku untuk Petani (tetap aktif).
- */
 export function formatReceivingReceiptMessage(params: {
   farmerName: string;
   batchNumber: string;
@@ -126,13 +123,8 @@ export function formatReceivingReceiptMessage(params: {
   return (
     `*NOTA PENERIMAAN JAMUR — KHUMKHUM ERP*\n` +
     `---------------------------------------\n` +
-    `Halo *${params.farmerName}*,\n` +
-    `Setoran jamur segar Anda telah kami terima dengan rincian:\n\n` +
-    `*No. Batch:* ${params.batchNumber}\n` +
-    `*Berat Timbang Bersih:* ${params.weight.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} kg\n` +
-    `*Tanggal Terima:* ${params.date}\n` +
-    `*Lokasi:* Pabrik KhumKhum Jamur Crispy (Kulon Progo)\n\n` +
-    `_Data telah terverifikasi dan masuk ke antrean sortasi pabrik. Terima kasih!_`
+    `Terima kasih Pak/Bu *${params.farmerName}*, jamur sudah kami terima dan timbang dengan berat aktual *${params.weight.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} Kg*.\n\n` +
+    `Uang akan segera diproses/ditransfer ya. Terima kasih!`
   );
 }
 

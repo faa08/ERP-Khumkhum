@@ -217,6 +217,10 @@ export async function updateReceiving(input: UpdateReceivingInput): Promise<{
     return { success: true, data: data as DbReceiving };
   } catch (err: any) {
     console.error('updateReceiving error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function getFarmerRecap(month: number, year: number, farmerId?: string) {
   try {
     await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);

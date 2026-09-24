@@ -342,6 +342,7 @@ async function getActualConsumptionRatios(): Promise<{
 // ─────────────────────────────────────────────
 
 async function getCurrentStockByMaterial(): Promise<Map<string, { stock: number; uom: string }>> {
+  // Key will now be material_category (e.g., 'Jamur', 'Minyak', 'Bumbu', 'Tepung', 'Packaging') instead of fuzzy name
   const stockMap = new Map<string, { stock: number; uom: string }>();
 
   try {
@@ -355,19 +356,19 @@ async function getCurrentStockByMaterial(): Promise<Map<string, { stock: number;
     const itemIds = inventory.map((inv: any) => inv.item_id);
     const { data: rawMaterials } = await supabaseAdmin
       .from('raw_materials')
-      .select('id, name, uom')
+      .select('id, name, uom, material_category')
       .in('id', itemIds);
 
-    const nameMap = new Map(
-      (rawMaterials || []).map((rm: any) => [rm.id, { name: rm.name, uom: rm.uom }])
+    const categoryMap = new Map(
+      (rawMaterials || []).map((rm: any) => [rm.id, { category: rm.material_category || rm.name, uom: rm.uom }])
     );
 
     inventory.forEach((inv: any) => {
-      const info = nameMap.get(inv.item_id);
-      if (info) {
-        const existing = stockMap.get(info.name) || { stock: 0, uom: info.uom };
+      const info = categoryMap.get(inv.item_id);
+      if (info && info.category) {
+        const existing = stockMap.get(info.category) || { stock: 0, uom: info.uom };
         existing.stock += Number(inv.quantity || 0);
-        stockMap.set(info.name, existing);
+        stockMap.set(info.category, existing);
       }
     });
   } catch {
@@ -520,7 +521,7 @@ export async function getMaterialForecast(): Promise<{
         uom: 'pcs',
         confidence: 'Tinggi',
         notes: 'Target kemasan 100g dengan rendemen 80%. Dihitung: (demand × 0.80) ÷ 0.10 kg per pouch.',
-        stockKey: 'Kemasan',
+        stockKey: 'Packaging', // Maps to material_category ENUM in DB
       },
     ];
 
@@ -536,10 +537,10 @@ export async function getMaterialForecast(): Promise<{
         ? Math.ceil(projectedDemand * 0.10)
         : parseFloat((projectedDemand * 0.10).toFixed(1));
 
-      // Find current stock — fuzzy match by stockKey
+      // Find current stock by exact category match, fallback to fuzzy name match for legacy items
       let currentStock = 0;
-      for (const [name, info] of stockMap.entries()) {
-        if (name.toLowerCase().includes(item.stockKey.toLowerCase())) {
+      for (const [key, info] of stockMap.entries()) {
+        if (key.toLowerCase() === item.stockKey.toLowerCase() || key.toLowerCase().includes(item.stockKey.toLowerCase())) {
           currentStock += info.stock;
         }
       }

@@ -8,17 +8,15 @@ import { getProducts } from '@/actions/master';
 
 export async function importSalesOrderBulk(
   formData: FormData,
-  customerId: string
+  defaultCustomerId: string // fallback if format is standard
 ): Promise<{ success: boolean; error?: string; count?: number }> {
   try {
     const { user } = await requireAuth(['SUPER_ADMIN', 'SALES']);
     
-    if (!customerId) throw new Error('Customer (Platform) wajib dipilih');
-
     const file = formData.get('file') as File;
     if (!file) throw new Error('File tidak ditemukan');
 
-    const MAX_FILE_SIZE = 5 * 1024 * 1024;
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
     if (file.size > MAX_FILE_SIZE) throw new Error('Ukuran file maksimal adalah 5MB.');
 
     const buffer = await file.arrayBuffer();
@@ -35,18 +33,19 @@ export async function importSalesOrderBulk(
     const { data: productsData } = await getProducts();
     const products = productsData || [];
     const productCache = new Map<string, string>(); // name/sku -> id
-
     for (const p of products) {
       productCache.set((p.sku || '').toLowerCase().trim(), p.id);
       productCache.set((p.name || '').toLowerCase().trim(), p.id);
     }
-
-    // Default product if mismatch (first product in db)
     const defaultProductId = products[0]?.id;
 
-    // Grouping rows by Order Number
+    // Detect format
+    const isKhumkhumLegacy = sheet.getCell('B2').text?.includes('Penjualan Pelanggan per Barang');
+
+    // Orders map grouping
     const ordersMap = new Map<string, {
       date: string;
+      customerName?: string;
       location: string;
       items: { product_id: string; quantity: number; unit_price: number }[];
     }>();
@@ -54,117 +53,220 @@ export async function importSalesOrderBulk(
     const errors: string[] = [];
     let processedRows = 0;
 
-    for (let i = 2; i <= rowCount; i++) {
-      const row = sheet.getRow(i);
-      
-      const orderNoRaw = row.getCell(1).text?.trim();
-      const orderNo = orderNoRaw || `SO-BULK-${Date.now()}-${i}`; // Default if empty
-      
-      const dateCell = row.getCell(2).value;
-      const skuNameRaw = row.getCell(3).text?.trim();
-      const qtyCell = row.getCell(4).value;
-      const priceCell = row.getCell(5).value;
-      const locCell = row.getCell(6).text?.trim() || '';
+    if (isKhumkhumLegacy) {
+      // --- LEGACY KHUMKHUM EXPORT FORMAT ---
+      // Row 5: Headers
+      // Data starts Row 6
+      for (let i = 6; i <= rowCount; i++) {
+        const row = sheet.getRow(i);
+        const dateCell = row.getCell(3).value;
+        const custRaw = row.getCell(4).text?.trim();
+        const skuNameRaw = row.getCell(5).text?.trim();
+        const qtyCell = row.getCell(7).value;
+        const priceCell = row.getCell(8).value;
 
-      if (!skuNameRaw || !qtyCell) continue; // Skip empty crucial columns
+        if (!custRaw || !skuNameRaw || !qtyCell) continue;
+        if (skuNameRaw.toLowerCase().includes('total nama barang')) continue; // Skip subtotal rows
 
-      // Parse Date
-      let dateString = new Date().toISOString();
-      if (dateCell) {
-        if (dateCell instanceof Date) {
-          dateString = dateCell.toISOString();
-        } else {
-          const d = new Date(dateCell.toString());
-          if (!isNaN(d.getTime())) dateString = d.toISOString();
+        // Parse Date
+        let dateString = new Date().toISOString();
+        if (dateCell) {
+          if (dateCell instanceof Date) {
+            dateString = dateCell.toISOString();
+          } else {
+            const d = new Date(dateCell.toString());
+            if (!isNaN(d.getTime())) dateString = d.toISOString();
+          }
         }
-      }
 
-      const qty = parseFloat(qtyCell.toString()) || 0;
-      const price = parseFloat((priceCell || 0).toString()) || 0;
+        const qty = parseFloat(qtyCell.toString()) || 0;
+        const price = parseFloat((priceCell || 0).toString()) || 0;
+        if (qty <= 0) continue;
 
-      if (qty <= 0) continue;
-
-      // Match product
-      let matchedProductId = productCache.get(skuNameRaw.toLowerCase());
-      
-      // Try fuzzy match if exact fails
-      if (!matchedProductId) {
-        const found = products.find(p => p.name.toLowerCase().includes(skuNameRaw.toLowerCase()));
-        if (found) matchedProductId = found.id;
-      }
-
-      if (!matchedProductId) {
-        if (defaultProductId) {
-          matchedProductId = defaultProductId;
-        } else {
-          errors.push(`Baris ${i}: Produk '${skuNameRaw}' tidak dikenali dan master produk kosong.`);
-          continue;
+        // Match product (Fuzzy)
+        let matchedProductId = productCache.get(skuNameRaw.toLowerCase());
+        if (!matchedProductId) {
+          const found = products.find(p => p.name.toLowerCase().includes(skuNameRaw.toLowerCase()));
+          if (found) matchedProductId = found.id;
         }
-      }
+        if (!matchedProductId) {
+          if (defaultProductId) matchedProductId = defaultProductId;
+          else continue;
+        }
 
-      processedRows++;
+        processedRows++;
 
-      if (!ordersMap.has(orderNo)) {
-        ordersMap.set(orderNo, {
-          date: dateString,
-          location: locCell,
-          items: []
+        // Group by Customer + Date to form an Order
+        const dateOnly = dateString.split('T')[0];
+        const custCode = custRaw.substring(0, 5).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const orderNo = `SO-${custCode}-${dateOnly}`;
+
+        if (!ordersMap.has(orderNo)) {
+          ordersMap.set(orderNo, {
+            date: dateString,
+            customerName: custRaw,
+            location: 'Cabang Utama',
+            items: []
+          });
+        }
+        ordersMap.get(orderNo)!.items.push({
+          product_id: matchedProductId,
+          quantity: qty,
+          unit_price: price > 0 ? (price / qty) : 0 // The report gives Total Penjualan, so we divide by qty
         });
       }
+    } else {
+      // --- STANDARD TEMPLATE FORMAT ---
+      if (!defaultCustomerId) throw new Error('Customer wajib dipilih untuk template standar');
+      for (let i = 2; i <= rowCount; i++) {
+        const row = sheet.getRow(i);
+        const orderNoRaw = row.getCell(1).text?.trim();
+        const orderNo = orderNoRaw || `SO-BULK-${Date.now()}-${i}`;
+        const dateCell = row.getCell(2).value;
+        const skuNameRaw = row.getCell(3).text?.trim();
+        const qtyCell = row.getCell(4).value;
+        const priceCell = row.getCell(5).value;
+        const locCell = row.getCell(6).text?.trim() || '';
 
-      ordersMap.get(orderNo)!.items.push({
-        product_id: matchedProductId,
-        quantity: qty,
-        unit_price: price
-      });
+        if (!skuNameRaw || !qtyCell) continue;
+
+        let dateString = new Date().toISOString();
+        if (dateCell) {
+          if (dateCell instanceof Date) dateString = dateCell.toISOString();
+          else {
+            const d = new Date(dateCell.toString());
+            if (!isNaN(d.getTime())) dateString = d.toISOString();
+          }
+        }
+
+        const qty = parseFloat(qtyCell.toString()) || 0;
+        const price = parseFloat((priceCell || 0).toString()) || 0;
+        if (qty <= 0) continue;
+
+        let matchedProductId = productCache.get(skuNameRaw.toLowerCase());
+        if (!matchedProductId) {
+          const found = products.find(p => p.name.toLowerCase().includes(skuNameRaw.toLowerCase()));
+          if (found) matchedProductId = found.id;
+        }
+        if (!matchedProductId) {
+          if (defaultProductId) matchedProductId = defaultProductId;
+          else continue;
+        }
+
+        processedRows++;
+
+        if (!ordersMap.has(orderNo)) {
+          ordersMap.set(orderNo, {
+            date: dateString,
+            location: locCell,
+            items: []
+          });
+        }
+        ordersMap.get(orderNo)!.items.push({
+          product_id: matchedProductId,
+          quantity: qty,
+          unit_price: price
+        });
+      }
     }
 
     if (processedRows === 0) {
       throw new Error('Tidak ada baris data valid yang bisa diproses.');
     }
 
-    // Insert grouped orders to DB
-    let successCount = 0;
-    
-    for (const [orderNumber, orderData] of ordersMap.entries()) {
-      try {
-        const totalAmount = orderData.items.reduce((sum, it) => sum + (it.quantity * it.unit_price), 0);
+    // --- BULK INSERT LOGIC (Optimized for large 13000 row datasets) ---
+    // 1. Resolve Customers
+    const uniqueCustomerNames = Array.from(new Set(Array.from(ordersMap.values()).map(o => o.customerName).filter(Boolean))) as string[];
+    const customerIdMap = new Map<string, string>();
 
-        const { data: so, error: soErr } = await supabaseAdmin.from('sales_orders').insert({
-          customer_id: customerId,
-          order_number: orderNumber,
-          order_date: orderData.date,
-          status: 'PENDING',
-          location: orderData.location,
-          total_amount: totalAmount,
-          notes: 'Diimpor via Bulk Upload Excel',
-          created_by: user.userId
-        }).select('id').single();
+    if (isKhumkhumLegacy && uniqueCustomerNames.length > 0) {
+      const { data: existingCustomers } = await supabaseAdmin.from('customers').select('id, name');
+      const missingCustomers = [];
+      for (const name of uniqueCustomerNames) {
+        const found = existingCustomers?.find(c => c.name.toLowerCase() === name.toLowerCase());
+        if (found) {
+          customerIdMap.set(name, found.id);
+        } else {
+          missingCustomers.push({ name, contact: 'Diimpor otomatis' });
+        }
+      }
+      
+      if (missingCustomers.length > 0) {
+        // Bulk insert missing customers
+        const { data: insertedCustomers } = await supabaseAdmin.from('customers').insert(missingCustomers).select('id, name');
+        if (insertedCustomers) {
+          insertedCustomers.forEach(c => customerIdMap.set(c.name, c.id));
+        }
+      }
+    }
 
-        if (soErr || !so) throw new Error(soErr?.message || 'Gagal membuat SO');
+    // 2. Prepare and Bulk Insert Sales Orders
+    const salesOrdersPayload = Array.from(ordersMap.entries()).map(([orderNo, orderData]) => {
+      let resolvedCustomerId = defaultCustomerId;
+      if (isKhumkhumLegacy && orderData.customerName) {
+        resolvedCustomerId = customerIdMap.get(orderData.customerName) || defaultCustomerId;
+      }
+      const totalAmount = orderData.items.reduce((sum, it) => sum + (it.quantity * it.unit_price), 0);
+      return {
+        order_number: orderNo,
+        customer_id: resolvedCustomerId,
+        order_date: orderData.date,
+        status: 'COMPLETED' as any, // Historical data is treated as completed
+        location: orderData.location,
+        total_amount: totalAmount,
+        notes: isKhumkhumLegacy ? 'Impor Histori Khumkhum' : 'Bulk Upload',
+        created_by: user.userId
+      };
+    });
 
-        const itemsPayload = orderData.items.map(it => ({
-          sales_order_id: so.id,
+    // Chunk insert for SOs to avoid payload limits
+    let insertedOrders: any[] = [];
+    const CHUNK_SIZE = 500;
+    for (let i = 0; i < salesOrdersPayload.length; i += CHUNK_SIZE) {
+      const chunk = salesOrdersPayload.slice(i, i + CHUNK_SIZE);
+      const { data, error } = await supabaseAdmin.from('sales_orders').insert(chunk).select('id, order_number');
+      if (error) {
+        console.error('SO insert chunk error', error);
+      } else if (data) {
+        insertedOrders = [...insertedOrders, ...data];
+      }
+    }
+
+    // Map order_number -> SO id
+    const soIdMap = new Map<string, string>();
+    insertedOrders.forEach(o => soIdMap.set(o.order_number, o.id));
+
+    // 3. Prepare and Bulk Insert Sales Order Items
+    let itemsPayload: any[] = [];
+    for (const [orderNo, orderData] of ordersMap.entries()) {
+      const soId = soIdMap.get(orderNo);
+      if (!soId) continue; // skip if SO failed to insert
+      
+      orderData.items.forEach(it => {
+        itemsPayload.push({
+          sales_order_id: soId,
           product_id: it.product_id,
           quantity: it.quantity,
           unit_price: it.unit_price,
           subtotal: it.quantity * it.unit_price
-        }));
+        });
+      });
+    }
 
-        await supabaseAdmin.from('sales_order_items').insert(itemsPayload);
-        successCount++;
-      } catch (err: any) {
-        errors.push(`Order ${orderNumber}: ${err.message}`);
-      }
+    // Chunk insert for SO items
+    for (let i = 0; i < itemsPayload.length; i += CHUNK_SIZE) {
+      const chunk = itemsPayload.slice(i, i + CHUNK_SIZE);
+      await supabaseAdmin.from('sales_order_items').insert(chunk);
     }
 
     revalidatePath('/sales');
     revalidatePath('/inventory');
+    revalidatePath('/ai-forecast');
 
     return { 
       success: true, 
-      count: successCount, 
-      error: errors.length > 0 ? `Berhasil mengimpor ${successCount} pesanan, namun ada masalah: ${errors[0]}` : undefined 
+      count: insertedOrders.length, 
+      error: errors.length > 0 ? `Berhasil mengimpor ${insertedOrders.length} grup pesanan, namun ada masalah: ${errors[0]}` : undefined 
     };
 
   } catch (err: any) {

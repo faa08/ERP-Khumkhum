@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import React, { useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -12,8 +13,9 @@ import { ROUTES } from '@/lib/constants';
 import { Alert } from '@/components/ui/Alert';
 import styles from './login.module.css';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, isLoading, error, clearError } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
 
@@ -30,7 +32,6 @@ export default function LoginPage() {
     clearError();
     const success = await login(data);
     if (success) {
-      const searchParams = new URLSearchParams(window.location.search);
       const redirectUrl = searchParams.get('redirect');
       if (redirectUrl && redirectUrl.startsWith('/')) {
         router.push(redirectUrl);
@@ -149,5 +150,13 @@ export default function LoginPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }

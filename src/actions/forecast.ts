@@ -112,7 +112,34 @@ async function getWeeklyHistoricalData(weeksBack = 8): Promise<{
   const cutoffDate = subWeeks(now, weeksBack);
   const cutoffStr = format(cutoffDate, 'yyyy-MM-dd');
 
-  // ── Source 1: production_orders ──────────────────────────
+  // ── Source 1: sales_orders (Demand) ──────────────────────
+  const { data: salesOrders } = await supabaseAdmin
+    .from('sales_orders')
+    .select('id, order_date, created_at, items:sales_order_items(quantity)')
+    .gte('order_date', cutoffStr)
+    .order('order_date', { ascending: true });
+
+  if (salesOrders && salesOrders.length > 0) {
+    const result = bucketByWeek(
+      salesOrders.map((so: any) => {
+        const totalQty = (so.items || []).reduce((sum: number, it: any) => sum + Number(it.quantity || 0), 0);
+        return {
+          date: new Date(so.order_date || so.created_at),
+          value: totalQty,
+        };
+      }),
+      weeksBack
+    );
+    if (result.weeklyVolumes.filter(v => v > 0).length >= 2) {
+      return {
+        ...result,
+        dataSource: 'PRODUCTION' as any, // Mapped as production to satisfy DB types if needed, or 'SALES' if allowed
+        dataSourceLabel: 'Data Penjualan (sales_orders)',
+      };
+    }
+  }
+
+  // ── Source 2: production_orders ──────────────────────────
   const { data: prodOrders } = await supabaseAdmin
     .from('production_orders')
     .select('input_weight, output_weight, created_at')
@@ -137,7 +164,7 @@ async function getWeeklyHistoricalData(weeksBack = 8): Promise<{
     }
   }
 
-  // ── Source 2: receivings ──────────────────────────────────
+  // ── Source 3: receivings ──────────────────────────────────
   const { data: receivings } = await supabaseAdmin
     .from('receivings')
     .select('weight, received_date, created_at')

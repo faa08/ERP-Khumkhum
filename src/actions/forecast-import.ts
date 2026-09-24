@@ -31,20 +31,40 @@ export async function importHistoricalData(formData: FormData): Promise<{ succes
     // Identify sheets
     const sheetProduksi = workbook.getWorksheet('2. Data Produksi');
     const sheetPenjualan = workbook.getWorksheet('3. Data Penjualan');
+    
+    // Check for Khumkhum legacy format
+    const sheetKhumkhum = workbook.worksheets[0];
+    const isKhumkhumLegacy = sheetKhumkhum?.getCell('B2').text?.includes('Penjualan Pelanggan per Barang');
 
-    if (!sheetProduksi && !sheetPenjualan) {
-      throw new Error('Format file tidak sesuai. Pastikan Anda menggunakan file template terbaru yang memiliki 3 Sheet.');
+    if (!sheetProduksi && !sheetPenjualan && !isKhumkhumLegacy) {
+      throw new Error('Format file tidak sesuai. Pastikan Anda menggunakan file template terbaru yang memiliki 3 Sheet, atau gunakan format laporan KhumKhum asli.');
     }
 
     let successCount = 0;
     const errors: string[] = [];
 
-    // Helper to get dummy product
+    // Helper to get dummy product & customer
     const { data: productData } = await supabaseAdmin.from('products').select('id').limit(1).maybeSingle();
     const defaultProductId = productData?.id;
 
-    if (!defaultProductId && sheetPenjualan) {
+    if (!defaultProductId && (sheetPenjualan || isKhumkhumLegacy)) {
       throw new Error('Master Data Produk kosong. Harap buat minimal 1 produk terlebih dahulu sebelum mengimpor data penjualan historis.');
+    }
+
+    if (isKhumkhumLegacy) {
+      // Delegate to our smart 13k row parser
+      const { importSalesOrderBulk } = await import('./sales-import');
+      // Get a default customer just in case the smart parser needs a fallback
+      const { data: custData } = await supabaseAdmin.from('customers').select('id').limit(1).maybeSingle();
+      let defaultCustId = custData?.id;
+      if (!defaultCustId) {
+        const { data: newCust } = await supabaseAdmin.from('customers').insert({ name: 'Pelanggan Default' }).select('id').single();
+        defaultCustId = newCust?.id;
+      }
+      
+      const result = await importSalesOrderBulk(formData, defaultCustId!);
+      revalidatePath('/master/historical-import');
+      return result;
     }
 
     // ==========================================

@@ -30,7 +30,13 @@ export default function LoginPage() {
     clearError();
     const success = await login(data);
     if (success) {
-      router.push(ROUTES.DASHBOARD);
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirectUrl = searchParams.get('redirect');
+      if (redirectUrl && redirectUrl.startsWith('/')) {
+        router.push(redirectUrl);
+      } else {
+        router.push(ROUTES.DASHBOARD);
+      }
     }
   };
 

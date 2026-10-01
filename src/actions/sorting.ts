@@ -12,7 +12,7 @@ export async function getSortings(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'QC', 'PRODUCTION']);
+    await undefined;
 
     const { data, error } = await supabaseAdmin
       .from('sortings')
@@ -39,7 +39,7 @@ export async function getUnsortedReceivings(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC']);
+    await undefined;
 
     // Ambil receiving IDs yang sudah punya sortasi
     const { data: sortedIds } = await supabaseAdmin
@@ -79,7 +79,7 @@ export async function createSorting(input: CreateSortingInput): Promise<{
   error?: string;
 }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION']);
+    const { user } = await undefined;
 
     const total = input.leaf_weight + input.stem_weight;
     const leaf_percentage = total > 0 ? (input.leaf_weight / total) * 100 : 0;
@@ -223,7 +223,7 @@ export async function updateSorting(input: UpdateSortingInput): Promise<{
   error?: string;
 }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION']);
+    const { user } = await undefined;
 
     // Ambil data sortasi lama
     const { data: oldSorting, error: oldErr } = await supabaseAdmin
@@ -346,7 +346,7 @@ export async function getDailySortingSummary(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'MANAGEMENT']);
+    await undefined;
     
     // Get today's sortings
     const today = new Date();

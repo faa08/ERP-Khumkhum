@@ -1844,7 +1844,7 @@ export async function deleteTimeStudySample(sampleId: string): Promise<{
 
     const { error } = await supabaseAdmin
       .from('time_study_samples')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', sampleId);
 
     if (error) {

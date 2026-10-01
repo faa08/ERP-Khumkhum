@@ -26,6 +26,7 @@ export interface DbUser {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export type FarmerType = 'SEKITAR' | 'MITRA_BESAR';
@@ -43,6 +44,7 @@ export interface DbFarmer {
   bank_account_number?: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DbProduct {
@@ -52,6 +54,7 @@ export interface DbProduct {
   description?: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DbRawMaterial {
@@ -64,6 +67,7 @@ export interface DbRawMaterial {
   rop?: number | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DbCustomer {
@@ -73,6 +77,7 @@ export interface DbCustomer {
   address?: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DbWarehouse {
@@ -83,6 +88,7 @@ export interface DbWarehouse {
   warehouse_pics?: DbWarehousePic | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DbWarehousePic {
@@ -92,6 +98,7 @@ export interface DbWarehousePic {
   next_reminder_datetime?: string | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 // ─────────────────────────────────────────────
@@ -117,6 +124,7 @@ export interface DbReceiving {
   updated_at: string;
   // Joined fields
   farmer?: Pick<DbFarmer, 'id' | 'name' | 'contact' | 'phone_number'> | null;
+  deleted_at?: string | null;
 }
 
 /** Sortasi & Grading (table: sortings) */
@@ -138,6 +146,7 @@ export interface DbSorting {
   // Joined
   receiving?: Pick<DbReceiving, 'id' | 'batch_number' | 'weight' | 'farmer_id'> | null;
   farmer?: Pick<DbFarmer, 'name' | 'phone_number'> | null;
+  deleted_at?: string | null;
 }
 
 /** Estimasi Panen Petani untuk PPIC */
@@ -149,6 +158,7 @@ export interface DbFarmerHarvestEstimate {
   source: 'WA_BOT' | 'MANUAL';
   created_at: string;
   farmer?: Pick<DbFarmer, 'id' | 'name' | 'phone_number'> | null;
+  deleted_at?: string | null;
 }
 
 /** Log WhatsApp Gateway */
@@ -161,6 +171,7 @@ export interface DbWhatsappLog {
   status: 'PENDING' | 'SENT' | 'FAILED' | 'SIMULATED';
   gateway_response?: Record<string, any> | null;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 /** Percakapan WhatsApp dengan Petani (Teks Asli) */
@@ -174,6 +185,7 @@ export interface DbWhatsAppMessage {
   created_at: string;
   // Joined field
   farmer?: Pick<DbFarmer, 'id' | 'name'> | null;
+  deleted_at?: string | null;
 }
 
 // ─────────────────────────────────────────────
@@ -217,6 +229,7 @@ export interface DbProductionOrder {
   results?: DbProductionResult[];
   frying_batches?: DbFryingBatch[];
   packing_entries?: DbPackingEntry[];
+  deleted_at?: string | null;
 }
 
 export interface DbProductionMaterial {
@@ -227,6 +240,7 @@ export interface DbProductionMaterial {
   created_at: string;
   // Joined
   raw_material?: Pick<DbRawMaterial, 'id' | 'code' | 'name' | 'uom'> | null;
+  deleted_at?: string | null;
 }
 
 export interface DbProductionResult {
@@ -239,6 +253,7 @@ export interface DbProductionResult {
   created_at: string;
   // Joined
   product?: Pick<DbProduct, 'id' | 'sku' | 'name'> | null;
+  deleted_at?: string | null;
 }
 
 // ─────────────────────────────────────────────
@@ -263,6 +278,7 @@ export interface DbFryingBatch {
   created_at: string;
   // Joined
   operator?: { id: string; name: string } | null;
+  deleted_at?: string | null;
 }
 
 export interface DbPackingEntry {
@@ -283,6 +299,7 @@ export interface DbPackingEntry {
   // Joined
   frying_batch?: Pick<DbFryingBatch, 'id' | 'wajan_number' | 'batch_weight_gram'> | null;
   production_order?: Pick<DbProductionOrder, 'id' | 'batch_number' | 'product_variant'> | null;
+  deleted_at?: string | null;
 }
 
 export interface DbTimeStudySample {
@@ -298,6 +315,7 @@ export interface DbTimeStudySample {
   created_at: string;
   // Joined
   operator?: { id: string; name: string } | null;
+  deleted_at?: string | null;
 }
 
 export type FlavorVariant = 'Original' | 'Balado' | 'BBQ' | 'Pedas Manis' | 'Super Pedas';
@@ -345,6 +363,7 @@ export interface DbQcInspection {
   // Joined
   inspector?: { id: string; name: string } | null;
   production_order?: Pick<DbProductionOrder, 'id' | 'batch_number' | 'product_variant' | 'yield_percentage'> | null;
+  deleted_at?: string | null;
 }
 
 export interface QcParetoItem {
@@ -458,6 +477,7 @@ export interface DbInventory {
   last_updated_at: string;
   warehouse?: Pick<DbWarehouse, 'id' | 'name'> | null;
   item_name?: string | null;
+  deleted_at?: string | null;
 }
 
 export interface DbStockMovement {
@@ -470,6 +490,9 @@ export interface DbStockMovement {
   notes?: string | null;
   movement_date: string;
   created_by?: string | null;
+  deleted_at?: string | null;
+  unit_cost?: number | null;
+  total_cost?: number | null;
 }
 
 export interface DbStockOpname {
@@ -481,6 +504,7 @@ export interface DbStockOpname {
   notes?: string | null;
   created_by?: string | null;
   created_at: string;
+  deleted_at?: string | null;
 }
 
 export interface DbStockOpnameItem {
@@ -489,6 +513,7 @@ export interface DbStockOpnameItem {
   system_qty: number;
   physical_qty: number;
   difference: number;
+  deleted_at?: string | null;
 }
 
 // ─────────────────────────────────────────────
@@ -509,6 +534,7 @@ export interface DbSalesOrder {
   updated_at: string;
   customer?: Pick<DbCustomer, 'id' | 'name' | 'contact'> | null;
   items?: DbSalesOrderItem[] | null;
+  deleted_at?: string | null;
 }
 
 export interface DbSalesOrderItem {
@@ -520,6 +546,7 @@ export interface DbSalesOrderItem {
   subtotal?: number | null;
   created_at: string;
   product?: Pick<DbProduct, 'id' | 'sku' | 'name'> | null;
+  deleted_at?: string | null;
 }
 
 // ─────────────────────────────────────────────
@@ -537,6 +564,7 @@ export interface DbKpiMetrics {
   total_production_batches: number;
   period_from: string;
   period_to: string;
+  deleted_at?: string | null;
 }
 
 /** One node in the traceability chain */
@@ -584,6 +612,7 @@ export interface DbAuditLog {
     email: string;
     role: UserRole;
   } | null;
+  deleted_at?: string | null;
 }
 
 export interface DbSetting {
@@ -591,6 +620,7 @@ export interface DbSetting {
   value: Record<string, any>;
   updated_by?: string | null;
   updated_at: string;
+  deleted_at?: string | null;
 }
 
 export interface GeneralSettingsConfig {

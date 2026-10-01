@@ -224,7 +224,7 @@ export async function deleteUserAction(id: string): Promise<{ success: boolean; 
   try {
     const { user: currentUser } = await requireAuth(['SUPER_ADMIN']);
 
-    const { error } = await supabaseAdmin.from('users').delete().eq('id', id);
+    const { error } = await supabaseAdmin.from('users').update({ deleted_at: new Date().toISOString() }).eq('id', id);
 
     if (error) {
       return { success: false, error: error.message };

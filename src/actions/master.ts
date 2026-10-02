@@ -82,7 +82,7 @@ export async function deleteFarmer(id: string): Promise<{ success: boolean; erro
     const { user } = await requireAuth(['SUPER_ADMIN']); // Only admin can delete typically
     const { error } = await supabaseAdmin
       .from('farmers')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
 
@@ -219,7 +219,7 @@ export async function deleteProduct(id: string): Promise<{ success: boolean; err
     const { user } = await requireAuth(['SUPER_ADMIN']);
     const { error } = await supabaseAdmin
       .from('products')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
 
@@ -304,7 +304,7 @@ export async function deleteRawMaterial(id: string): Promise<{ success: boolean;
     const { user } = await requireAuth(['SUPER_ADMIN']);
     const { error } = await supabaseAdmin
       .from('raw_materials')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
 
@@ -389,7 +389,7 @@ export async function deleteCustomer(id: string): Promise<{ success: boolean; er
     const { user } = await requireAuth(['SUPER_ADMIN']);
     const { error } = await supabaseAdmin
       .from('customers')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
 
@@ -479,7 +479,7 @@ export async function deleteWarehouse(id: string): Promise<{ success: boolean; e
     const { user } = await requireAuth(['SUPER_ADMIN']);
     const { error } = await supabaseAdmin
       .from('warehouses')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
 
@@ -564,7 +564,7 @@ export async function deleteWarehousePic(id: string): Promise<{ success: boolean
     const { user } = await requireAuth(['SUPER_ADMIN']);
     const { error } = await supabaseAdmin
       .from('warehouse_pics')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
 

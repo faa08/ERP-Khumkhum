@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import {
   CalendarDays, TrendingUp, AlertCircle, Sprout, LineChart as LineChartIcon,
   AlertTriangle, Flame, ArrowUpDown, Package, BarChart3,
@@ -50,6 +51,9 @@ function doubleExponentialSmoothing(data: number[], alpha = 0.3, beta = 0.2, per
 }
 
 export default function PpicPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   // ── State ──────────────────────────────────────────────────────
   const [sortings, setSortings] = useState<any[]>([]);
   const [weeklyTotal, setWeeklyTotal] = useState<number>(0);
@@ -602,34 +606,36 @@ export default function PpicPage() {
       )}
 
       {/* Manual Input */}
-      <Card>
-        <div style={{ marginBottom: 'var(--space-4)' }}>
-          <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />
-            <span>Input Manual Data Jamur Matang (Bypass)</span>
-          </h4>
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-            Gunakan form ini untuk menambahkan data historis hasil penggorengan jamur secara manual. Data ini akan dijadikan acuan perhitungan kapasitas PPIC.
-          </p>
-        </div>
-        <form onSubmit={handleAddManualCook} style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <FormField label="Tanggal Produksi">
-            <Input type="date" value={manualCookDate} onChange={e => setManualCookDate(e.target.value)} required />
-          </FormField>
-          <FormField label="Berat Jamur Mentah (kg)">
-            <Input type="number" step="0.1" value={manualCookInput} onChange={e => setManualCookInput(e.target.value)} placeholder="Misal: 100" style={{ width: '140px' }} required />
-          </FormField>
-          <FormField label="Berat Jamur Matang (kg)">
-            <Input type="number" step="0.1" value={manualCookOutput} onChange={e => setManualCookOutput(e.target.value)} placeholder="Misal: 75" style={{ width: '140px' }} required />
-          </FormField>
-          <FormField label="Catatan (opsional)">
-            <Input type="text" value={manualCookNotes} onChange={e => setManualCookNotes(e.target.value)} placeholder="Catatan tambahan" style={{ width: '200px' }} />
-          </FormField>
-          <Button type="submit" disabled={isSubmittingCook || !manualCookOutput || !manualCookInput}>
-            {isSubmittingCook ? 'Menyimpan...' : 'Simpan Data'}
-          </Button>
-        </form>
-      </Card>
+      {!isManagement && (
+        <Card>
+          <div style={{ marginBottom: 'var(--space-4)' }}>
+            <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />
+              <span>Input Manual Data Jamur Matang (Bypass)</span>
+            </h4>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+              Gunakan form ini untuk menambahkan data historis hasil penggorengan jamur secara manual. Data ini akan dijadikan acuan perhitungan kapasitas PPIC.
+            </p>
+          </div>
+          <form onSubmit={handleAddManualCook} style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <FormField label="Tanggal Produksi">
+              <Input type="date" value={manualCookDate} onChange={e => setManualCookDate(e.target.value)} required />
+            </FormField>
+            <FormField label="Berat Jamur Mentah (kg)">
+              <Input type="number" step="0.1" value={manualCookInput} onChange={e => setManualCookInput(e.target.value)} placeholder="Misal: 100" style={{ width: '140px' }} required />
+            </FormField>
+            <FormField label="Berat Jamur Matang (kg)">
+              <Input type="number" step="0.1" value={manualCookOutput} onChange={e => setManualCookOutput(e.target.value)} placeholder="Misal: 75" style={{ width: '140px' }} required />
+            </FormField>
+            <FormField label="Catatan (opsional)">
+              <Input type="text" value={manualCookNotes} onChange={e => setManualCookNotes(e.target.value)} placeholder="Catatan tambahan" style={{ width: '200px' }} />
+            </FormField>
+            <Button type="submit" disabled={isSubmittingCook || !manualCookOutput || !manualCookInput}>
+              {isSubmittingCook ? 'Menyimpan...' : 'Simpan Data'}
+            </Button>
+          </form>
+        </Card>
+      )}
 
       {/* Data Table */}
       {cookedData && cookedData.entries.length > 0 && (
@@ -653,50 +659,52 @@ export default function PpicPage() {
         </div>
       </div>
 
-      <Card>
-        <div style={{ marginBottom: 'var(--space-4)' }}>
-          <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />
-            <span>Input Manual Data Historis Sortasi (Bypass)</span>
-          </h4>
-          <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Gunakan form ini untuk menambahkan data historis berat daun jamur (hasil sortasi) secara manual untuk keperluan forecasting.</p>
-        </div>
-        <form onSubmit={handleAddManualSorting} style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <FormField label="Petani">
-            <select
-              value={manualFarmerId}
-              onChange={e => setManualFarmerId(e.target.value)}
-              style={{ padding: '8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}
-              required
-            >
-              <option value="">-- Pilih Petani --</option>
-              {farmersList.map(f => (
-                <option key={f.id} value={f.id}>{f.name}</option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Tanggal Sortasi">
-            <Input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} required />
-          </FormField>
-          <FormField label="Berat Daun (kg)">
-            <Input type="number" step="0.1" value={manualWeight} onChange={e => setManualWeight(e.target.value)} placeholder="Misal: 45.5" style={{ width: '120px' }} required />
-          </FormField>
-          <FormField label="Grade">
-            <select
-              value={manualGrade}
-              onChange={e => setManualGrade(e.target.value)}
-              style={{ padding: '8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}
-            >
-              <option value="A">Grade A</option>
-              <option value="B">Grade B</option>
-              <option value="C">Grade C</option>
-            </select>
-          </FormField>
-          <Button type="submit" disabled={isSubmittingManual || !manualWeight || !manualFarmerId}>
-            {isSubmittingManual ? 'Menyimpan...' : 'Simpan Data'}
-          </Button>
-        </form>
-      </Card>
+      {!isManagement && (
+        <Card>
+          <div style={{ marginBottom: 'var(--space-4)' }}>
+            <h4 style={{ fontSize: 'var(--text-md)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />
+              <span>Input Manual Data Historis Sortasi (Bypass)</span>
+            </h4>
+            <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Gunakan form ini untuk menambahkan data historis berat daun jamur (hasil sortasi) secara manual untuk keperluan forecasting.</p>
+          </div>
+          <form onSubmit={handleAddManualSorting} style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <FormField label="Petani">
+              <select
+                value={manualFarmerId}
+                onChange={e => setManualFarmerId(e.target.value)}
+                style={{ padding: '8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}
+                required
+              >
+                <option value="">-- Pilih Petani --</option>
+                {farmersList.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="Tanggal Sortasi">
+              <Input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} required />
+            </FormField>
+            <FormField label="Berat Daun (kg)">
+              <Input type="number" step="0.1" value={manualWeight} onChange={e => setManualWeight(e.target.value)} placeholder="Misal: 45.5" style={{ width: '120px' }} required />
+            </FormField>
+            <FormField label="Grade">
+              <select
+                value={manualGrade}
+                onChange={e => setManualGrade(e.target.value)}
+                style={{ padding: '8px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)', backgroundColor: 'var(--bg-surface)' }}
+              >
+                <option value="A">Grade A</option>
+                <option value="B">Grade B</option>
+                <option value="C">Grade C</option>
+              </select>
+            </FormField>
+            <Button type="submit" disabled={isSubmittingManual || !manualWeight || !manualFarmerId}>
+              {isSubmittingManual ? 'Menyimpan...' : 'Simpan Data'}
+            </Button>
+          </form>
+        </Card>
+      )}
 
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
@@ -746,9 +754,21 @@ export default function PpicPage() {
         description="Perencanaan produksi, alokasi varian rasa, dan analisis ketersediaan bahan baku."
         breadcrumbs={[{ label: 'Operasional' }, { label: 'PPIC' }]}
         actions={
-          <Button variant="secondary" onClick={loadData}>
-            Refresh Data
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {isManagement && (
+              <span style={{ 
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                padding: '4px 12px', borderRadius: 'var(--radius-full)', 
+                background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', 
+                fontSize: 'var(--text-xs)', fontWeight: 600, border: '1px solid var(--color-primary-200)' 
+              }}>
+                Investor / Read-Only Mode
+              </span>
+            )}
+            <Button variant="secondary" onClick={loadData}>
+              Refresh Data
+            </Button>
+          </div>
         }
       />
 

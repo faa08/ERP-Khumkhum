@@ -284,7 +284,7 @@ import type { DbStockOpnameItem } from '@/types/database';
 
 export async function saveStockOpname(items: DbStockOpnameItem[]): Promise<{ success: boolean; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'MANAGEMENT', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
     
     for (const item of items) {
       // Save to stock_opnames even if difference is 0 to track the event
@@ -370,7 +370,7 @@ export async function getLossReport(): Promise<{ success: boolean; data?: any[];
 
 export async function transferToConsignment(payload: { inventory_id: string, target_warehouse_id: string, quantity: number, notes?: string }): Promise<{ success: boolean; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'MANAGEMENT', 'SUPER_ADMIN', 'SALES']);
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'SALES']);
     
     // 1. Dapatkan info inventory asal
     const { data: sourceInv, error: srcErr } = await supabaseAdmin

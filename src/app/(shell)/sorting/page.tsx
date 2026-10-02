@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { Plus, MoreVertical, Eye, Edit, CheckCircle, AlertTriangle, Leaf, Scale } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, isToday } from 'date-fns';
@@ -31,6 +32,9 @@ interface FormState {
 const EMPTY_FORM: FormState = { receiving_id: '', leaf_weight: '', stem_weight: '' };
 
 export default function SortingPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [data, setData] = useState<DbSorting[]>([]);
   const [unsortedReceivings, setUnsortedReceivings] = useState<
     { id: string; batch_number: string; weight: number; farmer?: { name: string } | null }[]
@@ -212,12 +216,14 @@ export default function SortingPage() {
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
             { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} />, onClick: () => { setViewItem(row.original); setViewOpen(true); } },
-            { id: 'edit', label: 'Koreksi / Edit Sortasi', icon: <Edit size={14} />, onClick: () => handleOpenEdit(row.original) },
+            ...(!isManagement ? [
+              { id: 'edit', label: 'Koreksi / Edit Sortasi', icon: <Edit size={14} />, onClick: () => handleOpenEdit(row.original) },
+            ] : []),
           ]}
         />
       ),
     },
-  ], []);
+  ], [isManagement]);
 
   return (
     <div>
@@ -226,9 +232,20 @@ export default function SortingPage() {
         description="Pisahkan berat daun dan batang jamur, hitung % daun, dan assign grade kualitas."
         breadcrumbs={[{ label: 'Operasional' }, { label: 'Sortasi & Grading' }]}
         actions={
-          <Button variant="primary" onClick={() => { setForm(EMPTY_FORM); setDrawerOpen(true); }} leftIcon={<Plus size={16} />}>
-            Buat Sortasi
-          </Button>
+          isManagement ? (
+            <span style={{ 
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              padding: '4px 12px', borderRadius: 'var(--radius-full)', 
+              background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', 
+              fontSize: 'var(--text-xs)', fontWeight: 600, border: '1px solid var(--color-primary-200)' 
+            }}>
+              Investor / Read-Only Mode
+            </span>
+          ) : (
+            <Button variant="primary" onClick={() => { setForm(EMPTY_FORM); setDrawerOpen(true); }} leftIcon={<Plus size={16} />}>
+              Buat Sortasi
+            </Button>
+          )
         }
       />
 

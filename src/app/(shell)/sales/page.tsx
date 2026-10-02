@@ -11,6 +11,7 @@ import { Drawer } from '@/components/ui/Drawer';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Plus,
   MoreVertical,
@@ -82,6 +83,9 @@ const FLAVOR_COLORS: Record<string, { bg: string; text: string; border: string }
 };
 
 export default function SalesPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [data, setData] = useState<DbSalesOrder[]>([]);
   const [tracking, setTracking] = useState<SalesRealtimeTrackingData | null>(null);
   const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
@@ -474,7 +478,7 @@ export default function SalesPage() {
                   setViewOpen(true);
                 },
               },
-              ...(nextStatus
+              ...(!isManagement && nextStatus
                 ? [
                     {
                       id: 'advance',
@@ -489,7 +493,7 @@ export default function SalesPage() {
                     },
                   ]
                 : []),
-              ...(row.original.status === 'SHIPPED' || row.original.status === 'COMPLETED'
+              ...(!isManagement && (row.original.status === 'SHIPPED' || row.original.status === 'COMPLETED')
                 ? [
                     {
                       id: 'return',
@@ -521,7 +525,7 @@ export default function SalesPage() {
         );
       },
     },
-  ], [productsStockMap]);
+  ], [productsStockMap, isManagement]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
@@ -531,18 +535,30 @@ export default function SalesPage() {
         description="Integrasi langsung hasil packing produk jadi pabrik dengan pesanan distributor & pelacakan stok siap jual secara real-time."
         breadcrumbs={[{ label: 'Operasional' }, { label: 'Sales & Orders' }]}
         actions={
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            <Button
-              variant="secondary"
-              onClick={() => {
-                setUploadCustomer('');
-                setUploadFile(null);
-                setUploadOpen(true);
-              }}
-              leftIcon={<FileText className="w-4 h-4 text-currentColor" aria-hidden="true" />}
-            >
-              Upload Excel
-            </Button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+            {isManagement && (
+              <span style={{ 
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                padding: '4px 12px', borderRadius: 'var(--radius-full)', 
+                background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', 
+                fontSize: 'var(--text-xs)', fontWeight: 600, border: '1px solid var(--color-primary-200)' 
+              }}>
+                Investor / Read-Only Mode
+              </span>
+            )}
+            {!isManagement && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setUploadCustomer('');
+                  setUploadFile(null);
+                  setUploadOpen(true);
+                }}
+                leftIcon={<FileText className="w-4 h-4 text-currentColor" aria-hidden="true" />}
+              >
+                Upload Excel
+              </Button>
+            )}
             <Button
               variant="secondary"
               onClick={() => loadData(true)}
@@ -551,16 +567,18 @@ export default function SalesPage() {
             >
               Sinkronkan Real-Time
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                setForm(EMPTY_FORM);
-                setDrawerOpen(true);
-              }}
-              leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />}
-            >
-              Buat Sales Order
-            </Button>
+            {!isManagement && (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setForm(EMPTY_FORM);
+                  setDrawerOpen(true);
+                }}
+                leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />}
+              >
+                Buat Sales Order
+              </Button>
+            )}
           </div>
         }
       />

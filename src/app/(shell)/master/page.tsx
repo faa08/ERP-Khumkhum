@@ -38,13 +38,28 @@ const MASTER_DATA_GROUPS = [
   }
 ];
 
+import { useAuth } from '@/hooks/useAuth';
+
 export default function MasterDataHubPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
       <PageHeader
-        title="Pusat Master Data"
-        description="Pilih salah satu kartu di bawah ini untuk mengelola data satuan secara spesifik."
+        title={isManagement ? "Pusat Master Data (Mode Peninjauan Investor)" : "Pusat Master Data"}
+        description={isManagement ? "Tinjau data entitas mitra, master produk, dan standar mutu HACCP pabrik (Hak Akses: Baca Saja / Investor)." : "Pilih salah satu kartu di bawah ini untuk mengelola data satuan secara spesifik."}
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Pusat Master Data' }]}
+        actions={isManagement ? (
+          <span style={{ 
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '4px 12px', borderRadius: 'var(--radius-full)', 
+            background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', 
+            fontSize: 'var(--text-xs)', fontWeight: 600, border: '1px solid var(--color-primary-200)' 
+          }}>
+            Investor / Read-Only Mode
+          </span>
+        ) : undefined}
       />
 
       {MASTER_DATA_GROUPS.map((group, idx) => (

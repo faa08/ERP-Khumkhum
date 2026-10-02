@@ -14,6 +14,7 @@ import { Select } from '@/components/ui/Select';
 import { Card } from '@/components/ui/Card';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Plus,
   MoreVertical,
@@ -150,6 +151,8 @@ function addMinutesToTimeString(timeStr: string, minutesToAdd: number): string {
 // ─────────────────────────────────────────────
 
 export default function ProductionPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
   const [activeTab, setActiveTab] = useState<'FRYING' | 'PACKING'>('FRYING');
   const toast = useToast();
 
@@ -981,28 +984,30 @@ export default function ProductionPage() {
                   <Timer className="w-3.5 h-3.5 text-[var(--text-tertiary)]" aria-hidden="true" />
                   <span style={{ fontFamily: 'monospace' }}>0m 00s</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleStartBatchTimer(batch)}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    padding: '3px 8px',
-                    fontSize: '0.75rem',
-                    fontWeight: 700,
-                    borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--color-success-600)',
-                    background: 'var(--color-success-600)',
-                    color: 'white',
-                    cursor: 'pointer',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
-                  }}
-                  title="Mulai waktu goreng untuk wajan ini"
-                >
-                  <Play className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
-                  Mulai
-                </button>
+                {!isManagement && (
+                  <button
+                    type="button"
+                    onClick={() => handleStartBatchTimer(batch)}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '3px 8px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-success-600)',
+                      background: 'var(--color-success-600)',
+                      color: 'white',
+                      cursor: 'pointer',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+                    }}
+                    title="Mulai waktu goreng untuk wajan ini"
+                  >
+                    <Play className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />
+                    Mulai
+                  </button>
+                )}
               </div>
               {startTimeStr && (
                 <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1037,7 +1042,8 @@ export default function ProductionPage() {
             </div>
 
             {/* Inline controls: Jeda, Lanjut, Ulang */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {!isManagement && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               {status === 'RUNNING' && (
                 <>
                   <button
@@ -1133,7 +1139,8 @@ export default function ProductionPage() {
                   </button>
                 </>
               )}
-            </div>
+              </div>
+            )}
           </div>
         );
       },
@@ -1190,10 +1197,10 @@ export default function ProductionPage() {
         return <StatusBadge status="in_progress" label="Sedang Goreng" />;
       },
     },
-    {
+    ...(!isManagement ? [{
       id: 'actions',
       header: 'Aksi',
-      cell: ({ row }) => {
+      cell: ({ row }: any) => {
         const batch = row.original;
         const isDone = !!batch.finished_at;
         const hasOutput = !!batch.output_weight_gram;
@@ -1220,8 +1227,8 @@ export default function ProductionPage() {
           </Button>
         );
       },
-    },
-  ], [getBatchElapsedSeconds, getBatchTimerStatus, nowTick]);
+    } as ColumnDef<DbFryingBatch>] : []),
+  ], [getBatchElapsedSeconds, getBatchTimerStatus, nowTick, isManagement]);
 
   // ─────────────────────────────────────────────
   // TABLE COLUMNS — PACKING
@@ -1325,10 +1332,10 @@ export default function ProductionPage() {
         />
       ),
     },
-    {
+    ...(!isManagement ? [{
       id: 'actions',
       header: '',
-      cell: ({ row }) => {
+      cell: ({ row }: any) => {
         if (row.original.is_packed) return null;
         return (
           <Button
@@ -1341,8 +1348,8 @@ export default function ProductionPage() {
           </Button>
         );
       },
-    },
-  ], []);
+    } as ColumnDef<DbPackingEntry>] : []),
+  ], [isManagement]);
 
   // ─────────────────────────────────────────────
   // RENDER
@@ -1359,6 +1366,16 @@ export default function ProductionPage() {
         title="Lini Manufaktur & Produksi"
         description="Pencatatan produksi goreng jamur per wajan, packing rasa per longsong, time study, dan monitoring output."
         breadcrumbs={[{ label: 'Manufaktur' }, { label: 'Produksi' }]}
+        actions={isManagement ? (
+          <span style={{ 
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '4px 12px', borderRadius: 'var(--radius-full)', 
+            background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', 
+            fontSize: 'var(--text-xs)', fontWeight: 600, border: '1px solid var(--color-primary-200)' 
+          }}>
+            Investor / Read-Only Mode
+          </span>
+        ) : undefined}
       />
 
       {/* ── TAB SWITCHER ── */}
@@ -1442,22 +1459,24 @@ export default function ProductionPage() {
           </div>
 
           {/* Action Bar */}
-          <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-            <Button
-              variant="primary"
-              leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />}
-              onClick={handleOpenCreateRegularFrying}
-            >
-              Buat Batch Goreng Baru
-            </Button>
-            <Button
-              variant="secondary"
-              leftIcon={<ClipboardCheck className="w-4 h-4" aria-hidden="true" />}
-              onClick={handleOpenCreateHaccpFrying}
-            >
-              Batch HACCP Time Study
-            </Button>
-          </div>
+          {!isManagement && (
+            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+              <Button
+                variant="primary"
+                leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />}
+                onClick={handleOpenCreateRegularFrying}
+              >
+                Buat Batch Goreng Baru
+              </Button>
+              <Button
+                variant="secondary"
+                leftIcon={<ClipboardCheck className="w-4 h-4" aria-hidden="true" />}
+                onClick={handleOpenCreateHaccpFrying}
+              >
+                Batch HACCP Time Study
+              </Button>
+            </div>
+          )}
 
           {/* Frying Data Table */}
           <DataTable columns={fryingColumns} data={fryingBatches} />
@@ -1493,14 +1512,16 @@ export default function ProductionPage() {
                   </div>
                 </div>
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
-                onClick={handleOpenCreatePacking}
-              >
-                Packing Sekarang
-              </Button>
+              {!isManagement && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
+                  onClick={handleOpenCreatePacking}
+                >
+                  Packing Sekarang
+                </Button>
+              )}
             </div>
           )}
 
@@ -1572,14 +1593,16 @@ export default function ProductionPage() {
                   <div>
                     <strong>SPK {d.order.batch_number}:</strong> {d.order.anomaly_reason || d.order.notes || 'Periksa kerapatan seal kemasan dan kerataan bumbu tabur'}
                   </div>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    leftIcon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
-                    onClick={() => handleOpenSubmitQc(d)}
-                  >
-                    Ajukan Ulang ke QC
-                  </Button>
+                  {!isManagement && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      leftIcon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
+                      onClick={() => handleOpenSubmitQc(d)}
+                    >
+                      Ajukan Ulang ke QC
+                    </Button>
+                  )}
                 </div>
               ))}
             </div>
@@ -1598,9 +1621,11 @@ export default function ProductionPage() {
                 </div>
               </div>
 
-              <Button variant="primary" leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />} onClick={handleOpenCreatePacking}>
-                Input Packing Rasa
-              </Button>
+              {!isManagement && (
+                <Button variant="primary" leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />} onClick={handleOpenCreatePacking}>
+                  Input Packing Rasa
+                </Button>
+              )}
             </div>
 
             {friedOrdersData.length === 0 ? (
@@ -1617,7 +1642,7 @@ export default function ProductionPage() {
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>Longsong Selesai</th>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>Hasil Kemasan (pcs)</th>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>Status Alur QC</th>
-                      <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Aksi</th>
+                      {!isManagement && <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Aksi</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -1665,41 +1690,43 @@ export default function ProductionPage() {
                               <StatusBadge status="active" label="Sedang Dipacking" />
                             )}
                           </td>
-                          <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                            {s === 'RELEASED' ? (
-                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success-700)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" /> Siap Jual
-                              </span>
-                            ) : s === 'REJECTED' ? (
-                              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-700)', fontWeight: 600 }}>
-                                Dialihkan ke Karantina
-                              </span>
-                            ) : s === 'QC_PENDING' ? (
-                              <Button variant="secondary" size="sm" disabled>
-                                Dalam Antrean QC
-                              </Button>
-                            ) : s === 'REWORK' ? (
-                              <Button
-                                variant="secondary"
-                                size="sm"
-                                leftIcon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
-                                onClick={() => handleOpenSubmitQc(item)}
-                              >
-                                Ajukan Ulang ke QC
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                leftIcon={<ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />}
-                                onClick={() => handleOpenSubmitQc(item)}
-                                disabled={!hasPackaged}
-                                title={!hasPackaged ? 'Input packing terlebih dahulu' : 'Ajukan batch kemasan ini ke QC'}
-                              >
-                                Ajukan ke QC
-                              </Button>
-                            )}
-                          </td>
+                          {!isManagement && (
+                            <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                              {s === 'RELEASED' ? (
+                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success-700)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" /> Siap Jual
+                                </span>
+                              ) : s === 'REJECTED' ? (
+                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-700)', fontWeight: 600 }}>
+                                  Dialihkan ke Karantina
+                                </span>
+                              ) : s === 'QC_PENDING' ? (
+                                <Button variant="secondary" size="sm" disabled>
+                                  Dalam Antrean QC
+                                </Button>
+                              ) : s === 'REWORK' ? (
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  leftIcon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
+                                  onClick={() => handleOpenSubmitQc(item)}
+                                >
+                                  Ajukan Ulang ke QC
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  leftIcon={<ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />}
+                                  onClick={() => handleOpenSubmitQc(item)}
+                                  disabled={!hasPackaged}
+                                  title={!hasPackaged ? 'Input packing terlebih dahulu' : 'Ajukan batch kemasan ini ke QC'}
+                                >
+                                  Ajukan ke QC
+                                </Button>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       );
                     })}

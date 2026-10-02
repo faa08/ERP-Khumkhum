@@ -5,14 +5,43 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
+import Link from 'next/link';
 import { FileSpreadsheet, UploadCloud, AlertCircle, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { importHistoricalData } from '@/actions/forecast-import';
 
 export default function HistoricalImportPage() {
+  const { user } = useAuth();
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [successResult, setSuccessResult] = useState<{ count: number } | null>(null);
   const toast = useToast();
+
+  if (user?.role === 'MANAGEMENT') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+        <PageHeader
+          title="Impor Data Historis"
+          description="Impor data Excel historis untuk analisis & forecasting."
+          breadcrumbs={[{ label: 'Data Induk' }, { label: 'Impor Data Historis' }]}
+        />
+        <Card padding="lg">
+          <div style={{ maxWidth: '520px', margin: '0 auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <div style={{ padding: '12px', borderRadius: '50%', background: 'var(--color-primary-50)', color: 'var(--color-primary-600)' }}>
+              <FileSpreadsheet size={32} />
+            </div>
+            <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, margin: 0 }}>Mode Peninjauan (Investor - Read Only)</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', lineHeight: 1.6 }}>
+              Akun Manajemen berperan sebagai peninjau (viewer/investor). Impor dan pembaruan data historis hanya dapat dilakukan oleh Super Administrator.
+            </p>
+            <Link href="/master">
+              <Button variant="primary">Kembali ke Pusat Master Data</Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   const handleDownloadTemplate = () => {
     // API endpoint for template generation

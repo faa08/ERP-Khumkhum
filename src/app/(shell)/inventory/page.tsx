@@ -18,6 +18,7 @@ import { format } from 'date-fns';
 import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment } from '@/actions/inventory';
 import { getRawMaterials, getWarehouses } from '@/actions/master';
 import { usePathname } from 'next/navigation';
+import { useAuth } from '@/hooks/useAuth';
 import type { DbInventory, DbStockMovement, DbRawMaterial } from '@/types/database';
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string; rop: number }> = {
@@ -26,6 +27,8 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ReactNode; co
 };
 
 export default function InventoryPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
   const pathname = usePathname();
   const isWarehouseMode = pathname.includes('/warehouse');
 
@@ -286,9 +289,9 @@ export default function InventoryPage() {
       header: 'Update Terakhir',
       cell: ({ row }) => format(new Date(row.original.last_updated_at), 'dd/MM/yyyy HH:mm'),
     },
-    {
+    ...(isManagement ? [] : [{
       id: 'actions',
-      cell: ({ row }) => (
+      cell: ({ row }: { row: any }) => (
         <Button variant="secondary" size="sm" onClick={() => {
           setTransferInv(row.original);
           setTransferForm({ quantity: 0, target_warehouse_id: '', notes: '' });
@@ -297,8 +300,8 @@ export default function InventoryPage() {
           Kirim Konsinyasi
         </Button>
       ),
-    },
-  ], []);
+    }]),
+  ], [isManagement]);
 
   const mvColumns = useMemo<ColumnDef<any>[]>(() => [
     { id: 'date', header: 'Tanggal', cell: ({ row }) => format(new Date(row.original.movement_date), 'dd/MM/yyyy HH:mm') },
@@ -472,11 +475,18 @@ export default function InventoryPage() {
       <Card header={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong>Stock Opname — Input Stok Fisik</strong>
-          <Button variant="primary" onClick={handleSaveOpname} loading={isSavingOpname} leftIcon={<Save size={16} />}>
-            Simpan Hasil Opname
-          </Button>
+          {!isManagement && (
+            <Button variant="primary" onClick={handleSaveOpname} loading={isSavingOpname} leftIcon={<Save size={16} />}>
+              Simpan Hasil Opname
+            </Button>
+          )}
         </div>
       }>
+        {isManagement && (
+          <div style={{ padding: '8px 12px', background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-3)', border: '1px solid var(--color-primary-200)' }}>
+            Mode Peninjauan (Investor): Penginputan dan pembaruan hasil stock opname hanya dapat dilakukan oleh Kepala Gudang dan Super Administrator.
+          </div>
+        )}
         <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
           Masukkan hasil hitung fisik untuk setiap item di gudang. Sistem akan menghitung akurasi stok secara otomatis dan memperbarui stok.
         </p>
@@ -497,6 +507,7 @@ export default function InventoryPage() {
                     type="number" step="0.01" min="0"
                     placeholder="Fisik (kg)"
                     value={physicalInputs[inv.id] || ''}
+                    disabled={isManagement}
                     onChange={e => setPhysicalInputs(prev => ({ ...prev, [inv.id]: e.target.value }))}
                   />
                 </div>
@@ -567,10 +578,22 @@ export default function InventoryPage() {
         description={isWarehouseMode ? "Monitor stok bahan baku, kartu stok mutasi, dan stock opname gudang material." : "Monitor stok produk siap jual, kartu stok mutasi, dan stock opname."}
         breadcrumbs={[{ label: 'Operasional' }, { label: isWarehouseMode ? 'Warehouse' : 'Inventaris' }]}
         actions={
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            <Button leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />} onClick={() => setInboundDrawerOpen(true)}>
-              {isWarehouseMode ? "Penerimaan Barang Non-Jamur" : "Penerimaan Produk Jadi"}
-            </Button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+            {isManagement && (
+              <span style={{ 
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                padding: '4px 12px', borderRadius: 'var(--radius-full)', 
+                background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', 
+                fontSize: 'var(--text-xs)', fontWeight: 600, border: '1px solid var(--color-primary-200)' 
+              }}>
+                Investor / Read-Only Mode
+              </span>
+            )}
+            {!isManagement && (
+              <Button leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />} onClick={() => setInboundDrawerOpen(true)}>
+                {isWarehouseMode ? "Penerimaan Barang Non-Jamur" : "Penerimaan Produk Jadi"}
+              </Button>
+            )}
             <Button variant="secondary" onClick={loadData}>Refresh Data</Button>
           </div>
         }

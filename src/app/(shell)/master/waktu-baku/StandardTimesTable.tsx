@@ -10,6 +10,7 @@ import { DataTable } from '@/components/data-table/DataTable';
 import { Plus, Save, Timer, Info } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { createTimeStudyBatch } from '@/actions/timeStudy';
+import { useAuth } from '@/hooks/useAuth';
 
 interface StandardTimesTableProps {
   operation: any;
@@ -18,6 +19,8 @@ interface StandardTimesTableProps {
 }
 
 export default function StandardTimesTable({ operation, batches, summary }: StandardTimesTableProps) {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,9 +143,11 @@ export default function StandardTimesTable({ operation, batches, summary }: Stan
               Daftar seluruh sampel pencatatan waktu untuk produksi penggorengan.
             </p>
           </div>
-          <Button variant="secondary" leftIcon={<Plus size={16} />} onClick={() => setIsModalOpen(true)}>
-            Tambah Sampel (Batch Baru)
-          </Button>
+          {!isManagement && (
+            <Button variant="secondary" leftIcon={<Plus size={16} />} onClick={() => setIsModalOpen(true)}>
+              Tambah Sampel (Batch Baru)
+            </Button>
+          )}
         </div>
 
         {batches.length === 0 ? (

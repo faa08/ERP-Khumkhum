@@ -11,6 +11,9 @@ import { Step4Bom } from './steps/Step4Bom';
 import { Step5Standards } from './steps/Step5Standards';
 import { Step6Inventory } from './steps/Step6Inventory';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
+import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
 
 const STEPS = [
   { id: 1, title: 'Gudang & Lokasi', icon: <Settings size={20} />, description: 'Atur pabrik dan penanggung jawab' },
@@ -22,9 +25,36 @@ const STEPS = [
 ];
 
 export default function SetupWizardPage() {
+  const { user } = useAuth();
   const [currentStep, setCurrentStep] = useState(1);
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const toast = useToast();
+
+  if (user?.role === 'MANAGEMENT') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+        <PageHeader
+          title="Setup Master Data & Standar HACCP"
+          description="Setup wizard untuk inisialisasi master data pabrik."
+          breadcrumbs={[{ label: 'Master Data' }, { label: 'Setup Wizard' }]}
+        />
+        <Card padding="lg">
+          <div style={{ maxWidth: '520px', margin: '0 auto', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--space-3)' }}>
+            <div style={{ padding: '12px', borderRadius: '50%', background: 'var(--color-primary-50)', color: 'var(--color-primary-600)' }}>
+              <Settings size={32} />
+            </div>
+            <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, margin: 0 }}>Mode Peninjauan (Investor - Read Only)</h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', lineHeight: 1.6 }}>
+              Akun Manajemen berperan sebagai peninjau (viewer/investor). Inisialisasi dan konfigurasi wizard master data hanya dapat dijalankan oleh Super Administrator.
+            </p>
+            <Link href="/master">
+              <Button variant="primary">Lihat Pusat Master Data</Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   const handleNext = () => {
     if (!completedSteps.includes(currentStep)) {

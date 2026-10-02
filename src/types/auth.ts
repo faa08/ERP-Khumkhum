@@ -51,7 +51,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   QC:          'Quality Control & Ops',
   WAREHOUSE:   'Warehouse, Logistik & PPIC',
   PRODUCTION:  'Petugas Produksi',
-  MANAGEMENT:  'Manajemen (Viewer)',
+  MANAGEMENT:  'Manajemen (Investor / Read-Only)',
   SALES:       'Sales & Pengiriman',
   SORTING:     'Petugas Sortasi',
   FARMER:      'Petani Mitra',

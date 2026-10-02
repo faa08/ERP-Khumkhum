@@ -49,22 +49,7 @@ export function Topbar() {
         </button>
       </div>
 
-      {/* Center: Search placeholder */}
-      <div className={styles.center}>
-        <div className={styles.searchBar} role="search">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" className={styles.searchIcon}>
-            <path d="M6.33 11.17a4.84 4.84 0 100-9.67 4.84 4.84 0 000 9.67zM12 12l-2.63-2.63" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-          <input
-            type="search"
-            placeholder="Cari... (segera hadir)"
-            disabled
-            className={styles.searchInput}
-            aria-label="Pencarian global (belum tersedia)"
-          />
-          <kbd className={styles.searchKbd}>⌘K</kbd>
-        </div>
-      </div>
+
 
       {/* Right: Notifications + Theme + User */}
       <div className={styles.right}>

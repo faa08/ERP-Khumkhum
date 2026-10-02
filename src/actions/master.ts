@@ -107,7 +107,7 @@ export async function inquireFarmerStockAction(params: {
   targetDate?: string;
 }): Promise<{ success: boolean; directUrl?: string; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
 
     const { data: farmer, error: fetchErr } = await supabaseAdmin
       .from('farmers')

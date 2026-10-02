@@ -54,7 +54,7 @@ export async function getActiveWorkerSession() {
 
 export async function clockIn(operation_id: string, worker_name: string) {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     // Pastikan tidak ada sesi yang masih aktif
     const active = await getActiveWorkerSession();
@@ -94,7 +94,7 @@ export async function clockIn(operation_id: string, worker_name: string) {
 
 export async function pauseSession(session_id: string, reason: string = 'ISTIRAHAT') {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     const { data: session } = await supabaseAdmin.from('worker_sessions').select('*').eq('id', session_id).single();
     if (!session || session.status !== 'ACTIVE' || session.worker_id !== user.userId) {
@@ -122,7 +122,7 @@ export async function pauseSession(session_id: string, reason: string = 'ISTIRAH
 
 export async function resumeSession(session_id: string) {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     const { data: session } = await supabaseAdmin.from('worker_sessions').select('*').eq('id', session_id).single();
     if (!session || session.status !== 'PAUSED' || session.worker_id !== user.userId) {
@@ -164,7 +164,7 @@ export async function resumeSession(session_id: string) {
 
 export async function clockOut(session_id: string) {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     const { data: session } = await supabaseAdmin.from('worker_sessions').select('*').eq('id', session_id).single();
     if (!session || session.worker_id !== user.userId) {
@@ -230,7 +230,7 @@ export async function createTimeStudyBatch({
   notes?: string;
 }) {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
     
     const { data, error } = await supabaseAdmin.from('time_study_batches').insert([{
       operation_id,

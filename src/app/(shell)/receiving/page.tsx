@@ -11,6 +11,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
+import { useAuth } from '@/hooks/useAuth';
 import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck, Check } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
@@ -36,6 +37,9 @@ const EMPTY_FORM: FormState = {
 };
 
 export default function ReceivingPage() {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
+
   const [data, setData] = useState<DbReceiving[]>([]);
   const [farmers, setFarmers] = useState<{ id: string; name: string; phone_number?: string | null }[]>([]);
   const [rawMaterials, setRawMaterials] = useState<{ id: string; name: string; code: string }[]>([]);
@@ -211,10 +215,10 @@ export default function ReceivingPage() {
         />
       ),
     },
-    {
+    ...(isManagement ? [] : [{
       id: 'actions',
       header: 'Aksi',
-      cell: ({ row }) => {
+      cell: ({ row }: { row: any }) => {
         const fId = row.original.farmer_id;
         const estKg = row.original.estimated_kg;
         return (
@@ -240,15 +244,25 @@ export default function ReceivingPage() {
           </Button>
         );
       },
-    },
-  ], [toast, rawMaterials]);
+    }]),
+  ], [toast, rawMaterials, isManagement]);
 
   return (
     <div>
       <PageHeader
-        title="Penerimaan Bahan Baku"
+        title={isManagement ? "Penerimaan Bahan Baku (Mode Peninjauan Investor)" : "Penerimaan Bahan Baku"}
         description="Catat penerimaan jamur dari petani mitra. Nota timbangan otomatis terkirim via WhatsApp."
         breadcrumbs={[{ label: 'Operasional' }, { label: 'Penerimaan BB' }]}
+        actions={isManagement ? (
+          <span style={{ 
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '4px 12px', borderRadius: 'var(--radius-full)', 
+            background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', 
+            fontSize: 'var(--text-xs)', fontWeight: 600, border: '1px solid var(--color-primary-200)' 
+          }}>
+            Investor / Read-Only Mode
+          </span>
+        ) : undefined}
       />
 
       <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-2)' }}>
@@ -291,9 +305,11 @@ export default function ReceivingPage() {
               <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Draft Estimasi (Dari WhatsApp)</h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginTop: '4px' }}>Draft otomatis hasil ekstraksi AI dari chat petani.</p>
             </div>
-            <Button variant="secondary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
-              Catat Penerimaan Manual
-            </Button>
+            {!isManagement && (
+              <Button variant="secondary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
+                Catat Penerimaan Manual
+              </Button>
+            )}
           </div>
           <DataTable columns={draftColumns} data={draftEstimates} />
         </div>

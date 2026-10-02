@@ -5,11 +5,14 @@ import { Button } from '@/components/ui/Button/Button';
 import { FormField } from '@/components/form/FormField';
 import { DataTable } from '@/components/data-table/DataTable';
 import { clockIn, clockOut, pauseSession, resumeSession } from '@/actions/timeStudy';
+import { useAuth } from '@/hooks/useAuth';
 import { Play, Square, Pause, Clock, Timer, List, Info } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 
 export default function WorkerTerminal({ masterOperations, initialSession, historySessions = [] }: any) {
+  const { user } = useAuth();
+  const isManagement = user?.role === 'MANAGEMENT';
   const [session, setSession] = useState<any>(initialSession);
   const [selectedWorker, setSelectedWorker] = useState<string>('');
   const [selectedOp, setSelectedOp] = useState<string>('');
@@ -128,12 +131,21 @@ export default function WorkerTerminal({ masterOperations, initialSession, histo
       {error && <div style={{ padding: 'var(--space-3)', background: 'var(--color-danger-50)', color: 'var(--color-danger-700)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-danger-200)', fontSize: 'var(--text-sm)' }}>{error}</div>}
       
       {!session ? (
-        <div style={{ background: 'var(--bg-default)', padding: 'var(--space-6)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', maxWidth: '600px', margin: '0 auto', marginTop: 'var(--space-8)' }}>
-          <div style={{ textAlign: 'center', marginBottom: 'var(--space-6)' }}>
-            <Clock size={48} style={{ margin: '0 auto', color: 'var(--text-tertiary)', marginBottom: 'var(--space-4)' }} />
-            <h2 style={{ fontSize: '1.5rem', fontWeight: 600 }}>Mulai Sesi Kerja</h2>
-            <p style={{ color: 'var(--text-secondary)', marginTop: 'var(--space-2)' }}>Silakan pilih jenis pekerjaan untuk memulai sesi (Clock In).</p>
+        isManagement ? (
+          <div style={{ background: 'var(--bg-default)', padding: 'var(--space-6)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', maxWidth: '600px', margin: '0 auto', marginTop: 'var(--space-8)', textAlign: 'center' }}>
+            <Clock size={44} style={{ margin: '0 auto', color: 'var(--text-tertiary)', marginBottom: 'var(--space-3)' }} />
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Mode Peninjauan (Investor - Read Only)</h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-2)' }}>
+              Pencatatan sesi kerja (Clock In/Out) hanya dilakukan oleh operator lapangan. Anda dapat memantau riwayat sesi kerja pada tabel di bawah.
+            </p>
           </div>
+        ) : (
+          <div style={{ background: 'var(--bg-default)', padding: 'var(--space-6)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)', maxWidth: '600px', margin: '0 auto', marginTop: 'var(--space-8)' }}>
+            <div style={{ textAlign: 'center', marginBottom: 'var(--space-6)' }}>
+              <Clock size={48} style={{ margin: '0 auto', color: 'var(--text-tertiary)', marginBottom: 'var(--space-4)' }} />
+              <h2 style={{ fontSize: '1.5rem', fontWeight: 600 }}>Mulai Sesi Kerja</h2>
+              <p style={{ color: 'var(--text-secondary)', marginTop: 'var(--space-2)' }}>Silakan pilih jenis pekerjaan untuk memulai sesi (Clock In).</p>
+            </div>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
@@ -182,6 +194,7 @@ export default function WorkerTerminal({ masterOperations, initialSession, histo
             </div>
           </div>
         </div>
+        )
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
           {/* HEADER STATUS */}
@@ -210,30 +223,32 @@ export default function WorkerTerminal({ masterOperations, initialSession, histo
             )}
           </div>
 
-          {/* KONTROL SESI */}
-          <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
-            <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-4)' }}>
-              <Clock size={18}/> Kontrol Sesi
-            </h3>
-            <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: '200px' }}>
-                {isPaused ? (
-                  <Button variant="primary" fullWidth onClick={handleResume} disabled={loading} leftIcon={<Play size={18} />}>
-                    Lanjutkan Bekerja
+          {/* KONTROL SESI (Hanya untuk operator produksi, bukan Management) */}
+          {!isManagement && (
+            <div style={{ background: 'var(--bg-default)', padding: 'var(--space-4)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
+              <h3 style={{ fontSize: '1.125rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-4)' }}>
+                <Clock size={18}/> Kontrol Sesi
+              </h3>
+              <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  {isPaused ? (
+                    <Button variant="primary" fullWidth onClick={handleResume} disabled={loading} leftIcon={<Play size={18} />}>
+                      Lanjutkan Bekerja
+                    </Button>
+                  ) : (
+                    <Button variant="secondary" fullWidth onClick={handlePause} disabled={loading} leftIcon={<Pause size={18} />}>
+                      Jeda / Istirahat
+                    </Button>
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  <Button variant="danger" fullWidth onClick={handleClockOut} disabled={loading} leftIcon={<Square size={18} />}>
+                    Akhiri Sesi (Clock Out)
                   </Button>
-                ) : (
-                  <Button variant="secondary" fullWidth onClick={handlePause} disabled={loading} leftIcon={<Pause size={18} />}>
-                    Jeda / Istirahat
-                  </Button>
-                )}
-              </div>
-              <div style={{ flex: 1, minWidth: '200px' }}>
-                <Button variant="danger" fullWidth onClick={handleClockOut} disabled={loading} leftIcon={<Square size={18} />}>
-                  Akhiri Sesi (Clock Out)
-                </Button>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       )}
 

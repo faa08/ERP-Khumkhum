@@ -10,6 +10,7 @@ export interface NavItem {
   badge?: string | number;
   children?: NavItem[];
   requiredPermission?: string;
+  disallowedRoles?: string[];
   dividerBefore?: boolean;
 }
 

@@ -83,9 +83,9 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
         icon: 'Database',
         requiredPermission: 'master',
         children: [
-          { id: 'setup-wizard', label: 'Setup Wizard (Mulai Sini)', href: '/master/setup-wizard' },
+          { id: 'setup-wizard', label: 'Setup Wizard (Mulai Sini)', href: '/master/setup-wizard', disallowedRoles: ['MANAGEMENT'] },
           { id: 'hub', label: 'Pusat Master Data', href: '/master' },
-          { id: 'historical-import', label: 'Impor Data Historis', href: '/master/historical-import' },
+          { id: 'historical-import', label: 'Impor Data Historis', href: '/master/historical-import', disallowedRoles: ['MANAGEMENT'] },
         ],
       },
     ],
@@ -225,6 +225,9 @@ export function Sidebar() {
 
     return NAV_GROUPS.map((group) => {
       const filterItem = (item: typeof group.items[0]): typeof item | null => {
+        if (item.disallowedRoles && item.disallowedRoles.includes(user.role)) {
+          return null;
+        }
         if (!isSuperAdmin && item.requiredPermission && !userPermissions.includes(item.requiredPermission)) {
           return null;
         }

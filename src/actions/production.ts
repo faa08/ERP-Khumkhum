@@ -1872,7 +1872,7 @@ export async function calculateAndSaveStandardTime(input: {
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     // Get all samples (either Supabase or memory fallback)
     let samples: { duration_seconds: number | null }[] = [];

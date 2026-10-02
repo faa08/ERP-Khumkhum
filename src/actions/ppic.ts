@@ -106,7 +106,7 @@ export async function addManualHistoricalSorting(date: string, weight: number, f
   error?: string;
 }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION']);
 
     if (!farmerId) {
       return { success: false, error: 'Petani harus dipilih.' };

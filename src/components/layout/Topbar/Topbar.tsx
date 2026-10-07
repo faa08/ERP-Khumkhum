@@ -15,8 +15,6 @@ import type { AppNotification } from '@/types/notification';
 import {
   PanelLeft,
   Bell,
-  Sun,
-  Moon,
   ChevronDown,
   LogOut,
   User,
@@ -68,7 +66,6 @@ export function Topbar() {
   const { user, logout } = useAuth();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
-  const [theme, setTheme] = useLocalStorage<'light' | 'dark'>(STORAGE_KEYS.THEME, 'light');
 
   // Notifications State
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -126,12 +123,6 @@ export function Topbar() {
     }
   };
 
-  const toggleTheme = () => {
-    const next = theme === 'light' ? 'dark' : 'light';
-    setTheme(next);
-    document.documentElement.setAttribute('data-theme', next);
-  };
-
   return (
     <header className={styles.topbar} role="banner">
       {/* Left: Sidebar toggle */}
@@ -146,17 +137,8 @@ export function Topbar() {
         </button>
       </div>
 
-      {/* Right: Notifications + Theme + User */}
+      {/* Right: Notifications + User */}
       <div className={styles.right}>
-        {/* Theme toggle */}
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          className={styles.iconBtn}
-        >
-          {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-        </button>
 
         {/* Operational Notification Bell */}
         <div className={styles.notifMenu} ref={notifMenuRef}>

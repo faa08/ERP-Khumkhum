@@ -46,6 +46,7 @@ import {
   type SalesRealtimeTrackingData,
   type FinishedGoodSalesStock,
 } from '@/actions/sales';
+import { supabase } from '@/lib/supabase';
 import { importSalesOrderBulk } from '@/actions/sales-import';
 import { getCustomers, getProducts } from '@/actions/master';
 import type { DbSalesOrder, DbProduct } from '@/types/database';
@@ -147,6 +148,21 @@ export default function SalesPage() {
 
   useEffect(() => {
     loadData();
+
+    // Supabase Realtime Subscription
+    const channel = supabase
+      .channel('sales_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales_orders' }, () => {
+        loadData(false);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'packing_entries' }, () => {
+        loadData(false);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [loadData]);
 
   // Lookup map untuk stok produk jadi real-time
@@ -525,7 +541,7 @@ export default function SalesPage() {
         );
       },
     },
-  ], [productsStockMap, isManagement]);
+  ], [productsStockMap, isManagement, handleAdvanceStatus, loadData, toast]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>

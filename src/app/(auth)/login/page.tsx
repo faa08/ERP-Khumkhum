@@ -1,4 +1,5 @@
 'use client';
+import Image from 'next/image';
 
 import { useSearchParams } from 'next/navigation';
 import React, { useState, Suspense } from 'react';
@@ -51,10 +52,13 @@ function LoginForm() {
       {/* Brand Header */}
       <div className={styles.header}>
         <div className={styles.logoRow}>
-          <img
+          <Image
             src="/Khumkhum-01-1536x486.webp"
             alt="KhumKhum Jamur Crispy"
+            width={1536}
+            height={486}
             className={styles.brandLogo}
+            priority
           />
           <span className={styles.erpBadge}>ERP SYSTEM</span>
         </div>

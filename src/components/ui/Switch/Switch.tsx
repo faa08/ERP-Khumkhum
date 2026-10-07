@@ -9,7 +9,8 @@ export interface SwitchProps extends Omit<React.InputHTMLAttributes<HTMLInputEle
 
 export const Switch = forwardRef<HTMLInputElement, SwitchProps>(
   ({ label, helperText, className, id, disabled, ...props }, ref) => {
-    const switchId = id || React.useId();
+    const generatedId = React.useId();
+    const switchId = id || generatedId;
 
     return (
       <div className={cn(styles.wrapper, disabled && styles['wrapper--disabled'], className)}>

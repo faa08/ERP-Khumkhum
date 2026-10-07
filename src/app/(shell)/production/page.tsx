@@ -76,9 +76,9 @@ import {
   type MaterialConsumptionItem,
   type SpkSuggestion,
   type CreateFryingBatchInput,
-  type CompleteFryingBatchInput,
   type CreatePackingEntryInput,
 } from '@/actions/production';
+import { supabase } from '@/lib/supabase';
 import { getPpicData } from '@/actions/ppic';
 import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry } from '@/types/database';
 import { FLAVOR_VARIANTS, PACKAGING_TYPES, PACKAGING_WEIGHTS } from '@/types/database';
@@ -323,7 +323,27 @@ export default function ProductionPage() {
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+
+    // Supabase Realtime Subscription
+    const channel = supabase
+      .channel('production_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_orders' }, () => {
+        loadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'frying_batches' }, () => {
+        loadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'packing_entries' }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadData]);
 
   // ── Longsong Belum Packing (Reactive: Produced - Packed) ──
   const unpackedLongsongCount = useMemo(() => {
@@ -1228,7 +1248,7 @@ export default function ProductionPage() {
         );
       },
     } as ColumnDef<DbFryingBatch>] : []),
-  ], [getBatchElapsedSeconds, getBatchTimerStatus, nowTick, isManagement]);
+  ], [getBatchElapsedSeconds, getBatchTimerStatus, nowTick, isManagement, handlePauseBatchTimer, handleResetBatchTimer, handleResumeBatchTimer, handleStartBatchTimer]);
 
   // ─────────────────────────────────────────────
   // TABLE COLUMNS — PACKING
@@ -1349,7 +1369,7 @@ export default function ProductionPage() {
         );
       },
     } as ColumnDef<DbPackingEntry>] : []),
-  ], [isManagement]);
+  ], [isManagement, handleMarkPacked, orders]);
 
   // ─────────────────────────────────────────────
   // RENDER

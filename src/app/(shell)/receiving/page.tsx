@@ -18,6 +18,7 @@ import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { getReceivings, createReceiving, getInboundEstimates } from '@/actions/receiving';
 import { getFarmers, getRawMaterials } from '@/actions/master';
+import { supabase } from '@/lib/supabase';
 import type { DbReceiving, DbWhatsAppMessage } from '@/types/database';
 
 interface FormState {
@@ -81,20 +82,40 @@ export default function ReceivingPage() {
     setIsLoading(false);
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+
+    // Supabase Realtime Subscription
+    const channel = supabase
+      .channel('receiving_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'receivings' }, () => {
+        loadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_harvest_estimates' }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadData]);
 
   // ── Handlers ────────────────────────────────────────────────────
   const handleOpenCreate = () => { setForm(EMPTY_FORM); setDrawerOpen(true); };
 
   const handleSave = async () => {
-    if (!form.farmer_id || !form.raw_material_id || !form.weight_sent || !form.weight) {
+    const jamurMaterial = rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur') || rm.code === 'JMR-TRM');
+    const finalRawMaterialId = form.raw_material_id || jamurMaterial?.id;
+    
+    if (!form.farmer_id || !finalRawMaterialId || !form.weight_sent || !form.weight) {
       toast.error('Lengkapi semua field yang wajib diisi');
       return;
     }
     setIsSaving(true);
     const res = await createReceiving({
       farmer_id: form.farmer_id,
-      raw_material_id: form.raw_material_id,
+      raw_material_id: finalRawMaterialId,
       weight_sent: parseFloat(form.weight_sent),
       weight: parseFloat(form.weight),
       notes: form.notes || undefined,
@@ -364,23 +385,6 @@ export default function ReceivingPage() {
             </select>
           </FormField>
 
-          <FormField label="Bahan Baku" required>
-            <select
-              value={form.raw_material_id}
-              onChange={e => setForm(f => ({ ...f, raw_material_id: e.target.value }))}
-              style={{
-                width: '100%', padding: 'var(--space-2) var(--space-3)',
-                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-                background: 'var(--bg-default)', color: 'var(--text-primary)',
-                fontSize: 'var(--text-sm)',
-              }}
-            >
-              <option value="">-- Pilih Bahan Baku --</option>
-              {rawMaterials.map(rm => (
-                <option key={rm.id} value={rm.id}>{rm.name} ({rm.code})</option>
-              ))}
-            </select>
-          </FormField>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
             <FormField label="Berat Kirim Petani (kg)" required>

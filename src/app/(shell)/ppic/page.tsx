@@ -25,6 +25,7 @@ import {
 } from '@/actions/ppic';
 import { getInventorySummary, getInventoryForecasting } from '@/actions/inventory';
 import { getFarmers } from '@/actions/master';
+import { supabase } from '@/lib/supabase';
 import type { DbInventory, DbFarmer } from '@/types/database';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 
@@ -134,7 +135,24 @@ export default function PpicPage() {
     setIsLoading(false);
   }, [selectedEstimateWeek]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+
+    // Supabase Realtime Subscription
+    const channel = supabase
+      .channel('ppic_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'farmer_harvest_estimates' }, () => {
+        loadData();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sortings' }, () => {
+        loadData();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadData]);
 
   useEffect(() => {
     if (!selectedProduct) {

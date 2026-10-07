@@ -1,32 +1,40 @@
 .header {
   display: flex;
   flex-direction: column;
-  gap: var(--space-1-5);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border-default);
   margin-bottom: var(--space-4);
+  /* Added top margin/padding to push the button down as requested */
+  padding-top: var(--space-2);
 }
-.breadcrumb {}
 .row {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: space-between; /* Title on left, actions on right */
   gap: var(--space-4);
   flex-wrap: wrap;
+  width: 100%;
 }
-.titleGroup { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.titleContainer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3); /* Space for the toggle button */
+  flex: 1;
+  min-width: 0;
+}
+
 .title {
-  font-size: var(--font-size-2xl);
-  font-weight: var(--font-weight-semibold);
-  color: var(--text-primary);
-  line-height: var(--line-height-tight);
-  letter-spacing: var(--letter-spacing-tight);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  color: var(--color-primary-700, #b91c1c);
+  padding: 6px 16px;
+  border-radius: var(--radius-full, 9999px);
+  border: 1.5px solid var(--color-primary-200, #fecaca);
 }
-.description {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
-  line-height: var(--line-height-normal);
-}
+
 .actions {
   display: flex;
   align-items: center;

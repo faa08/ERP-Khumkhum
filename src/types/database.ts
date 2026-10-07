@@ -450,6 +450,9 @@ export interface ForecastMetadata {
   totalHistoricalWeeks: number;
   coefficientOfVariation: number;
   dataSourceLabel: string;
+  mape?: number;
+  rmse?: number;
+  mad?: number;
 }
 
 export interface OperationalInsight {

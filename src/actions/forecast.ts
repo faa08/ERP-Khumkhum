@@ -18,38 +18,124 @@ import type {
 // ─────────────────────────────────────────────
 
 /**
- * Holt's Double Exponential Smoothing (Linear Trend)
- * Menghasilkan proyeksi yang memiliki tren naik/turun, bukan flat.
- * Pattern sama dengan yang digunakan di PPIC page.
+ * Holt-Winters Triple Exponential Smoothing (Additive Seasonality)
+ * Menghasilkan proyeksi yang mempertimbangkan tren dan musiman (seasonality).
  */
-function holtLinearTrend(
+function holtWintersTripleExponentialSmoothing(
   series: number[],
-  alpha = 0.35,
+  alpha = 0.4,
   beta = 0.2,
+  gamma = 0.3,
+  seasonalPeriod = 4,
   periodsAhead = 4
-): number[] {
-  if (series.length === 0) return Array(periodsAhead).fill(0);
-  if (series.length === 1) return Array(periodsAhead).fill(series[0]);
-
-  // Inisialisasi level dan trend
-  let level = series[0];
-  let trend = series[1] - series[0];
-
-  // Smoothing pass
-  for (let i = 1; i < series.length; i++) {
-    const prevLevel = level;
-    level = alpha * series[i] + (1 - alpha) * (level + trend);
-    trend = beta * (level - prevLevel) + (1 - beta) * trend;
+): { forecasts: number[]; fitted: number[] } {
+  const n = series.length;
+  // Jika data kurang dari 2 cycle, pakai Holt Double Exponential Smoothing sebagai fallback
+  if (n < seasonalPeriod * 2) {
+    let level = series[0] || 0;
+    let trend = n > 1 ? series[1] - series[0] : 0;
+    const forecasts = [];
+    const fitted = [level];
+    for (let i = 1; i < n; i++) {
+      const prevLevel = level;
+      level = alpha * series[i] + (1 - alpha) * (level + trend);
+      trend = beta * (level - prevLevel) + (1 - beta) * trend;
+      fitted.push(level + trend); // in-sample simple fit
+    }
+    for (let i = 1; i <= periodsAhead; i++) {
+      forecasts.push(parseFloat(Math.max(0, level + i * trend).toFixed(1)));
+    }
+    return { forecasts, fitted };
   }
 
-  // Generate forecast: tiap periode memiliki tren berbeda
+  let level = series[0];
+  let trend = 0;
+
+  // Initialize trend (average of the differences between the first two seasons)
+  for (let i = 0; i < seasonalPeriod; i++) {
+    trend += (series[i + seasonalPeriod] - series[i]) / seasonalPeriod;
+  }
+  trend /= seasonalPeriod;
+
+  // Initialize seasonal indices
+  const seasonals = new Array(seasonalPeriod).fill(0);
+  const numSeasons = Math.floor(n / seasonalPeriod);
+  const initialSeasonAverages = new Array(numSeasons).fill(0);
+
+  for (let i = 0; i < numSeasons; i++) {
+    for (let j = 0; j < seasonalPeriod; j++) {
+      initialSeasonAverages[i] += series[i * seasonalPeriod + j];
+    }
+    initialSeasonAverages[i] /= seasonalPeriod;
+  }
+
+  for (let i = 0; i < seasonalPeriod; i++) {
+    let sum = 0;
+    for (let j = 0; j < numSeasons; j++) {
+      sum += series[j * seasonalPeriod + i] - initialSeasonAverages[j];
+    }
+    seasonals[i] = sum / numSeasons;
+  }
+
+  const fitted: number[] = new Array(n).fill(0);
+  fitted[0] = series[0];
+
+  // Smoothing
+  for (let i = 1; i < n; i++) {
+    const sIdx = i % seasonalPeriod;
+    const prevLevel = level;
+
+    // In-sample prediction
+    fitted[i] = prevLevel + trend + seasonals[(i - 1) % seasonalPeriod];
+
+    const val = series[i];
+    level = alpha * (val - seasonals[sIdx]) + (1 - alpha) * (prevLevel + trend);
+    trend = beta * (level - prevLevel) + (1 - beta) * trend;
+    seasonals[sIdx] = gamma * (val - level) + (1 - gamma) * seasonals[sIdx];
+  }
+
+  // Forecasting
   const forecasts: number[] = [];
   for (let i = 1; i <= periodsAhead; i++) {
-    const f = level + i * trend;
-    forecasts.push(parseFloat(Math.max(0, f).toFixed(1)));
+    const sIdx = (n + i - 1) % seasonalPeriod;
+    let f = level + i * trend + seasonals[sIdx];
+    f = parseFloat(Math.max(0, f).toFixed(1));
+    forecasts.push(f);
   }
 
-  return forecasts;
+  return { forecasts, fitted };
+}
+
+/**
+ * Calculate Evaluation Metrics: MAPE, RMSE, MAD/MAE
+ */
+function evaluateForecast(actual: number[], fitted: number[]): { mape: number; rmse: number; mad: number } {
+  let sumAbsPctError = 0;
+  let sumSqError = 0;
+  let sumAbsError = 0;
+  let countMape = 0;
+  const n = actual.length;
+
+  for (let i = 0; i < n; i++) {
+    const a = actual[i];
+    const f = fitted[i];
+    const error = a - f;
+    const absError = Math.abs(error);
+
+    sumAbsError += absError;
+    sumSqError += error * error;
+
+    if (a !== 0) {
+      sumAbsPctError += absError / a;
+      countMape++;
+    }
+  }
+
+  const mad = parseFloat((sumAbsError / n).toFixed(2));
+  const rmse = parseFloat(Math.sqrt(sumSqError / n).toFixed(2));
+  const mape = countMape > 0 ? parseFloat(((sumAbsPctError / countMape) * 100).toFixed(2)) : 0;
+
+  return { mape, rmse, mad };
 }
 
 /**
@@ -77,7 +163,7 @@ function calculateConfidence(
   cv: number
 ): { score: number; level: 'Tinggi' | 'Sedang' | 'Rendah' } {
   // Base score from data quantity (max 40 points)
-  const dataScore = Math.min(40, (totalWeeks / 8) * 40);
+  const dataScore = Math.min(40, (totalWeeks / 12) * 40);
 
   // Stability score from CV (max 35 points) — lower CV = higher score
   const stabilityScore = cv <= 10 ? 35 : cv <= 20 ? 28 : cv <= 35 ? 20 : cv <= 50 ? 12 : 5;
@@ -102,7 +188,7 @@ function calculateConfidence(
  * 2. receivings (weight per minggu)
  * 3. sortings (accepted_quantity per minggu)
  */
-async function getWeeklyHistoricalData(weeksBack = 8): Promise<{
+async function getWeeklyHistoricalData(weeksBack = 12): Promise<{
   weeklyVolumes: number[];
   weekLabels: string[];
   dataSource: ForecastDataSource;
@@ -426,7 +512,7 @@ export async function getMaterialForecast(): Promise<{
     await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'MANAGEMENT', 'SUPER_ADMIN']);
 
     // ── 1. Ambil data historis mingguan (agregasi per ISO week) ──
-    const historical = await getWeeklyHistoricalData(8);
+    const historical = await getWeeklyHistoricalData(12);
 
     // Filter out trailing zero-weeks to only use weeks with data
     const activeVolumes = historical.weeklyVolumes;
@@ -466,9 +552,16 @@ export async function getMaterialForecast(): Promise<{
       };
     }
 
-    // ── 2. Forecast menggunakan Holt's Double Exponential Smoothing ──
+    // ── 2. Forecast menggunakan Holt-Winters Triple Exponential Smoothing ──
     const avgHistorical = nonZeroVolumes.reduce((a, b) => a + b, 0) / nonZeroVolumes.length;
-    const projectedForecast = holtLinearTrend(nonZeroVolumes, 0.35, 0.2, 4);
+    const hwResult = holtWintersTripleExponentialSmoothing(nonZeroVolumes, 0.4, 0.2, 0.3, 4, 4);
+    const projectedForecast = hwResult.forecasts;
+    
+    // Evaluate metrics based on in-sample fit
+    const evalMetrics = evaluateForecast(nonZeroVolumes, hwResult.fitted);
+    metadata.mape = evalMetrics.mape;
+    metadata.rmse = evalMetrics.rmse;
+    metadata.mad = evalMetrics.mad;
 
     const now = new Date();
     const projections: ForecastWeekProjection[] = projectedForecast.map((kg, index) => {

@@ -517,7 +517,7 @@ export default function AiForecastPage() {
       }>
         <SectionExplainer
           icon={<Info size={16} color="var(--color-primary-600)" />}
-          text={`Grafik di bawah menunjukkan perbandingan data produksi aktual (${historicalData.length} minggu terakhir) dengan proyeksi AI untuk 4 minggu ke depan. Garis biru solid adalah data historis, garis hijau putus-putus adalah prediksi menggunakan metode Exponential Smoothing (α = 0.35) dengan safety factor 10%.`}
+          text={`Grafik di bawah menunjukkan perbandingan data produksi aktual (${historicalData.length} minggu terakhir) dengan proyeksi AI untuk 4 minggu ke depan. Garis biru solid adalah data historis, garis hijau putus-putus adalah prediksi menggunakan metode Holt-Winters Triple Exponential Smoothing (mempertimbangkan tren & musiman) dengan safety factor 10%.`}
         />
 
         <div style={{ height: 320, width: '100%' }}>
@@ -591,8 +591,15 @@ export default function AiForecastPage() {
         }}>
           <span>📈 <strong>H-n</strong> = Data produksi minggu ke-n lalu</span>
           <span>🔮 <strong>P-n</strong> = Proyeksi minggu ke-n depan</span>
-          <span>⚙️ <strong>Metode:</strong> Exponential Smoothing (α = 0.35)</span>
+          <span>⚙️ <strong>Metode:</strong> Holt-Winters Triple Exponential Smoothing</span>
           <span>🛡️ <strong>Safety Factor:</strong> +10% antisipasi lonjakan</span>
+          {metadata?.mape !== undefined && (
+            <>
+              <span title="Mean Absolute Percentage Error">📊 <strong>MAPE:</strong> {metadata.mape}%</span>
+              <span title="Root Mean Square Error">📉 <strong>RMSE:</strong> {metadata.rmse}</span>
+              <span title="Mean Absolute Deviation">📏 <strong>MAD:</strong> {metadata.mad}</span>
+            </>
+          )}
         </div>
       </Card>
       )}

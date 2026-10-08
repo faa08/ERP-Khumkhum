@@ -30,7 +30,7 @@ export async function getMasterOperations() {
 
 export async function getActiveWorkerSession() {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireAuth(['PRODUCTION', 'QC', 'SUPER_ADMIN', 'MANAGEMENT']);
 
     const { data, error } = await supabaseAdmin
       .from('worker_sessions')
@@ -284,7 +284,7 @@ export async function getTimeStudyBatches(operation_id: string) {
 
 export async function getHistoricalWorkerSessions() {
   try {
-    const { user } = await requireAuth();
+    const { user } = await requireAuth(['PRODUCTION', 'QC', 'SUPER_ADMIN', 'MANAGEMENT']);
     const { data, error } = await supabaseAdmin
       .from('worker_sessions')
       .select('*, operation:master_operations(operation_name)')

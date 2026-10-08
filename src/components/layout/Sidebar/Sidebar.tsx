@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { useSidebar } from '@/hooks/useSidebar';
 import { useAuth } from '@/hooks/useAuth';
 import type { NavGroup, NavItem } from '@/types/navigation';
+import { ROLE_PERMISSIONS } from '@/types/auth';
 import {
   LayoutDashboard,
   Factory,
@@ -53,29 +54,33 @@ type ProtectedNavGroup = Omit<NavGroup, 'items'> & {
 const NAV_GROUPS: ProtectedNavGroup[] = [
   {
     id: 'main',
-    label: 'Utama',
     items: [
       { id: 'dashboard', label: 'Dashboard Utama', href: '/dashboard', icon: 'LayoutDashboard', requiredPermission: 'dashboard' },
     ],
   },
   {
     id: 'operations',
-    label: 'Operasional',
     items: [
-      { id: 'receiving',  label: 'Inbound (Penerimaan)',  href: '/receiving',  icon: 'ClipboardList', requiredPermission: 'receiving' },
-      { id: 'sorting',    label: 'Sortasi & Grading',    href: '/sorting',    icon: 'Scale',         requiredPermission: 'sorting' },
-      { id: 'ppic',       label: 'PPIC & Jadwal',       href: '/ppic',       icon: 'CalendarDays',  requiredPermission: 'ppic' },
-      { id: 'warehouse',  label: 'Warehouse (Bahan Baku)', href: '/warehouse', icon: 'Database', requiredPermission: 'warehouse' },
-      { id: 'production', label: 'Produksi & Rendemen', href: '/production', icon: 'Factory',       requiredPermission: 'production' },
-      { id: 'qc',         label: 'Quality Control (QC)', href: '/quality-control', icon: 'ShieldCheck', requiredPermission: 'qc' },
-      { id: 'inventory',  label: 'Inventaris (Produk Jadi)',  href: '/inventory',  icon: 'Package',       requiredPermission: 'inventory' },
-      { id: 'sales',      label: 'Sales Order & Pengiriman', href: '/sales',  icon: 'ShoppingCart',  requiredPermission: 'sales' },
-      { id: 'traceability', label: 'Ketertelusuran', href: '/traceability', icon: 'LineChart', requiredPermission: 'traceability' },
+      {
+        id: 'ops-dropdown',
+        label: 'Operasional',
+        icon: 'Factory',
+        children: [
+          { id: 'receiving',  label: 'Inbound (Penerimaan)',  href: '/receiving',  icon: 'ClipboardList', requiredPermission: 'receiving' },
+          { id: 'sorting',    label: 'Sortasi & Grading',    href: '/sorting',    icon: 'Scale',         requiredPermission: 'sorting' },
+          { id: 'ppic',       label: 'PPIC & Jadwal',       href: '/ppic',       icon: 'CalendarDays',  requiredPermission: 'ppic' },
+          { id: 'warehouse',  label: 'Warehouse (Bahan Baku)', href: '/warehouse', icon: 'Database', requiredPermission: 'warehouse' },
+          { id: 'production', label: 'Produksi & Rendemen', href: '/production', icon: 'Factory',       requiredPermission: 'production' },
+          { id: 'qc',         label: 'Quality Control (QC)', href: '/quality-control', icon: 'ShieldCheck', requiredPermission: 'qc' },
+          { id: 'inventory',  label: 'Inventaris (Produk Jadi)',  href: '/inventory',  icon: 'Package',       requiredPermission: 'inventory' },
+          { id: 'sales',      label: 'Sales Order & Pengiriman', href: '/sales',  icon: 'ShoppingCart',  requiredPermission: 'sales' },
+          { id: 'traceability', label: 'Ketertelusuran', href: '/traceability', icon: 'LineChart', requiredPermission: 'traceability' },
+        ],
+      }
     ],
   },
   {
     id: 'master',
-    label: 'Data Induk',
     items: [
       {
         id: 'master-data',
@@ -92,33 +97,45 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
   },
   {
     id: 'management',
-    label: 'Manajemen',
     items: [
-      { id: 'reports', label: 'Laporan', href: '/reports', icon: 'TrendingUp', requiredPermission: 'reports' },
-      { id: 'ai-forecast', label: 'AI Forecasting', href: '/ai-forecast', icon: 'LineChart', requiredPermission: 'forecast' },
+      {
+        id: 'mgmt-dropdown',
+        label: 'Manajemen',
+        icon: 'TrendingUp',
+        children: [
+          { id: 'reports', label: 'Laporan', href: '/reports', icon: 'TrendingUp', requiredPermission: 'reports' },
+          { id: 'ai-forecast', label: 'AI Forecasting', href: '/ai-forecast', icon: 'LineChart', requiredPermission: 'forecast' },
+        ]
+      }
     ],
   },
   {
     id: 'system',
-    label: 'Sistem',
     items: [
       {
-        id: 'settings',
-        label: 'Pengaturan',
+        id: 'sys-dropdown',
+        label: 'Sistem',
         icon: 'Settings',
-        requiredPermission: 'settings',
         children: [
-          { id: 'general', label: 'Konfigurasi Standar', href: '/settings' },
-          { id: 'users', label: 'Manajemen Pengguna', href: '/settings/users' },
-        ],
-      },
-      {
-        id: 'audit-log',
-        label: 'Audit Log & Sistem',
-        href: '/settings/audit-log',
-        icon: 'ClipboardList',
-        requiredPermission: 'audit',
-      },
+          {
+            id: 'settings',
+            label: 'Pengaturan',
+            icon: 'Settings',
+            requiredPermission: 'settings',
+            children: [
+              { id: 'general', label: 'Konfigurasi Standar', href: '/settings' },
+              { id: 'users', label: 'Manajemen Pengguna', href: '/settings/users' },
+            ],
+          },
+          {
+            id: 'audit-log',
+            label: 'Audit Log & Sistem',
+            href: '/settings/audit-log',
+            icon: 'ClipboardList',
+            requiredPermission: 'audit',
+          },
+        ]
+      }
     ],
   },
 ];
@@ -218,8 +235,6 @@ export function Sidebar() {
   const filteredGroups = React.useMemo(() => {
     if (!user) return [];
     
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { ROLE_PERMISSIONS } = require('@/types/auth');
     const userPermissions = ROLE_PERMISSIONS[user.role] || [];
     const isSuperAdmin = userPermissions.includes('*');
 
@@ -233,6 +248,7 @@ export function Sidebar() {
         }
         if (item.children) {
           const filteredChildren = item.children.map(filterItem).filter(Boolean) as typeof item.children;
+          if (filteredChildren.length === 0) return null;
           return { ...item, children: filteredChildren };
         }
         return item;
@@ -274,7 +290,7 @@ export function Sidebar() {
         <nav className={cn(styles.nav, 'scroll-area')} aria-label="Navigation">
           {filteredGroups.map((group, groupIdx) => (
             <div key={group.id} className={styles.group}>
-              {!isCollapsed && (
+              {!isCollapsed && group.label && (
                 <p className={styles.groupLabel} aria-hidden="true">
                   {group.label}
                 </p>

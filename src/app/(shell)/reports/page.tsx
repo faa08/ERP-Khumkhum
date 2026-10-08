@@ -550,7 +550,7 @@ export default function ReportsPage() {
       alternateRowStyles: { 
         fillColor: [252, 253, 255]
       },
-      didDrawPage: (dataHook) => {
+      didDrawPage: (dataHook: any) => {
         if (dataHook.pageNumber > 3) {
             doc.setFillColor(15, 68, 126);
             doc.rect(0, 0, pageWidth, 20, 'F');

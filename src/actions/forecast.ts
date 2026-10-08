@@ -671,6 +671,11 @@ export async function getMaterialForecast(): Promise<{
         ? Math.ceil(netRequirement * safetyStockMultiplier)
         : parseFloat((netRequirement * safetyStockMultiplier).toFixed(1));
 
+      let estimatedUnitCost = 0;
+      if (item.stockKey === 'Baglog') estimatedUnitCost = 2500;
+      else if (item.stockKey === 'Bumbu') estimatedUnitCost = 45000;
+      else if (item.stockKey === 'Packaging') estimatedUnitCost = 850;
+
       return {
         material_name: item.name,
         uom: item.uom,
@@ -682,6 +687,8 @@ export async function getMaterialForecast(): Promise<{
         notes: item.notes,
         current_stock: currentStock,
         net_requirement: parseFloat(netRequirement.toFixed(1)),
+        estimated_unit_cost: estimatedUnitCost,
+        estimated_total_cost: totalProcurement * estimatedUnitCost,
       };
     });
 

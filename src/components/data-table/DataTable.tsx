@@ -58,7 +58,6 @@ export function DataTable<TData extends { id?: string | number }>({
     ? [
         {
           id: 'select',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           header: ({ table }: { table: any }) => (
             <Checkbox
               checked={table.getIsAllPageRowsSelected()}
@@ -67,7 +66,6 @@ export function DataTable<TData extends { id?: string | number }>({
               aria-label="Select all rows"
             />
           ),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           cell: ({ row }: { row: any }) => (
             <Checkbox
               checked={row.getIsSelected()}

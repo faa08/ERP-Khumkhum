@@ -115,7 +115,7 @@ export function Step6Inventory({ onComplete, onBack }: Step6Props) {
       </div>
 
       <div style={{ padding: 'var(--space-3)', background: 'var(--color-success-50)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-success-200)', marginTop: 'var(--space-4)' }}>
-        <strong>Selesai!</strong> Setelah menekan "Selesaikan Setup", sistem ERP Anda siap digunakan sepenuhnya dengan data HACCP dan konfigurasi Gudang yang sudah terintegrasi.
+        <strong>Selesai!</strong> Setelah menekan &quot;Selesaikan Setup&quot;, sistem ERP Anda siap digunakan sepenuhnya dengan data HACCP dan konfigurasi Gudang yang sudah terintegrasi.
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-4)' }}>

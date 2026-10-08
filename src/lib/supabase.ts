@@ -33,12 +33,14 @@ if (process.env.NODE_ENV !== 'production') globalForSupabase.supabase = supabase
  */
 export const supabaseAdmin =
   globalForSupabase.supabaseAdmin ??
-  createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
+  (typeof window === 'undefined'
+    ? createClient(supabaseUrl, supabaseServiceKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      })
+    : (null as unknown as SupabaseClient));
 
 if (process.env.NODE_ENV !== 'production') globalForSupabase.supabaseAdmin = supabaseAdmin;
 

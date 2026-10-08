@@ -52,6 +52,10 @@ export interface DbProduct {
   sku: string;
   name: string;
   description?: string | null;
+  category?: string | null;
+  uom?: string | null;
+  unit_price?: number | null;
+  stock_quantity?: number | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -65,6 +69,8 @@ export interface DbRawMaterial {
   material_category?: string | null;
   min_stock?: number | null;
   rop?: number | null;
+  unit_price?: number | null;
+  stock_quantity?: number | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -430,6 +436,8 @@ export interface MaterialForecastItem {
   notes: string;
   current_stock: number;
   net_requirement: number;
+  estimated_unit_cost?: number;
+  estimated_total_cost?: number;
 }
 
 export interface ForecastWeekProjection {

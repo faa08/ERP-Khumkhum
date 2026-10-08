@@ -39,6 +39,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import {
   getSalesOrders,
+  getSalesYears,
   createSalesOrder,
   updateSalesOrderStatus,
   returnSalesOrder,
@@ -97,6 +98,8 @@ export default function SalesPage() {
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [flavorFilter, setFlavorFilter] = useState<string>('ALL');
+  const [yearFilter, setYearFilter] = useState<string>('ALL');
+  const [availableYears, setAvailableYears] = useState<string[]>(['ALL']);
 
   // Drawers & Modals
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -118,22 +121,24 @@ export default function SalesPage() {
 
   const toast = useToast();
 
-  const loadData = useCallback(async (showToast = false) => {
+  const loadData = useCallback(async (showToast = false, currentYear = 'ALL') => {
     if (showToast) setIsRefreshing(true);
     else setIsLoading(true);
 
     try {
-      const [soRes, trackingRes, custRes, prodRes] = await Promise.all([
-        getSalesOrders(),
+      const [soRes, trackingRes, custRes, prodRes, yearsRes] = await Promise.all([
+        getSalesOrders(currentYear),
         getSalesRealtimeTracking(),
         getCustomers(),
         getProducts(),
+        getSalesYears(),
       ]);
 
       if (soRes.success && soRes.data) setData(soRes.data);
       if (trackingRes.success && trackingRes.data) setTracking(trackingRes.data);
       if (custRes.success && custRes.data) setCustomers(custRes.data as any);
       if (prodRes.success && prodRes.data) setProducts(prodRes.data as any);
+      if (yearsRes) setAvailableYears(['ALL', ...yearsRes]);
 
       if (showToast) {
         toast.success('Data stok packing & pesanan berhasil diperbarui secara real-time');
@@ -183,10 +188,12 @@ export default function SalesPage() {
     return tracking.productsStock.filter(p => p.flavor.toLowerCase() === flavorFilter.toLowerCase());
   }, [tracking, flavorFilter]);
 
-  // Filter Sales Orders
+  // Filter Sales Orders (Client side only for status)
   const filteredSalesOrders = useMemo(() => {
-    if (statusFilter === 'ALL') return data;
-    return data.filter(item => item.status === statusFilter);
+    return data.filter(item => {
+      if (statusFilter !== 'ALL' && item.status !== statusFilter) return false;
+      return true;
+    });
   }, [data, statusFilter]);
 
   // ── Form helpers ───────────────────────────────────────────────
@@ -977,9 +984,37 @@ export default function SalesPage() {
             </p>
           </div>
 
-          {/* Filter Status Tab */}
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 500 }}>
+          <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Filter Tahun */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                Tahun:
+              </span>
+              <select
+                value={yearFilter}
+                onChange={e => {
+                  setYearFilter(e.target.value);
+                  loadData(false, e.target.value);
+                }}
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '1px solid var(--border-default)',
+                  fontSize: '12px',
+                  background: 'var(--bg-default)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                }}
+              >
+                {availableYears.map(year => (
+                  <option key={year} value={year}>{year === 'ALL' ? 'Semua' : year}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Filter Status Tab */}
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 500 }}>
               Status SO:
             </span>
             {['ALL', 'PENDING', 'PROCESSING', 'SHIPPED', 'COMPLETED'].map(status => {
@@ -1005,6 +1040,7 @@ export default function SalesPage() {
                 </button>
               );
             })}
+          </div>
           </div>
         </div>
 

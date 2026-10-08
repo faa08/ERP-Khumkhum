@@ -155,27 +155,7 @@ function ComparisonBar({ historical, projected, uom }: { historical: number; pro
   );
 }
 
-/** Section explainer/info banner */
-function SectionExplainer({ icon, text }: { icon: React.ReactNode; text: string }) {
-  return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: 'var(--space-2)',
-      padding: 'var(--space-3) var(--space-4)',
-      background: 'var(--color-primary-50)',
-      border: '1px solid var(--color-primary-100)',
-      borderRadius: 'var(--radius-md)',
-      marginBottom: 'var(--space-4)',
-      fontSize: 'var(--text-sm)',
-      color: 'var(--color-primary-800)',
-      lineHeight: 1.5,
-    }}>
-      <span style={{ flexShrink: 0, marginTop: '2px' }}>{icon}</span>
-      <span>{text}</span>
-    </div>
-  );
-}
+
 
 
 // ─────────────────────────────────────────────
@@ -288,7 +268,7 @@ export default function AiForecastPage() {
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
       <PageHeader
         title="Wawasan Operasional & AI Forecasting (MRP)"
         description="Peramalan kebutuhan bahan baku, estimasi permintaan pasar, dan rekomendasi mitigasi anomali produksi berbasis data historis."
@@ -331,16 +311,13 @@ export default function AiForecastPage() {
         }}>
           {isInsufficientData ? <AlertCircle size={18} /> : metadata.dataQuality === 'LIMITED' ? <Info size={18} /> : <ShieldCheck size={18} />}
           <div style={{ flex: 1 }}>
-            <strong>
+            <strong style={{ fontSize: 'var(--text-md)' }}>
               {isInsufficientData
-                ? '⚠️ Data Tidak Cukup untuk Forecasting'
+                ? 'Data Belum Cukup'
                 : metadata.dataQuality === 'LIMITED'
-                  ? '📊 Data Terbatas — Akurasi Prediksi Mungkin Rendah'
-                  : '✅ Data Memadai — Prediksi Akurat'}
+                  ? 'Data Terbatas (Akurasi Mungkin Terbatas)'
+                  : 'Sistem Prediksi Aktif & Optimal'}
             </strong>
-            <div style={{ fontSize: 'var(--text-xs)', marginTop: '2px', opacity: 0.85 }}>
-              Sumber: {metadata.dataSourceLabel} • {metadata.totalHistoricalWeeks} minggu data historis • Variabilitas (CV): {metadata.coefficientOfVariation}%
-            </div>
           </div>
           <span style={{
             fontSize: '10px',
@@ -349,10 +326,10 @@ export default function AiForecastPage() {
             borderRadius: '999px',
             background: 'rgba(255,255,255,0.7)',
           }}>
-            {metadata.dataSource === 'PRODUCTION' ? '📦 Produksi'
-              : metadata.dataSource === 'RECEIVING' ? '📥 Penerimaan'
-                : metadata.dataSource === 'SORTING' ? '🔍 Sortasi'
-                  : '❌ Tidak Ada Data'}
+            {metadata.dataSource === 'PRODUCTION' ? 'Produksi'
+              : metadata.dataSource === 'RECEIVING' ? 'Penerimaan'
+                : metadata.dataSource === 'SORTING' ? 'Sortasi'
+                  : 'Tidak Ada Data'}
           </span>
         </div>
       )}
@@ -515,10 +492,7 @@ export default function AiForecastPage() {
           <strong style={{ color: 'var(--color-primary-700)' }}>Grafik Tren: Data Historis → Proyeksi AI</strong>
         </div>
       }>
-        <SectionExplainer
-          icon={<Info size={16} color="var(--color-primary-600)" />}
-          text={`Grafik di bawah menunjukkan perbandingan data produksi aktual (${historicalData.length} minggu terakhir) dengan proyeksi AI untuk 4 minggu ke depan. Garis biru solid adalah data historis, garis hijau putus-putus adalah prediksi menggunakan metode Holt-Winters Triple Exponential Smoothing (mempertimbangkan tren & musiman) dengan safety factor 10%.`}
-        />
+
 
         <div style={{ height: 320, width: '100%' }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -535,7 +509,7 @@ export default function AiForecastPage() {
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
               <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={12} />
-              <YAxis stroke="var(--text-secondary)" fontSize={12} unit=" kg" />
+              <YAxis stroke="var(--text-secondary)" fontSize={12} unit=" kg" width={80} />
               <RechartsTooltip
                 contentStyle={{
                   backgroundColor: 'var(--bg-surface)',
@@ -577,28 +551,24 @@ export default function AiForecastPage() {
           </ResponsiveContainer>
         </div>
 
-        {/* Legend penjelasan */}
+        {/* Simplified Info */}
         <div style={{
           display: 'flex',
-          flexWrap: 'wrap',
-          gap: 'var(--space-4)',
-          marginTop: 'var(--space-3)',
-          padding: 'var(--space-3)',
-          background: 'var(--bg-subtle)',
-          borderRadius: 'var(--radius-md)',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 'var(--space-4)',
+          paddingTop: 'var(--space-3)',
+          borderTop: '1px dashed var(--border-color)',
           fontSize: 'var(--text-xs)',
-          color: 'var(--text-secondary)',
+          color: 'var(--text-tertiary)',
         }}>
-          <span>📈 <strong>H-n</strong> = Data produksi minggu ke-n lalu</span>
-          <span>🔮 <strong>P-n</strong> = Proyeksi minggu ke-n depan</span>
-          <span>⚙️ <strong>Metode:</strong> Holt-Winters Triple Exponential Smoothing</span>
-          <span>🛡️ <strong>Safety Factor:</strong> +10% antisipasi lonjakan</span>
+          <span>Holt-Winters Additive • Safety Factor +10%</span>
           {metadata?.mape !== undefined && (
-            <>
-              <span title="Mean Absolute Percentage Error">📊 <strong>MAPE:</strong> {metadata.mape}%</span>
-              <span title="Root Mean Square Error">📉 <strong>RMSE:</strong> {metadata.rmse}</span>
-              <span title="Mean Absolute Deviation">📏 <strong>MAD:</strong> {metadata.mad}</span>
-            </>
+            <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
+              <span>MAPE: {metadata.mape}%</span>
+              <span>RMSE: {metadata.rmse}</span>
+              <span>MAD: {metadata.mad}</span>
+            </div>
           )}
         </div>
       </Card>
@@ -614,10 +584,7 @@ export default function AiForecastPage() {
           <strong style={{ color: 'var(--color-primary-700)' }}>Proyeksi Kebutuhan Jamur Segar — 4 Minggu Ke Depan</strong>
         </div>
       }>
-        <SectionExplainer
-          icon={<Calendar size={16} color="var(--color-primary-600)" />}
-          text={`Setiap kartu menampilkan estimasi kebutuhan jamur segar untuk masing-masing minggu. Warna menunjukkan tingkat urgensi, dan bar akurasi menggambarkan seberapa yakin model AI dengan prediksi tersebut. Semakin jauh minggunya, semakin rendah akurasinya.`}
-        />
+
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 'var(--space-3)' }}>
           {projections.map((p, index) => {
@@ -665,15 +632,7 @@ export default function AiForecastPage() {
                   <ChangeIndicator value={pctChange} />
                 </div>
 
-                {/* Narrative */}
-                <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  {isUp
-                    ? `Permintaan diprediksi naik ${Math.abs(pctChange).toFixed(1)}% dari rata-rata historis (${avgDemandKg.toLocaleString('id-ID')} kg).`
-                    : pctChange === 0
-                      ? `Permintaan diprediksi stabil sesuai rata-rata historis.`
-                      : `Permintaan diprediksi turun ${Math.abs(pctChange).toFixed(1)}% dari rata-rata historis (${avgDemandKg.toLocaleString('id-ID')} kg).`
-                  }
-                </p>
+
 
                 {/* Confidence bar */}
                 <ConfidenceBadge level={p.confidence} />
@@ -694,22 +653,20 @@ export default function AiForecastPage() {
           <strong style={{ color: 'var(--color-success-700)' }}>Rencana Kebutuhan Material & Pengadaan (MRP) — Pekan Depan</strong>
         </div>
       }>
-        <SectionExplainer
-          icon={<Info size={16} color="var(--color-primary-600)" />}
-          text="Tabel MRP menghitung jumlah pengadaan berdasarkan proyeksi permintaan dikurangi stok gudang aktual. Kebutuhan bersih = Proyeksi − Stok Gudang. Total pengadaan sudah termasuk safety stock 10%."
-        />
+
 
         {/* Bar Chart Overview */}
         <div style={{ marginBottom: 'var(--space-4)' }}>
-          <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 'var(--space-3)' }}>
-            📊 Perbandingan Kebutuhan Bersih vs Total Pengadaan (per Material)
+          <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 'var(--space-3)' }}>
+            <BarChart3 size={16} />
+            Perbandingan Kebutuhan Bersih vs Total Pengadaan (per Material)
           </h4>
           <div style={{ height: 220, width: '100%' }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={materialChartData} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                 <XAxis dataKey="name" stroke="var(--text-secondary)" fontSize={11} />
-                <YAxis stroke="var(--text-secondary)" fontSize={11} />
+                <YAxis stroke="var(--text-secondary)" fontSize={11} width={80} />
                 <RechartsTooltip
                   contentStyle={{
                     backgroundColor: 'var(--bg-surface)',
@@ -834,6 +791,19 @@ export default function AiForecastPage() {
                       {m.total_procurement_needed.toLocaleString('id-ID')} {m.uom}
                     </strong>
                   </div>
+                  {m.estimated_total_cost !== undefined && (
+                    <div style={{ paddingLeft: '12px', borderLeft: '2px solid var(--border-color)' }}>
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block', marginBottom: '2px' }}>
+                        💰 Estimasi Budget
+                      </span>
+                      <strong style={{ fontSize: 'var(--text-lg)', color: 'var(--text-primary)' }}>
+                        Rp {m.estimated_total_cost.toLocaleString('id-ID')}
+                      </strong>
+                      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                        (Rp {m.estimated_unit_cost?.toLocaleString('id-ID')} / {m.uom})
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Row 3: Visual comparison bar */}
@@ -854,61 +824,64 @@ export default function AiForecastPage() {
       {/* ════════════════════════════════════════════════════════════ */}
       <Card header={
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <Sparkles size={18} color="var(--color-warning-600)" />
-          <strong style={{ color: 'var(--color-warning-700)' }}>Wawasan Cerdas & Rekomendasi Manufaktur</strong>
+          <Sparkles size={18} color="var(--color-primary-600)" />
+          <strong style={{ color: 'var(--text-primary)' }}>Rekomendasi Keputusan Eksekutif (AI Action Items)</strong>
         </div>
       }>
-        <SectionExplainer
-          icon={<Zap size={16} color="var(--color-warning-600)" />}
-          text="AI menganalisis data produksi dan QC terbaru untuk mendeteksi anomali dan memberikan rekomendasi tindakan. Kartu hijau berarti indikator normal, kuning/oranye berarti perlu perhatian segera."
-        />
+
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           {insights.map((insight) => {
             const isWarning = insight.type === 'WARNING';
             const isSuccess = insight.type === 'SUCCESS';
 
-            const bg = isWarning ? 'var(--color-warning-50)' : isSuccess ? 'var(--color-success-50)' : 'var(--color-primary-50)';
-            const border = isWarning ? 'var(--color-warning-200)' : isSuccess ? 'var(--color-success-200)' : 'var(--color-primary-200)';
-            const textColor = isWarning ? 'var(--color-warning-900)' : isSuccess ? 'var(--color-success-900)' : 'var(--color-primary-900)';
+            const bg = 'var(--bg-card)';
+            const borderColor = 'var(--border-color)';
+            const borderLeft = isWarning ? '3px solid var(--color-warning-500)' : isSuccess ? '3px solid var(--color-success-500)' : '3px solid var(--color-primary-500)';
+            const textColor = 'var(--text-primary)';
             const accentColor = isWarning ? 'var(--color-warning-600)' : isSuccess ? 'var(--color-success-600)' : 'var(--color-primary-600)';
+            const iconBg = isWarning ? 'var(--color-warning-50)' : isSuccess ? 'var(--color-success-50)' : 'var(--color-primary-50)';
             const Icon = isWarning ? AlertCircle : isSuccess ? CheckCircle2 : Sparkles;
-            const statusLabel = isWarning ? 'Perlu Perhatian' : isSuccess ? 'Status Optimal' : 'Informasi';
+            const statusLabel = isWarning ? 'Prioritas' : isSuccess ? 'Optimal' : 'Info';
 
             return (
               <div
                 key={insight.id}
                 style={{
                   display: 'flex',
-                  gap: 'var(--space-3)',
+                  gap: 'var(--space-4)',
                   padding: 'var(--space-4)',
                   backgroundColor: bg,
-                  border: `1px solid ${border}`,
+                  border: `1px solid ${borderColor}`,
+                  borderLeft,
                   borderRadius: 'var(--radius-md)',
                   color: textColor,
                 }}
               >
                 <div style={{
-                  width: 40, height: 40, borderRadius: 'var(--radius-md)',
-                  background: 'rgba(255,255,255,0.7)',
+                  width: 40, height: 40, borderRadius: 'var(--radius-full)',
+                  background: iconBg,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   flexShrink: 0,
                 }}>
-                  <Icon size={22} color={accentColor} />
+                  <Icon size={20} color={accentColor} />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
                   {/* Header row */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '6px' }}>
-                    <strong style={{ fontSize: 'var(--text-md)' }}>{insight.title}</strong>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '6px' }}>
+                    <div>
+                      <strong style={{ fontSize: 'var(--text-md)', display: 'block', marginBottom: '2px' }}>{insight.title}</strong>
+                      <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{insight.description}</span>
+                    </div>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       {insight.metric && (
                         <span style={{
                           fontSize: '11px',
                           fontWeight: 600,
-                          padding: '3px 8px',
+                          padding: '2px 8px',
                           borderRadius: '4px',
-                          background: 'rgba(255,255,255,0.8)',
-                          color: accentColor,
+                          background: 'var(--bg-subtle)',
+                          color: 'var(--text-secondary)',
                         }}>
                           {insight.metric}
                         </span>
@@ -925,27 +898,22 @@ export default function AiForecastPage() {
                       </span>
                     </div>
                   </div>
-                  {/* Description */}
-                  <p style={{ margin: 0, fontSize: 'var(--text-sm)', opacity: 0.9, lineHeight: 1.5 }}>
-                    {insight.description}
-                  </p>
 
-                  {/* Recommendation box */}
+                  {/* Recommendation Action */}
                   <div style={{
-                    marginTop: '6px',
-                    padding: 'var(--space-2) var(--space-3)',
-                    background: 'rgba(255,255,255,0.7)',
-                    borderRadius: 'var(--radius-sm)',
+                    marginTop: '8px',
+                    paddingTop: '8px',
+                    borderTop: '1px dashed var(--border-color)',
                     fontSize: 'var(--text-sm)',
-                    lineHeight: 1.5,
                     display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: '6px',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: 'var(--text-primary)',
                   }}>
-                    <ArrowRight className="w-4 h-4 text-currentColor shrink-0 mt-0.5" aria-hidden="true" />
+                    <ArrowRight className="w-4 h-4 text-currentColor shrink-0" color={accentColor} aria-hidden="true" />
                     <div>
-                      <strong>Tindakan Rekomendasi:</strong>{' '}
-                      <span style={{ fontWeight: 400 }}>{insight.recommendation}</span>
+                      <strong>Keputusan AI:</strong>{' '}
+                      <span>{insight.recommendation}</span>
                     </div>
                   </div>
                 </div>

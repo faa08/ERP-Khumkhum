@@ -23,6 +23,7 @@ export async function getFarmers(): Promise<{ success: boolean; data?: DbFarmer[
     const { data, error } = await supabaseAdmin
       .from('farmers')
       .select('*')
+      .is('deleted_at', null)
       .order('name');
     if (error) throw error;
     return { success: true, data: data as DbFarmer[] };
@@ -160,6 +161,7 @@ export async function getProducts(): Promise<{ success: boolean; data?: DbProduc
     const { data, error } = await supabaseAdmin
       .from('products')
       .select('*')
+      .is('deleted_at', null)
       .order('name');
     if (error) throw error;
     return { success: true, data: data as DbProduct[] };
@@ -245,6 +247,7 @@ export async function getRawMaterials(): Promise<{ success: boolean; data?: DbRa
     const { data, error } = await supabaseAdmin
       .from('raw_materials')
       .select('*')
+      .is('deleted_at', null)
       .order('name');
     if (error) throw error;
     return { success: true, data: data as DbRawMaterial[] };
@@ -330,6 +333,7 @@ export async function getCustomers(): Promise<{ success: boolean; data?: DbCusto
     const { data, error } = await supabaseAdmin
       .from('customers')
       .select('*')
+      .is('deleted_at', null)
       .order('name');
     if (error) throw error;
     return { success: true, data: data as DbCustomer[] };
@@ -420,6 +424,7 @@ export async function getWarehouses(): Promise<{ success: boolean; data?: DbWare
           id, name, phone_number
         )
       `)
+      .is('deleted_at', null)
       .order('name');
     if (error) throw error;
     return { success: true, data: data as DbWarehouse[] };
@@ -505,6 +510,7 @@ export async function getWarehousePics(): Promise<{ success: boolean; data?: DbW
     const { data, error } = await supabaseAdmin
       .from('warehouse_pics')
       .select('*')
+      .is('deleted_at', null)
       .order('name');
     if (error) throw error;
     return { success: true, data: data as DbWarehousePic[] };

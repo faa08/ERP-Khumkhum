@@ -277,7 +277,32 @@ export async function getSalesRealtimeTracking(): Promise<{
 // GET SALES ORDERS
 // ─────────────────────────────────────────────
 
-export async function getSalesOrders(): Promise<{
+export async function getSalesYears(): Promise<string[]> {
+  try {
+    const { data: minData } = await supabaseAdmin.from('sales_orders').select('order_date, created_at').order('order_date', { ascending: true }).limit(1);
+    const { data: maxData } = await supabaseAdmin.from('sales_orders').select('order_date, created_at').order('order_date', { ascending: false }).limit(1);
+    
+    let minYear = new Date().getFullYear();
+    let maxYear = minYear;
+    
+    if (minData && minData[0]) {
+      minYear = new Date(minData[0].order_date || minData[0].created_at).getFullYear();
+    }
+    if (maxData && maxData[0]) {
+      maxYear = new Date(maxData[0].order_date || maxData[0].created_at).getFullYear();
+    }
+    
+    const years = new Set<string>();
+    for (let y = minYear; y <= maxYear; y++) {
+      years.add(y.toString());
+    }
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  } catch (err) {
+    return [new Date().getFullYear().toString()];
+  }
+}
+
+export async function getSalesOrders(year?: string): Promise<{
   success: boolean;
   data?: DbSalesOrder[];
   error?: string;
@@ -285,9 +310,7 @@ export async function getSalesOrders(): Promise<{
   try {
     await requireAuth(['SALES', 'SUPER_ADMIN', 'MANAGEMENT']);
 
-    let result: DbSalesOrder[] = [];
-
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from('sales_orders')
       .select(`
         *,
@@ -297,8 +320,18 @@ export async function getSalesOrders(): Promise<{
           product:products(id, sku, name)
         )
       `)
+      .order('order_date', { ascending: false })
       .order('created_at', { ascending: false })
-      .limit(100);
+      .limit(1000);
+
+    if (year && year !== 'ALL') {
+      const startDate = `${year}-01-01T00:00:00Z`;
+      const endDate = `${year}-12-31T23:59:59Z`;
+      query = query.gte('order_date', startDate).lte('order_date', endDate);
+    }
+
+    const { data, error } = await query;
+    let result = (data || []) as DbSalesOrder[];
 
     if (error) {
       console.warn('Fallback memory for getSalesOrders:', error.message);

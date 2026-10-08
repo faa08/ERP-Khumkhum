@@ -204,7 +204,7 @@ export default function FarmersPage() {
         if (!msg) return '-';
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>"{msg}"</span>
+            <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>&quot;{msg}&quot;</span>
             <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
               {new Date(date).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
             </span>

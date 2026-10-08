@@ -212,41 +212,84 @@ export default function AiForecastPage() {
   const successCount = insights.filter(i => i.type === 'SUCCESS').length;
   const isInsufficientData = metadata?.dataQuality === 'INSUFFICIENT';
 
+  const [selectedYear, setSelectedYear] = useState<string>('');
+
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    historicalLabels.forEach(label => {
+      const parts = label.split(' ');
+      if (parts.length >= 3) {
+        years.add(`20${parts[2]}`);
+      }
+    });
+    // Selalu pastikan tahun saat ini ada (karena proyeksi ada di tahun saat ini)
+    if (historicalLabels.length > 0 || projections.length > 0) {
+      years.add(String(new Date().getFullYear()));
+    }
+    return Array.from(years).sort();
+  }, [historicalLabels, projections]);
+
+  // Set default selectedYear ke tahun terakhir jika belum di-set
+  useEffect(() => {
+    if (!selectedYear && availableYears.length > 0) {
+      setSelectedYear(availableYears[availableYears.length - 1]);
+    }
+  }, [availableYears, selectedYear]);
+
   // Build chart data: historical + projected
   const chartData = useMemo(() => {
     const data: { name: string; historis: number | null; proyeksi: number | null }[] = [];
+    let lastIncludedHistoricalKg = 0;
 
-    // Historical data points — use actual week labels from backend
+    // Historical data points
     historicalData.forEach((kg, i) => {
-      data.push({
-        name: historicalLabels[i] || `H-${historicalData.length - i}`,
-        historis: kg > 0 ? kg : null,
-        proyeksi: null,
-      });
+      const label = historicalLabels[i] || `H-${historicalData.length - i}`;
+      let shouldInclude = true;
+
+      if (selectedYear) {
+        const parts = label.split(' ');
+        if (parts.length >= 3) {
+          const year = `20${parts[2]}`;
+          if (year !== selectedYear) shouldInclude = false;
+        }
+      }
+
+      if (shouldInclude) {
+        data.push({
+          name: label,
+          historis: kg > 0 ? kg : null,
+          proyeksi: null,
+        });
+        if (kg > 0) lastIncludedHistoricalKg = kg;
+      }
     });
 
-    // Bridge point: last historical = first projection connection
-    if (historicalData.length > 0 && projections.length > 0) {
-      const lastHistorical = historicalData[historicalData.length - 1];
-      if (lastHistorical > 0) {
-        data[data.length - 1] = {
-          ...data[data.length - 1],
-          proyeksi: lastHistorical, // bridge connection
-        };
+    const latestYear = availableYears.length > 0 ? availableYears[availableYears.length - 1] : null;
+    const shouldShowProjections = selectedYear === latestYear;
+
+    if (shouldShowProjections) {
+      // Bridge point: last historical = first projection connection
+      if (data.length > 0 && projections.length > 0) {
+        if (lastIncludedHistoricalKg > 0) {
+          data[data.length - 1] = {
+            ...data[data.length - 1],
+            proyeksi: lastIncludedHistoricalKg,
+          };
+        }
       }
+
+      // Projection data points
+      projections.forEach((p) => {
+        data.push({
+          name: p.week.replace('Minggu ke-', 'P-'),
+          historis: null,
+          proyeksi: p.projected_kg,
+        });
+      });
     }
 
-    // Projection data points
-    projections.forEach((p) => {
-      data.push({
-        name: p.week.replace('Minggu ke-', 'P-'),
-        historis: null,
-        proyeksi: p.projected_kg,
-      });
-    });
-
     return data;
-  }, [historicalData, historicalLabels, projections]);
+  }, [historicalData, historicalLabels, projections, selectedYear, availableYears]);
 
   // Build material breakdown chart data
   const materialChartData = useMemo(() => {
@@ -487,9 +530,44 @@ export default function AiForecastPage() {
       {/* ════════════════════════════════════════════════════════════ */}
       {!isInsufficientData && (
       <Card header={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-          <Activity size={18} color="var(--color-primary-600)" />
-          <strong style={{ color: 'var(--color-primary-700)' }}>Grafik Tren: Data Historis → Proyeksi AI</strong>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <Activity size={18} color="var(--color-primary-600)" />
+            <strong style={{ color: 'var(--color-primary-700)' }}>Grafik Tren: Data Historis → Proyeksi AI</strong>
+          </div>
+          
+          {/* Segmented Control for Year Filter */}
+          {availableYears.length > 0 && (
+            <div style={{ 
+              display: 'flex', 
+              background: 'var(--bg-subtle)', 
+              padding: '4px', 
+              borderRadius: '999px',
+              border: '1px solid var(--border-color)',
+              gap: '2px'
+            }}>
+              {availableYears.map(year => (
+                <button
+                  key={year}
+                  onClick={() => setSelectedYear(year)}
+                  style={{
+                    padding: '4px 16px',
+                    borderRadius: '999px',
+                    fontSize: '12px',
+                    fontWeight: selectedYear === year ? 600 : 500,
+                    color: selectedYear === year ? 'var(--color-primary-700)' : 'var(--text-secondary)',
+                    background: selectedYear === year ? '#fff' : 'transparent',
+                    border: 'none',
+                    boxShadow: selectedYear === year ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                >
+                  {year}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       }>
 

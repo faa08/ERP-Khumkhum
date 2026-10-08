@@ -199,19 +199,35 @@ async function getWeeklyHistoricalData(weeksBack = 12): Promise<{
   const cutoffStr = format(cutoffDate, 'yyyy-MM-dd');
 
   // ── Source 1: sales_orders (Demand) ──────────────────────
-  const { data: salesOrders } = await supabaseAdmin
-    .from('sales_orders')
-    .select('id, order_date, created_at, items:sales_order_items(quantity)')
-    .gte('order_date', cutoffStr)
-    .order('order_date', { ascending: true });
+  let salesOrderItems: any[] = [];
+  let from = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await supabaseAdmin
+      .from('sales_order_items')
+      .select(`
+        quantity,
+        sales_orders!inner (
+          order_date,
+          created_at
+        )
+      `)
+      .gte('sales_orders.order_date', cutoffStr)
+      .range(from, from + pageSize - 1);
+      
+    if (error || !data || data.length === 0) break;
+    salesOrderItems = salesOrderItems.concat(data);
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
 
-  if (salesOrders && salesOrders.length > 0) {
+  if (salesOrderItems.length > 0) {
     const result = bucketByWeek(
-      salesOrders.map((so: any) => {
-        const totalQty = (so.items || []).reduce((sum: number, it: any) => sum + Number(it.quantity || 0), 0);
+      salesOrderItems.map(it => {
+        const so = Array.isArray(it.sales_orders) ? it.sales_orders[0] : it.sales_orders;
         return {
           date: new Date(so.order_date || so.created_at),
-          value: totalQty,
+          value: Number(it.quantity || 0),
         };
       }),
       weeksBack
@@ -319,11 +335,10 @@ function bucketByWeek(
   const buckets: number[] = Array(weeksBack).fill(0);
   const labels: string[] = [];
 
-  // Generate labels for each bucket
-  for (let i = weeksBack - 1; i >= 0; i--) {
-    const weekStart = startOfWeek(subWeeks(now, i), { weekStartsOn: 1 });
-    labels.push(format(weekStart, 'dd MMM', { locale: idLocale }));
-  }
+    for (let i = weeksBack - 1; i >= 0; i--) {
+      const weekStart = startOfWeek(subWeeks(now, i), { weekStartsOn: 1 });
+      labels.push(format(weekStart, 'dd MMM yy', { locale: idLocale }));
+    }
 
   // Place each record into the appropriate bucket
   records.forEach(({ date, value }) => {
@@ -512,7 +527,7 @@ export async function getMaterialForecast(): Promise<{
     await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'MANAGEMENT', 'SUPER_ADMIN']);
 
     // ── 1. Ambil data historis mingguan (agregasi per ISO week) ──
-    const historical = await getWeeklyHistoricalData(12);
+    const historical = await getWeeklyHistoricalData(156); // 3 tahun (156 minggu)
 
     // Filter out trailing zero-weeks to only use weeks with data
     const activeVolumes = historical.weeklyVolumes;
@@ -538,13 +553,15 @@ export async function getMaterialForecast(): Promise<{
 
     // ── If INSUFFICIENT data, return transparently ──
     if (dataQuality === 'INSUFFICIENT') {
+      const displayWeeks = 52;
+      const startIndex = Math.max(0, activeVolumes.length - displayWeeks);
       return {
         success: true,
         data: {
           weeklyProjections: [],
           materialRequirements: [],
-          historicalWeeklyVolumes: activeVolumes,
-          historicalWeekLabels: historical.weekLabels,
+          historicalWeeklyVolumes: activeVolumes.slice(startIndex),
+          historicalWeekLabels: historical.weekLabels.slice(startIndex),
           avgDemandKg: 0,
           safetyFactorPercentage: 10,
           metadata,
@@ -692,13 +709,34 @@ export async function getMaterialForecast(): Promise<{
       };
     });
 
+    // Hapus data kosong (0) di awal periode agar grafik tidak menampilkan garis datar panjang
+    // Jika data berasal dari 2-3 tahun lalu, kita mulai grafiknya dari titik data pertama yang ada nilainya
+    let firstDataIndex = activeVolumes.findIndex(v => v > 0);
+    if (firstDataIndex === -1) {
+      firstDataIndex = Math.max(0, activeVolumes.length - 52);
+    }
+    
+    // Hapus data kosong (0) di akhir periode (gap sebelum hari ini) agar proyeksi AI langsung menyambung
+    // dengan data historis terakhir, sehingga tidak ada "social distancing" (jarak kosong).
+    let lastDataIndex = activeVolumes.length - 1;
+    while (lastDataIndex >= 0 && activeVolumes[lastDataIndex] <= 0) {
+      lastDataIndex--;
+    }
+    if (lastDataIndex < firstDataIndex) {
+      lastDataIndex = activeVolumes.length - 1; // fallback jika semua 0
+    }
+    
+    // Tampilkan mulai dari data pertama ditemukan hingga data terakhir ditemukan
+    const displayVolumes = activeVolumes.slice(firstDataIndex, lastDataIndex + 1);
+    const displayLabels = historical.weekLabels.slice(firstDataIndex, lastDataIndex + 1);
+
     return {
       success: true,
       data: {
         weeklyProjections: projections,
         materialRequirements,
-        historicalWeeklyVolumes: activeVolumes,
-        historicalWeekLabels: historical.weekLabels,
+        historicalWeeklyVolumes: displayVolumes,
+        historicalWeekLabels: displayLabels,
         avgDemandKg: parseFloat(avgHistorical.toFixed(1)),
         safetyFactorPercentage: 10,
         metadata,

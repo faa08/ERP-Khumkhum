@@ -12,14 +12,20 @@ import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck, Check } from 'lucide-react';
+import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck, Check, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { getReceivings, createReceiving, getInboundEstimates } from '@/actions/receiving';
+import { getReceivings, createReceiving, deleteReceiving, getInboundEstimates } from '@/actions/receiving';
 import { getFarmers, getRawMaterials } from '@/actions/master';
 import { supabase } from '@/lib/supabase';
 import type { DbReceiving, DbWhatsAppMessage } from '@/types/database';
+
+function getCurrentDateTimeLocal(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+}
 
 interface FormState {
   farmer_id: string;
@@ -27,6 +33,7 @@ interface FormState {
   weight_sent: string;
   weight: string;
   notes: string;
+  received_date: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -35,6 +42,7 @@ const EMPTY_FORM: FormState = {
   weight_sent: '',
   weight: '',
   notes: '',
+  received_date: '',
 };
 
 export default function ReceivingPage() {
@@ -102,7 +110,10 @@ export default function ReceivingPage() {
   }, [loadData]);
 
   // ── Handlers ────────────────────────────────────────────────────
-  const handleOpenCreate = () => { setForm(EMPTY_FORM); setDrawerOpen(true); };
+  const handleOpenCreate = () => {
+    setForm({ ...EMPTY_FORM, received_date: getCurrentDateTimeLocal() });
+    setDrawerOpen(true);
+  };
 
   const handleSave = async () => {
     const jamurMaterial = rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur') || rm.code === 'JMR-TRM');
@@ -119,6 +130,7 @@ export default function ReceivingPage() {
       weight_sent: parseFloat(form.weight_sent),
       weight: parseFloat(form.weight),
       notes: form.notes || undefined,
+      received_date: form.received_date || undefined,
     });
     setIsSaving(false);
     if (res.success) {
@@ -195,16 +207,46 @@ export default function ReceivingPage() {
     },
     {
       id: 'actions',
-      cell: ({ row }) => (
-        <Dropdown
-          trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
-          items={[
-            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} />, onClick: () => handleView(row.original) },
-          ]}
-        />
-      ),
+      cell: ({ row }) => {
+        const item = row.original;
+        const canDelete = !isManagement && item.status !== 'SORTED';
+        return (
+          <Dropdown
+            trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
+            items={[
+              { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} aria-hidden="true" />, onClick: () => handleView(item) },
+              ...(canDelete ? [
+                {
+                  id: 'delete',
+                  label: 'Hapus Penerimaan',
+                  icon: <Trash2 size={14} aria-hidden="true" />,
+                  danger: true,
+                  onClick: () => {
+                    setConfirmDialog({
+                      isOpen: true,
+                      title: 'Hapus Penerimaan Bahan Baku',
+                      description: `Apakah Anda yakin ingin menghapus penerimaan batch ${item.batch_number} dari petani ${item.farmer?.name || '-'}? Data yang dihapus tidak dapat dikembalikan.`,
+                      variant: 'danger',
+                      onConfirm: async () => {
+                        const res = await deleteReceiving(item.id);
+                        if (res.success) {
+                          toast.success('Penerimaan berhasil dihapus!');
+                          setConfirmDialog(p => ({ ...p, isOpen: false }));
+                          loadData();
+                        } else {
+                          toast.error(res.error || 'Gagal menghapus penerimaan');
+                        }
+                      },
+                    });
+                  },
+                },
+              ] : []),
+            ]}
+          />
+        );
+      },
     },
-  ], []);
+  ], [isManagement, loadData]);
 
   const draftColumns = useMemo<ColumnDef<any>[]>(() => [
     {
@@ -385,6 +427,17 @@ export default function ReceivingPage() {
             </select>
           </FormField>
 
+
+          <FormField label="Tanggal & Waktu Penerimaan">
+            <Input
+              type="datetime-local"
+              value={form.received_date}
+              onChange={e => setForm(f => ({ ...f, received_date: e.target.value }))}
+            />
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+              Dapat disesuaikan jika mencatat kiriman jamur yang tiba kemarin atau jam sebelumnya.
+            </span>
+          </FormField>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
             <FormField label="Berat Kirim Petani (kg)" required>

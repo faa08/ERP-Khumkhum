@@ -1,5 +1,6 @@
 'use server';
 
+import { revalidatePath } from 'next/cache';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
 import { logAuditEvent } from '@/actions/audit';
@@ -20,7 +21,7 @@ export async function getReceivings(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'QC']);
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'QC', 'SORTING']);
 
     const { data, error } = await supabaseAdmin
       .from('receivings')
@@ -74,6 +75,7 @@ export interface CreateReceivingInput {
   weight: number;
   notes?: string;
   scale_photo_url?: string;
+  received_date?: string;
 }
 
 export async function createReceiving(input: CreateReceivingInput): Promise<{
@@ -101,7 +103,7 @@ export async function createReceiving(input: CreateReceivingInput): Promise<{
       scale_photo_url: input.scale_photo_url || null,
       notes: input.notes || null,
       received_by: user.userId,
-      received_date: new Date().toISOString(),
+      received_date: input.received_date ? new Date(input.received_date).toISOString() : new Date().toISOString(),
       status: 'PENDING_SORTING',
     };
 
@@ -135,6 +137,9 @@ export async function createReceiving(input: CreateReceivingInput): Promise<{
       details: { batch_number, weight: input.weight },
     });
 
+    revalidatePath('/receiving');
+    revalidatePath('/sorting');
+
     return { success: true, data: data as DbReceiving };
   } catch (err: any) {
     console.error('createReceiving error:', err);
@@ -154,6 +159,7 @@ export interface UpdateReceivingInput {
   weight_sent?: number;
   notes?: string;
   correction_reason: string;
+  received_date?: string;
 }
 
 export async function updateReceiving(input: UpdateReceivingInput): Promise<{
@@ -187,6 +193,7 @@ export async function updateReceiving(input: UpdateReceivingInput): Promise<{
         weight_difference: parseFloat(weight_difference.toFixed(2)),
         diff_percentage: parseFloat(diff_percentage.toFixed(2)),
         notes: input.notes ?? null,
+        ...(input.received_date ? { received_date: new Date(input.received_date).toISOString() } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq('id', input.id)
@@ -213,6 +220,9 @@ export async function updateReceiving(input: UpdateReceivingInput): Promise<{
         correction_reason: input.correction_reason,
       },
     });
+
+    revalidatePath('/receiving');
+    revalidatePath('/sorting');
 
     return { success: true, data: data as DbReceiving };
   } catch (err: any) {
@@ -279,6 +289,58 @@ export async function getFarmerRecap(month: number, year: number, farmerId?: str
     return { success: true, data: Array.from(recapMap.values()) };
   } catch (err: any) {
     console.error('getFarmerRecap error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteReceiving(id: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+
+    // Cek apakah sudah disortasi
+    const { data: sortCheck } = await supabaseAdmin
+      .from('sortings')
+      .select('id')
+      .eq('receiving_id', id)
+      .limit(1);
+
+    if (sortCheck && sortCheck.length > 0) {
+      return {
+        success: false,
+        error: 'Penerimaan ini tidak dapat dihapus karena sudah memiliki data sortasi. Hapus data sortasi terlebih dahulu.',
+      };
+    }
+
+    const { data: oldData } = await supabaseAdmin
+      .from('receivings')
+      .select('batch_number, weight')
+      .eq('id', id)
+      .single();
+
+    const { error: delErr } = await supabaseAdmin
+      .from('receivings')
+      .delete()
+      .eq('id', id);
+
+    if (delErr) throw delErr;
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'DELETE',
+      entityType: 'receiving',
+      entityId: id,
+      details: { batch_number: oldData?.batch_number, weight: oldData?.weight },
+    });
+
+    revalidatePath('/receiving');
+    revalidatePath('/sorting');
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('deleteReceiving error:', err);
     return { success: false, error: err.message };
   }
 }

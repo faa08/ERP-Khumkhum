@@ -12,7 +12,7 @@ export async function getSortings(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
+    await requireAuth(['SORTING', 'WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
 
     const { data, error } = await supabaseAdmin
       .from('sortings')
@@ -39,7 +39,7 @@ export async function getUnsortedReceivings(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
+    await requireAuth(['SORTING', 'WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
 
     // Ambil receiving IDs yang sudah punya sortasi
     const { data: sortedIds } = await supabaseAdmin
@@ -71,6 +71,7 @@ export interface CreateSortingInput {
   receiving_id: string;
   leaf_weight: number;   // W_daun
   stem_weight: number;   // W_batang
+  sorting_date?: string; // Tanggal sortasi (ISO String atau datetime-local)
 }
 
 export async function createSorting(input: CreateSortingInput): Promise<{
@@ -79,7 +80,7 @@ export async function createSorting(input: CreateSortingInput): Promise<{
   error?: string;
 }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
+    const { user } = await requireAuth(['SORTING', 'WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC']);
 
     const total = input.leaf_weight + input.stem_weight;
     const leaf_percentage = total > 0 ? (input.leaf_weight / total) * 100 : 0;
@@ -102,7 +103,7 @@ export async function createSorting(input: CreateSortingInput): Promise<{
       rejected_quantity: 0,
       waste: input.stem_weight,
       sorted_by: user.userId,
-      sorting_date: new Date().toISOString(),
+      sorting_date: input.sorting_date ? new Date(input.sorting_date).toISOString() : new Date().toISOString(),
     };
 
     const { data, error } = await supabaseAdmin
@@ -215,6 +216,7 @@ export interface UpdateSortingInput {
   id: string;
   leaf_weight: number;
   stem_weight: number;
+  sorting_date?: string;
 }
 
 export async function updateSorting(input: UpdateSortingInput): Promise<{
@@ -223,7 +225,7 @@ export async function updateSorting(input: UpdateSortingInput): Promise<{
   error?: string;
 }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
+    const { user } = await requireAuth(['SORTING', 'WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC']);
 
     // Ambil data sortasi lama
     const { data: oldSorting, error: oldErr } = await supabaseAdmin
@@ -255,6 +257,7 @@ export async function updateSorting(input: UpdateSortingInput): Promise<{
       is_standard_compliant,
       accepted_quantity: input.leaf_weight,
       waste: input.stem_weight,
+      ...(input.sorting_date ? { sorting_date: new Date(input.sorting_date).toISOString() } : {}),
       updated_at: new Date().toISOString(),
     };
 
@@ -346,7 +349,7 @@ export async function getDailySortingSummary(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
+    await requireAuth(['SORTING', 'WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
     
     // Get today's sortings
     const today = new Date();
@@ -384,6 +387,100 @@ export async function getDailySortingSummary(): Promise<{
     };
   } catch (err: any) {
     console.error('getDailySortingSummary error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteSorting(id: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const { user } = await requireAuth(['SORTING', 'WAREHOUSE', 'SUPER_ADMIN']);
+
+    // 1. Ambil data sortasi lama
+    const { data: sorting, error: fetchErr } = await supabaseAdmin
+      .from('sortings')
+      .select('id, receiving_id, leaf_weight, accepted_quantity, receiving:receivings(id, batch_number)')
+      .eq('id', id)
+      .single();
+
+    if (fetchErr || !sorting) throw new Error('Data sortasi tidak ditemukan');
+
+    const leafWeight = Number(sorting.leaf_weight || sorting.accepted_quantity || 0);
+
+    // 2. Kembalikan status receiving ke 'RECEIVED' agar bisa disortasi ulang
+    if (sorting.receiving_id) {
+      await supabaseAdmin
+        .from('receivings')
+        .update({ status: 'RECEIVED' })
+        .eq('id', sorting.receiving_id);
+    }
+
+    // 3. Kurangi stok jamur bersih di gudang sebesar leaf_weight yang pernah ditambahkan
+    if (leafWeight > 0) {
+      const { data: rawJamur } = await supabaseAdmin
+        .from('raw_materials')
+        .select('id')
+        .ilike('name', '%jamur%')
+        .limit(1)
+        .single();
+
+      if (rawJamur?.id) {
+        const { data: invList } = await supabaseAdmin
+          .from('inventory')
+          .select('*')
+          .eq('item_type', 'RAW_MATERIAL')
+          .eq('item_id', rawJamur.id)
+          .limit(1);
+
+        if (invList && invList.length > 0) {
+          const newQty = Math.max(0, Number(invList[0].quantity) - leafWeight);
+          await supabaseAdmin
+            .from('inventory')
+            .update({ quantity: newQty, last_updated_at: new Date().toISOString() })
+            .eq('id', invList[0].id);
+
+          await supabaseAdmin.from('stock_movements').insert([
+            {
+              inventory_id: invList[0].id,
+              movement_type: 'OUT',
+              quantity: leafWeight,
+              reference_id: id,
+              reference_type: 'SORTING_DELETION',
+              notes: `Pembatalan / Hapus input sortasi batch ${(sorting as any).receiving?.batch_number || ''}`,
+              movement_date: new Date().toISOString(),
+              created_by: user.userId,
+            },
+          ]);
+        }
+      }
+    }
+
+    // 4. Hapus data dari tabel sortings
+    const { error: delErr } = await supabaseAdmin
+      .from('sortings')
+      .delete()
+      .eq('id', id);
+
+    if (delErr) throw delErr;
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'DELETE',
+      entityType: 'sorting',
+      entityId: id,
+      details: { receiving_id: sorting.receiving_id, leaf_weight: leafWeight },
+    });
+
+    revalidatePath('/sorting');
+    revalidatePath('/receiving');
+    revalidatePath('/inventory');
+    revalidatePath('/production');
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('deleteSorting error:', err);
     return { success: false, error: err.message };
   }
 }

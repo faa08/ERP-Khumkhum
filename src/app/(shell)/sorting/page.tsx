@@ -12,24 +12,49 @@ import { Card } from '@/components/ui/Card';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, MoreVertical, Eye, Edit, CheckCircle, AlertTriangle, Leaf, Scale } from 'lucide-react';
+import { Plus, MoreVertical, Eye, Edit, CheckCircle, AlertTriangle, Leaf, Scale, Trash2, Calendar } from 'lucide-react';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, isToday } from 'date-fns';
 import {
   getSortings,
   createSorting,
   updateSorting,
+  deleteSorting,
   getUnsortedReceivings,
 } from '@/actions/sorting';
 import type { DbSorting } from '@/types/database';
+
+function getCurrentDateTimeLocal(): string {
+  const now = new Date();
+  const offset = now.getTimezoneOffset() * 60000;
+  return new Date(now.getTime() - offset).toISOString().slice(0, 16);
+}
+
+function isoToDateTimeLocal(iso?: string | null): string {
+  if (!iso) return getCurrentDateTimeLocal();
+  try {
+    const d = new Date(iso);
+    const offset = d.getTimezoneOffset() * 60000;
+    return new Date(d.getTime() - offset).toISOString().slice(0, 16);
+  } catch {
+    return getCurrentDateTimeLocal();
+  }
+}
 
 interface FormState {
   receiving_id: string;
   leaf_weight: string;
   stem_weight: string;
+  sorting_date: string;
 }
 
-const EMPTY_FORM: FormState = { receiving_id: '', leaf_weight: '', stem_weight: '' };
+const EMPTY_FORM: FormState = {
+  receiving_id: '',
+  leaf_weight: '',
+  stem_weight: '',
+  sorting_date: '',
+};
 
 export default function SortingPage() {
   const { user } = useAuth();
@@ -49,8 +74,17 @@ export default function SortingPage() {
   // State Edit/Koreksi
   const [editItem, setEditItem] = useState<DbSorting | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState<{ leaf_weight: string; stem_weight: string }>({ leaf_weight: '', stem_weight: '' });
+  const [editForm, setEditForm] = useState<{ leaf_weight: string; stem_weight: string; sorting_date: string }>({
+    leaf_weight: '',
+    stem_weight: '',
+    sorting_date: '',
+  });
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // State Hapus / Delete
+  const [deleteItem, setDeleteItem] = useState<DbSorting | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const toast = useToast();
 
@@ -87,6 +121,7 @@ export default function SortingPage() {
       receiving_id: form.receiving_id,
       leaf_weight: parseFloat(form.leaf_weight),
       stem_weight: parseFloat(form.stem_weight),
+      sorting_date: form.sorting_date || undefined,
     });
     setIsSaving(false);
     if (res.success) {
@@ -113,6 +148,7 @@ export default function SortingPage() {
     setEditForm({
       leaf_weight: (item.leaf_weight != null ? item.leaf_weight : item.accepted_quantity).toString(),
       stem_weight: (item.stem_weight != null ? item.stem_weight : item.waste).toString(),
+      sorting_date: isoToDateTimeLocal(item.sorting_date),
     });
     setEditOpen(true);
   };
@@ -127,6 +163,7 @@ export default function SortingPage() {
       id: editItem.id,
       leaf_weight: parseFloat(editForm.leaf_weight),
       stem_weight: parseFloat(editForm.stem_weight),
+      sorting_date: editForm.sorting_date || undefined,
     });
     setIsUpdating(false);
     if (res.success) {
@@ -136,6 +173,26 @@ export default function SortingPage() {
       loadData();
     } else {
       toast.error(res.error || 'Gagal mengupdate sortasi');
+    }
+  };
+
+  const handleOpenDelete = (item: DbSorting) => {
+    setDeleteItem(item);
+    setDeleteOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteItem) return;
+    setIsDeleting(true);
+    const res = await deleteSorting(deleteItem.id);
+    setIsDeleting(false);
+    if (res.success) {
+      toast.success('Data sortasi berhasil dihapus! Status penerimaan dikembalikan.');
+      setDeleteOpen(false);
+      setDeleteItem(null);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal menghapus sortasi');
     }
   };
 
@@ -215,9 +272,10 @@ export default function SortingPage() {
         <Dropdown
           trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
           items={[
-            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} />, onClick: () => { setViewItem(row.original); setViewOpen(true); } },
+            { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} aria-hidden="true" />, onClick: () => { setViewItem(row.original); setViewOpen(true); } },
             ...(!isManagement ? [
-              { id: 'edit', label: 'Koreksi / Edit Sortasi', icon: <Edit size={14} />, onClick: () => handleOpenEdit(row.original) },
+              { id: 'edit', label: 'Koreksi / Edit Sortasi', icon: <Edit size={14} aria-hidden="true" />, onClick: () => handleOpenEdit(row.original) },
+              { id: 'delete', label: 'Hapus Sortasi', icon: <Trash2 size={14} aria-hidden="true" />, danger: true, onClick: () => handleOpenDelete(row.original) },
             ] : []),
           ]}
         />
@@ -242,7 +300,14 @@ export default function SortingPage() {
               Investor / Read-Only Mode
             </span>
           ) : (
-            <Button variant="primary" onClick={() => { setForm(EMPTY_FORM); setDrawerOpen(true); }} leftIcon={<Plus size={16} />}>
+            <Button
+              variant="primary"
+              onClick={() => {
+                setForm({ ...EMPTY_FORM, sorting_date: getCurrentDateTimeLocal() });
+                setDrawerOpen(true);
+              }}
+              leftIcon={<Plus size={16} aria-hidden="true" />}
+            >
               Buat Sortasi
             </Button>
           )
@@ -330,6 +395,17 @@ export default function SortingPage() {
                 </option>
               ))}
             </select>
+          </FormField>
+
+          <FormField label="Tanggal & Waktu Sortasi">
+            <Input
+              type="datetime-local"
+              value={form.sorting_date}
+              onChange={e => setForm(f => ({ ...f, sorting_date: e.target.value }))}
+            />
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+              Dapat disesuaikan jika mencatat penimbangan hasil sortasi kemarin atau jam sebelumnya.
+            </span>
           </FormField>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
@@ -460,6 +536,17 @@ export default function SortingPage() {
               </FormField>
             </div>
 
+            <FormField label="Tanggal & Waktu Sortasi Baru">
+              <Input
+                type="datetime-local"
+                value={editForm.sorting_date}
+                onChange={e => setEditForm(f => ({ ...f, sorting_date: e.target.value }))}
+              />
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                Koreksi tanggal penimbangan jika terdapat salah input waktu.
+              </span>
+            </FormField>
+
             {/* Live Preview Edit */}
             {editTotal > 0 && (
               <div style={{
@@ -502,6 +589,18 @@ export default function SortingPage() {
           </div>
         )}
       </Modal>
+
+      {/* CONFIRM DELETE DIALOG */}
+      <ConfirmDialog
+        isOpen={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title="Hapus Input Sortasi"
+        description={`Apakah Anda yakin ingin menghapus data sortasi untuk penerimaan ${(deleteItem as any)?.receiving?.batch_number || deleteItem?.receiving_id}? Status penerimaan akan dikembalikan ke belum disortir dan stok persediaan gudang akan disesuaikan otomatis.`}
+        confirmLabel="Hapus Sortasi"
+        variant="danger"
+        isLoading={isDeleting}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

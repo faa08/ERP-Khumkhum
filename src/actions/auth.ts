@@ -18,35 +18,42 @@ export interface LoginResult {
 }
 
 /**
- * Ensures initial Super Admin and IT Maintenance exist if users table is empty.
+ * Ensures initial Super Admin and IT Maintenance exist if missing.
  */
 async function ensureSuperAdminExists(): Promise<void> {
   try {
-    const { count, error } = await supabaseAdmin
+    const { data: existingAdmin } = await supabaseAdmin
       .from('users')
-      .select('*', { count: 'exact', head: true });
-
-    if (!error && count === 0) {
-      const hashedPassword = await bcrypt.hash('admin123', 10);
-      const maintPassword = await bcrypt.hash('maint123', 10);
+      .select('id')
+      .eq('email', 'admin@khumkhum.id')
+      .maybeSingle();
       
-      await supabaseAdmin.from('users').insert([
-        {
-          email: 'admin@khumkhum.id',
-          password: hashedPassword,
-          name: 'Super Administrator',
-          role: 'SUPER_ADMIN',
-          is_active: true,
-        },
-        {
-          email: 'maintenance@khumkhum.id',
-          password: maintPassword,
-          name: 'IT Maintenance',
-          role: 'IT_MAINTENANCE',
-          is_active: true,
-        }
-      ]);
-      console.log('✅ Seeded default Super Admin (admin@khumkhum.id) and IT Maintenance (maintenance@khumkhum.id)');
+    if (!existingAdmin) {
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      await supabaseAdmin.from('users').insert([{
+        email: 'admin@khumkhum.id',
+        password: hashedPassword,
+        name: 'Super Administrator',
+        role: 'SUPER_ADMIN',
+        is_active: true,
+      }]);
+    }
+
+    const { data: existingMaint } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('email', 'maintenance@khumkhum.id')
+      .maybeSingle();
+
+    if (!existingMaint) {
+      const maintPassword = await bcrypt.hash('maint123', 10);
+      await supabaseAdmin.from('users').insert([{
+        email: 'maintenance@khumkhum.id',
+        password: maintPassword,
+        name: 'IT Maintenance',
+        role: 'IT_MAINTENANCE',
+        is_active: true,
+      }]);
     }
   } catch (err) {
     console.error('Failed to check/seed default accounts:', err);

@@ -68,7 +68,7 @@ export function AuthGuard({ children, requiredPermission }: AuthGuardProps) {
   // Check Maintenance Mode
   if (maintenanceMode.isActive && user?.role !== 'IT_MAINTENANCE') {
     return (
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
         <EmptyState
           icon={<ShieldAlert size={64} style={{ color: 'var(--color-warning-600)' }} />}
           title="Sedang Maintenance"

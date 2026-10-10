@@ -18,7 +18,7 @@ export interface LoginResult {
 }
 
 /**
- * Ensures initial Super Admin exists if users table is empty.
+ * Ensures initial Super Admin and IT Maintenance exist if users table is empty.
  */
 async function ensureSuperAdminExists(): Promise<void> {
   try {
@@ -28,6 +28,8 @@ async function ensureSuperAdminExists(): Promise<void> {
 
     if (!error && count === 0) {
       const hashedPassword = await bcrypt.hash('admin123', 10);
+      const maintPassword = await bcrypt.hash('maint123', 10);
+      
       await supabaseAdmin.from('users').insert([
         {
           email: 'admin@khumkhum.id',
@@ -36,11 +38,18 @@ async function ensureSuperAdminExists(): Promise<void> {
           role: 'SUPER_ADMIN',
           is_active: true,
         },
+        {
+          email: 'maintenance@khumkhum.id',
+          password: maintPassword,
+          name: 'IT Maintenance',
+          role: 'IT_MAINTENANCE',
+          is_active: true,
+        }
       ]);
-      console.log('✅ Seeded default Super Admin (admin@khumkhum.id / admin123)');
+      console.log('✅ Seeded default Super Admin (admin@khumkhum.id) and IT Maintenance (maintenance@khumkhum.id)');
     }
   } catch (err) {
-    console.error('Failed to check/seed default super admin:', err);
+    console.error('Failed to check/seed default accounts:', err);
   }
 }
 

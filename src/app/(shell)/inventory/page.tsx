@@ -10,12 +10,13 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
+import { Dropdown } from '@/components/ui/Dropdown';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout } from 'lucide-react';
+import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment } from '@/actions/inventory';
+import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment, updateInventoryItem, deleteInventoryItem } from '@/actions/inventory';
 import { getRawMaterials, getWarehouses } from '@/actions/master';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -50,6 +51,18 @@ export default function InventoryPage() {
   const [transferInv, setTransferInv] = useState<DbInventory | null>(null);
   const [transferForm, setTransferForm] = useState({ quantity: 0, target_warehouse_id: '', notes: '' });
   const [isTransferring, setIsTransferring] = useState(false);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editInv, setEditInv] = useState<DbInventory | null>(null);
+  const [editForm, setEditForm] = useState({ quantity: 0, reorder_point: 0, lead_time_days: 0 });
+  const [isEditing, setIsEditing] = useState(false);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteInv, setDeleteInv] = useState<DbInventory | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [infoInv, setInfoInv] = useState<DbInventory | null>(null);
 
   const toast = useToast();
 
@@ -154,6 +167,34 @@ export default function InventoryPage() {
       loadData();
     } else {
       toast.error(res.error || 'Gagal transfer konsinyasi');
+    }
+  };
+
+  const handleEdit = async () => {
+    if (!editInv) return;
+    setIsEditing(true);
+    const res = await updateInventoryItem(editInv.id, editForm);
+    setIsEditing(false);
+    if (res.success) {
+      toast.success('Data berhasil diperbarui');
+      setEditOpen(false);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal memperbarui data');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteInv) return;
+    setIsDeleting(true);
+    const res = await deleteInventoryItem(deleteInv.id);
+    setIsDeleting(false);
+    if (res.success) {
+      toast.success('Item berhasil dihapus');
+      setDeleteOpen(false);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal menghapus item');
     }
   };
 
@@ -291,17 +332,45 @@ export default function InventoryPage() {
     },
     ...(isManagement ? [] : [{
       id: 'actions',
-      cell: ({ row }: { row: any }) => (
-        <Button variant="secondary" size="sm" onClick={() => {
-          setTransferInv(row.original);
-          setTransferForm({ quantity: 0, target_warehouse_id: '', notes: '' });
-          setTransferOpen(true);
-        }}>
-          Kirim Konsinyasi
-        </Button>
-      ),
+      cell: ({ row }: { row: any }) => {
+        if (isWarehouseMode) {
+          return (
+            <Dropdown
+              trigger={
+                <Button variant="secondary" size="sm" style={{ padding: '6px' }}>
+                  <MoreVertical size={16} />
+                </Button>
+              }
+              items={[
+                { id: 'info', label: 'Info Detail', icon: <Info size={14} />, onClick: () => { setInfoInv(row.original); setInfoOpen(true); } },
+                { id: 'edit', label: 'Edit Data', icon: <Edit size={14} />, onClick: () => { 
+                    setEditInv(row.original); 
+                    setEditForm({ 
+                      quantity: row.original.quantity || 0, 
+                      reorder_point: row.original.reorder_point || 0, 
+                      lead_time_days: row.original.lead_time_days || 0 
+                    }); 
+                    setEditOpen(true); 
+                } },
+                { id: 'div', label: '', divider: true },
+                { id: 'delete', label: 'Hapus Item', icon: <Trash2 size={14} />, danger: true, onClick: () => { setDeleteInv(row.original); setDeleteOpen(true); } },
+              ]}
+            />
+          );
+        }
+        
+        return (
+          <Button variant="secondary" size="sm" onClick={() => {
+            setTransferInv(row.original);
+            setTransferForm({ quantity: 0, target_warehouse_id: '', notes: '' });
+            setTransferOpen(true);
+          }}>
+            Kirim Konsinyasi
+          </Button>
+        );
+      },
     }]),
-  ], [isManagement]);
+  ], [isManagement, isWarehouseMode, toast]);
 
   const mvColumns = useMemo<ColumnDef<any>[]>(() => [
     { id: 'date', header: 'Tanggal', cell: ({ row }) => format(new Date(row.original.movement_date), 'dd/MM/yyyy HH:mm') },
@@ -389,7 +458,7 @@ export default function InventoryPage() {
               }}
               options={[
                 { value: '', label: 'Pilih Bahan Baku dari Master Data...' },
-                ...masterRawMaterials.map(rm => ({ value: rm.name, label: rm.name }))
+                ...Array.from(new Set(masterRawMaterials.map(rm => rm.name))).map(name => ({ value: name, label: name }))
               ]}
             />
           </FormField>
@@ -460,6 +529,97 @@ export default function InventoryPage() {
             />
           </FormField>
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={editOpen}
+        onClose={() => setEditOpen(false)}
+        title={`Edit Data: ${editInv?.item_name}`}
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditOpen(false)}>Batal</Button>
+            <Button variant="primary" onClick={handleEdit} loading={isEditing}>Simpan Perubahan</Button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <FormField label="Stok Saat Ini (kg/pcs)" required>
+            <Input 
+              type="number" step="0.01" min="0"
+              value={editForm.quantity.toString()} 
+              onChange={e => setEditForm(f => ({ ...f, quantity: parseFloat(e.target.value) || 0 }))} 
+            />
+          </FormField>
+          <FormField label="Reorder Point (ROP)">
+            <Input 
+              type="number" step="0.01" min="0"
+              value={editForm.reorder_point.toString()} 
+              onChange={e => setEditForm(f => ({ ...f, reorder_point: parseFloat(e.target.value) || 0 }))} 
+            />
+          </FormField>
+          <FormField label="Lead Time (Hari)">
+            <Input 
+              type="number" step="1" min="0"
+              value={editForm.lead_time_days.toString()} 
+              onChange={e => setEditForm(f => ({ ...f, lead_time_days: parseInt(e.target.value, 10) || 0 }))} 
+            />
+          </FormField>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title="Konfirmasi Hapus Item"
+        size="sm"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setDeleteOpen(false)}>Batal</Button>
+            <Button variant="danger" onClick={handleDelete} loading={isDeleting}>Hapus</Button>
+          </>
+        }
+      >
+        <p>Apakah Anda yakin ingin menghapus <strong>{deleteInv?.item_name}</strong> dari data inventori? Tindakan ini tidak dapat dibatalkan.</p>
+      </Modal>
+
+      <Modal
+        isOpen={infoOpen}
+        onClose={() => setInfoOpen(false)}
+        title="Informasi Detail Item"
+        size="md"
+        footer={
+          <Button variant="secondary" onClick={() => setInfoOpen(false)}>Tutup</Button>
+        }
+      >
+        {infoInv && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
+              <strong style={{ color: 'var(--text-secondary)' }}>ID Inventori:</strong>
+              <span style={{ fontSize: 'var(--text-xs)' }}>{infoInv.id}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
+              <strong style={{ color: 'var(--text-secondary)' }}>Nama Item:</strong>
+              <span>{infoInv.item_name}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
+              <strong style={{ color: 'var(--text-secondary)' }}>Kategori:</strong>
+              <span>{infoInv.item_type}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
+              <strong style={{ color: 'var(--text-secondary)' }}>Gudang:</strong>
+              <span>{infoInv.warehouse?.name || '-'}</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
+              <strong style={{ color: 'var(--text-secondary)' }}>Stok Saat Ini:</strong>
+              <span>{infoInv.quantity.toLocaleString('id-ID')} kg</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
+              <strong style={{ color: 'var(--text-secondary)' }}>Update Terakhir:</strong>
+              <span>{format(new Date(infoInv.last_updated_at), 'dd MMM yyyy HH:mm')}</span>
+            </div>
+          </div>
+        )}
       </Modal>
     </>
   );

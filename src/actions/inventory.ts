@@ -446,3 +446,42 @@ export async function transferToConsignment(payload: { inventory_id: string, tar
     return { success: false, error: err.message };
   }
 }
+
+export async function deleteInventoryItem(id: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { error } = await supabaseAdmin.from('inventory').delete().eq('id', id);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function updateInventoryItem(
+  id: string,
+  payload: { reorder_point?: number; lead_time_days?: number; quantity?: number; }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { data: current } = await supabaseAdmin.from('inventory').select('quantity').eq('id', id).single();
+    if (payload.quantity !== undefined && current && payload.quantity !== current.quantity) {
+      await supabaseAdmin.from('stock_movements').insert({
+        inventory_id: id,
+        movement_type: 'ADJUSTMENT',
+        quantity: payload.quantity - current.quantity,
+        reference_type: 'MANUAL_EDIT',
+        notes: 'Manual adjustment via Edit',
+        created_by: user.userId
+      });
+    }
+    const { error } = await supabaseAdmin.from('inventory').update({
+      ...payload,
+      last_updated_at: new Date().toISOString()
+    }).eq('id', id);
+    if (error) throw error;
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

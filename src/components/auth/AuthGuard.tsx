@@ -8,6 +8,7 @@ import { ROUTES } from '@/lib/constants';
 
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ShieldAlert } from 'lucide-react';
+import { getSettingAction } from '@/actions/settings';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -19,6 +20,23 @@ export function AuthGuard({ children, requiredPermission }: AuthGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
+  const [maintenanceMode, setMaintenanceMode] = useState<{ isActive: boolean; message: string } | null>(null);
+
+  // Fetch Maintenance Mode status
+  useEffect(() => {
+    async function checkMaintenance() {
+      const res = await getSettingAction('maintenance_mode');
+      if (res.success && res.value) {
+        setMaintenanceMode({
+          isActive: !!res.value.isActive,
+          message: res.value.message || 'Sistem sedang dalam pemeliharaan (maintenance) rutin.'
+        });
+      } else {
+        setMaintenanceMode({ isActive: false, message: '' });
+      }
+    }
+    checkMaintenance();
+  }, [pathname]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -39,10 +57,24 @@ export function AuthGuard({ children, requiredPermission }: AuthGuardProps) {
   }, [isAuthenticated, isLoading, user, router, pathname, requiredPermission]);
 
   // Loading state
-  if (isLoading || isAuthorized === null) {
+  if (isLoading || isAuthorized === null || maintenanceMode === null) {
     return (
       <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
         <span>Loading...</span>
+      </div>
+    );
+  }
+
+  // Check Maintenance Mode
+  if (maintenanceMode.isActive && user?.role !== 'SUPER_ADMIN' && user?.role !== 'IT_MAINTENANCE') {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <EmptyState
+          icon={<ShieldAlert size={64} style={{ color: 'var(--color-warning-600)' }} />}
+          title="Sedang Maintenance"
+          description={maintenanceMode.message}
+          action={{ label: "Kembali ke Login", onClick: () => router.push(ROUTES.LOGIN) }}
+        />
       </div>
     );
   }

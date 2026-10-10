@@ -8,8 +8,9 @@ import { FormField } from '@/components/form/FormField';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useToast } from '@/hooks/useToast';
-import { Save } from 'lucide-react';
+import { Save, ShieldAlert } from 'lucide-react';
 import { getSettingAction, saveSettingAction } from '@/actions/settings';
+import { useAuth } from '@/hooks/useAuth';
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -25,13 +26,32 @@ export default function SettingsPage() {
     fonnteApiKey: ''
   });
 
+  const [maintenanceData, setMaintenanceData] = useState({
+    isActive: false,
+    message: ''
+  });
+
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const canManageMaintenance = isSuperAdmin || user?.role === 'IT_MAINTENANCE';
+
   // Load real data from Supabase on mount
   useEffect(() => {
     async function loadData() {
       setIsLoading(true);
-      const res = await getSettingAction('company_profile');
-      if (res.success && res.value) {
-        setCompanyData(res.value);
+      const [companyRes, maintenanceRes] = await Promise.all([
+        getSettingAction('company_profile'),
+        getSettingAction('maintenance_mode')
+      ]);
+      
+      if (companyRes.success && companyRes.value) {
+        setCompanyData(companyRes.value);
+      }
+      if (maintenanceRes.success && maintenanceRes.value) {
+        setMaintenanceData({
+          isActive: !!maintenanceRes.value.isActive,
+          message: maintenanceRes.value.message || ''
+        });
       }
       setIsLoading(false);
     }
@@ -40,12 +60,30 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setIsSaving(true);
+    let isSuccess = true;
+    let errorMessage = '';
+
     // Menyimpan pengaturan profil perusahaan ke Supabase tabel 'settings'
-    const res = await saveSettingAction('company_profile', companyData);
-    if (res.success) {
+    if (isSuperAdmin) {
+      const res = await saveSettingAction('company_profile', companyData);
+      if (!res.success) {
+        isSuccess = false;
+        errorMessage = res.error || 'Gagal menyimpan profil';
+      }
+    }
+    
+    if (canManageMaintenance) {
+      const maintRes = await saveSettingAction('maintenance_mode', maintenanceData);
+      if (!maintRes.success) {
+        isSuccess = false;
+        errorMessage = maintRes.error || 'Gagal menyimpan pengaturan maintenance';
+      }
+    }
+
+    if (isSuccess) {
       toast.success('Pengaturan berhasil disimpan ke Database');
     } else {
-      toast.error(res.error || 'Gagal menyimpan pengaturan');
+      toast.error(errorMessage || 'Gagal menyimpan sebagian pengaturan');
     }
     setIsSaving(false);
   };
@@ -128,7 +166,50 @@ export default function SettingsPage() {
                   </div>
                 </Card>
               )
-            }
+            },
+            ...(canManageMaintenance ? [{
+              id: 'maintenance',
+              label: 'Maintenance Mode',
+              content: (
+                <Card>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', maxWidth: '600px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', color: 'var(--color-danger-600)', marginBottom: 'var(--space-2)' }}>
+                      <ShieldAlert size={20} />
+                      <strong style={{ fontSize: 'var(--text-md)' }}>Akses Super Admin & IT</strong>
+                    </div>
+                    <div style={{
+                      padding: 'var(--space-3)', borderRadius: 'var(--radius-md)',
+                      background: 'var(--bg-subtle)', border: '1px solid var(--border-color)',
+                      fontSize: 'var(--text-sm)'
+                    }}>
+                      Aktifkan Maintenance Mode untuk mengunci akses seluruh pengguna (kecuali Super Admin). Cocok digunakan saat sedang proses perbaikan atau Stock Opname besar-besaran.
+                    </div>
+                    
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3) 0' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', cursor: 'pointer' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={maintenanceData.isActive}
+                          onChange={(e) => setMaintenanceData(prev => ({ ...prev, isActive: e.target.checked }))}
+                          style={{ width: '1.25rem', height: '1.25rem', accentColor: 'var(--color-danger-600)' }}
+                        />
+                        <span style={{ fontWeight: 600 }}>Aktifkan Mode Maintenance</span>
+                      </label>
+                    </div>
+
+                    <FormField label="Pesan Maintenance (Tampil di layar user)">
+                      <Input 
+                        value={maintenanceData.message} 
+                        onChange={(e) => setMaintenanceData(prev => ({ ...prev, message: e.target.value }))}
+                        fullWidth 
+                        placeholder="Contoh: Sistem sedang dalam perbaikan rutin."
+                        disabled={!maintenanceData.isActive}
+                      />
+                    </FormField>
+                  </div>
+                </Card>
+              )
+            }] : [])
           ]}
         />
       )}

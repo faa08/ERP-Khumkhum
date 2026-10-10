@@ -14,7 +14,8 @@ export type UserRole =
   | 'MANAGEMENT'
   | 'SALES'
   | 'SORTING'
-  | 'FARMER';
+  | 'FARMER'
+  | 'IT_MAINTENANCE';
 
 export interface DbUser {
   id: string;

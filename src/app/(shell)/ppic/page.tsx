@@ -217,6 +217,7 @@ export default function PpicPage() {
   const sortColumns: ColumnDef<any>[] = [
     {
       id: 'farmer',
+      accessorFn: (row) => row.receiving?.farmer?.name || '-',
       header: 'Petani',
       cell: ({ row }) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>

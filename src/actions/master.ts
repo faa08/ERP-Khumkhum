@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
 import { logAuditEvent } from '@/actions/audit';
 import { sendWhatsAppMessage, formatStockInquiryMessage, getWhatsAppDirectUrl } from '@/lib/whatsapp';
+import { revalidatePath } from 'next/cache';
 import type {
   DbFarmer,
   DbProduct,
@@ -164,21 +165,36 @@ export async function getProducts(): Promise<{ success: boolean; data?: DbProduc
       .is('deleted_at', null)
       .order('name');
     if (error) throw error;
-    return { success: true, data: data as DbProduct[] };
+    
+    // Fetch ROP settings
+    const { data: settingsData } = await supabaseAdmin.from('settings').select('value').eq('key', 'product_rops').single();
+    const rops = settingsData?.value || {};
+    
+    const enriched = data.map(p => ({ ...p, rop: rops[p.id] || 0 }));
+    
+    return { success: true, data: enriched as DbProduct[] };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export async function createProduct(input: Partial<DbProduct>): Promise<{ success: boolean; data?: DbProduct; error?: string }> {
+export async function createProduct(input: Partial<DbProduct> & { rop?: number }): Promise<{ success: boolean; data?: DbProduct; error?: string }> {
   try {
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { rop, ...productInput } = input;
+    
     const { data, error } = await supabaseAdmin
       .from('products')
-      .insert([input])
+      .insert([productInput])
       .select()
       .single();
     if (error) throw error;
+    
+    if (rop !== undefined) {
+      const { data: settingsData } = await supabaseAdmin.from('settings').select('value').eq('key', 'product_rops').single();
+      const currentRops = settingsData?.value || {};
+      await supabaseAdmin.from('settings').upsert({ key: 'product_rops', value: { ...currentRops, [data.id]: rop }, updated_by: user.userId, updated_at: new Date().toISOString() });
+    }
     
     await logAuditEvent({
       userId: user.userId,
@@ -187,22 +203,35 @@ export async function createProduct(input: Partial<DbProduct>): Promise<{ succes
       entityId: data.id,
       details: { sku: input.sku, name: input.name },
     });
+    
+    revalidatePath('/master/products');
+    revalidatePath('/inventory');
+    revalidatePath('/sales');
+    
     return { success: true, data: data as DbProduct };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export async function updateProduct(id: string, input: Partial<DbProduct>): Promise<{ success: boolean; data?: DbProduct; error?: string }> {
+export async function updateProduct(id: string, input: Partial<DbProduct> & { rop?: number }): Promise<{ success: boolean; data?: DbProduct; error?: string }> {
   try {
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { rop, ...productInput } = input;
+
     const { data, error } = await supabaseAdmin
       .from('products')
-      .update({ ...input, updated_at: new Date().toISOString() })
+      .update({ ...productInput, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
       .single();
     if (error) throw error;
+
+    if (rop !== undefined) {
+      const { data: settingsData } = await supabaseAdmin.from('settings').select('value').eq('key', 'product_rops').single();
+      const currentRops = settingsData?.value || {};
+      await supabaseAdmin.from('settings').upsert({ key: 'product_rops', value: { ...currentRops, [id]: rop }, updated_by: user.userId, updated_at: new Date().toISOString() });
+    }
 
     await logAuditEvent({
       userId: user.userId,
@@ -210,6 +239,11 @@ export async function updateProduct(id: string, input: Partial<DbProduct>): Prom
       entityType: 'product',
       entityId: id,
     });
+    
+    revalidatePath('/master/products');
+    revalidatePath('/inventory');
+    revalidatePath('/sales');
+
     return { success: true, data: data as DbProduct };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -231,6 +265,11 @@ export async function deleteProduct(id: string): Promise<{ success: boolean; err
       entityType: 'product',
       entityId: id,
     });
+    
+    revalidatePath('/master/products');
+    revalidatePath('/inventory');
+    revalidatePath('/sales');
+
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -273,6 +312,10 @@ export async function createRawMaterial(input: Partial<DbRawMaterial>): Promise<
       entityId: data.id,
       details: { code: input.code, name: input.name },
     });
+    
+    revalidatePath('/master/raw-materials');
+    revalidatePath('/inventory');
+
     return { success: true, data: data as DbRawMaterial };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -296,6 +339,10 @@ export async function updateRawMaterial(id: string, input: Partial<DbRawMaterial
       entityType: 'raw_material',
       entityId: id,
     });
+    
+    revalidatePath('/master/raw-materials');
+    revalidatePath('/inventory');
+
     return { success: true, data: data as DbRawMaterial };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -317,6 +364,10 @@ export async function deleteRawMaterial(id: string): Promise<{ success: boolean;
       entityType: 'raw_material',
       entityId: id,
     });
+    
+    revalidatePath('/master/raw-materials');
+    revalidatePath('/inventory');
+
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };

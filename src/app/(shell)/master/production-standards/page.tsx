@@ -17,9 +17,11 @@ import {
   Plus,
   Trash2,
   Sliders,
+  CookingPot,
 } from 'lucide-react';
 import { getProductionStandards, saveProductionStandards } from '@/actions/standards';
-import type { ProductionStandardConfig, BomRecipe } from '@/types/database';
+import { getProducts, getRawMaterials } from '@/actions/master';
+import type { ProductionStandardConfig, BomRecipe, DbProduct, DbRawMaterial } from '@/types/database';
 
 export default function ProductionStandardsPage() {
   const { user } = useAuth();
@@ -36,19 +38,34 @@ export default function ProductionStandardsPage() {
     default_rating_factor: 1.0,
     default_allowance_factor: 0.15,
     bom_recipes: [],
+    premix_recipes: [],
     seasoning_per_variant: [],
   });
 
+  const [products, setProducts] = useState<DbProduct[]>([]);
+  const [rawMaterials, setRawMaterials] = useState<DbRawMaterial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const toast = useToast();
 
   const loadStandards = useCallback(async () => {
     setIsLoading(true);
-    const res = await getProductionStandards();
-    if (res.success && res.data) {
-      setConfig(res.data);
+    const [resStd, resProd, resRaw] = await Promise.all([
+      getProductionStandards(),
+      getProducts(),
+      getRawMaterials()
+    ]);
+    
+    if (resStd.success && resStd.data) {
+      setConfig(resStd.data);
     }
+    if (resProd.success && resProd.data) {
+      setProducts(resProd.data);
+    }
+    if (resRaw.success && resRaw.data) {
+      setRawMaterials(resRaw.data);
+    }
+    
     setIsLoading(false);
   }, []);
 
@@ -81,6 +98,24 @@ export default function ProductionStandardsPage() {
   const handleRemoveRecipe = (index: number) => {
     const updated = config.bom_recipes.filter((_, i) => i !== index);
     setConfig({ ...config, bom_recipes: updated });
+  };
+
+  const handleAddPremixRecipe = () => {
+    const newRecipe = {
+      premix_name: 'Tepung Premix KhumKhum',
+      output_qty: 10,
+      ingredients: [
+        { name: 'Tepung Terigu', qty: 8 },
+        { name: 'Tepung Tapioka', qty: 1 },
+        { name: 'Bawang Putih Bubuk', qty: 1 }
+      ]
+    };
+    setConfig({ ...config, premix_recipes: [...(config.premix_recipes || []), newRecipe] });
+  };
+
+  const handleRemovePremixRecipe = (index: number) => {
+    const updated = (config.premix_recipes || []).filter((_, i) => i !== index);
+    setConfig({ ...config, premix_recipes: updated });
   };
 
   return (
@@ -194,67 +229,263 @@ export default function ProductionStandardsPage() {
             <div
               key={index}
               style={{
-                display: 'grid',
-                gridTemplateColumns: '2fr 1fr 1fr 1fr auto',
-                gap: 'var(--space-2)',
-                alignItems: 'center',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-3)',
                 padding: 'var(--space-3)',
                 background: 'var(--bg-subtle)',
                 borderRadius: 'var(--radius-md)',
               }}
             >
-              <div>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Nama Resep</span>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, maxWidth: '400px' }}>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Produk / Varian</span>
+                  <select
+                    disabled={isManagement}
+                    className="input"
+                    style={{ width: '100%' }}
+                    value={recipe.product_id || ''}
+                    onChange={(e) => {
+                      const updated = [...config.bom_recipes];
+                      const selectedId = e.target.value;
+                      const selectedProd = products.find(p => p.id === selectedId);
+                      updated[index].product_id = selectedId;
+                      updated[index].product_name = selectedProd ? selectedProd.name : '';
+                      setConfig({ ...config, bom_recipes: updated });
+                    }}
+                  >
+                    <option value="" disabled>-- Pilih Produk --</option>
+                    {products.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {!isManagement && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleRemoveRecipe(index)}
+                    aria-label={`Hapus resep ${recipe.product_name}`}
+                  >
+                    <Trash2 className="w-4 h-4 text-[var(--color-danger-600)]" aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--space-4)' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Jamur Mentah</span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      disabled={isManagement}
+                      className="input"
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={recipe.raw_mushroom_id || ''}
+                      onChange={(e) => {
+                        const updated = [...config.bom_recipes];
+                        updated[index].raw_mushroom_id = e.target.value;
+                        setConfig({ ...config, bom_recipes: updated });
+                      }}
+                    >
+                      <option value="" disabled>-- Pilih Jamur --</option>
+                      {rawMaterials.filter(rm => rm.name.toLowerCase().includes('jamur') || rm.material_category === 'SAYURAN' || rm.material_category === 'LAINNYA').map(rm => (
+                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
+                      ))}
+                    </select>
+                    <div style={{ width: '90px', flexShrink: 0 }}>
+                      <Input disabled={isManagement}
+                        fullWidth
+                        type="number"
+                        step="0.1"
+                        placeholder="kg"
+                        value={recipe.raw_mushroom_ratio}
+                        onChange={(e) => {
+                          const updated = [...config.bom_recipes];
+                          updated[index].raw_mushroom_ratio = Number(e.target.value);
+                          setConfig({ ...config, bom_recipes: updated });
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Tepung Premiks</span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      disabled={isManagement}
+                      className="input"
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={recipe.premix_flour_id || ''}
+                      onChange={(e) => {
+                        const updated = [...config.bom_recipes];
+                        updated[index].premix_flour_id = e.target.value;
+                        setConfig({ ...config, bom_recipes: updated });
+                      }}
+                    >
+                      <option value="" disabled>-- Pilih Premiks --</option>
+                      {rawMaterials.map(rm => (
+                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
+                      ))}
+                    </select>
+                    <div style={{ width: '90px', flexShrink: 0 }}>
+                      <Input disabled={isManagement}
+                        fullWidth
+                        type="number"
+                        step="0.05"
+                        placeholder="kg"
+                        value={recipe.premix_flour_ratio}
+                        onChange={(e) => {
+                          const updated = [...config.bom_recipes];
+                          updated[index].premix_flour_ratio = Number(e.target.value);
+                          setConfig({ ...config, bom_recipes: updated });
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Minyak Goreng</span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      disabled={isManagement}
+                      className="input"
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={recipe.cooking_oil_id || ''}
+                      onChange={(e) => {
+                        const updated = [...config.bom_recipes];
+                        updated[index].cooking_oil_id = e.target.value;
+                        setConfig({ ...config, bom_recipes: updated });
+                      }}
+                    >
+                      <option value="" disabled>-- Pilih Minyak --</option>
+                      {rawMaterials.filter(rm => rm.name.toLowerCase().includes('minyak') || rm.material_category === 'LAINNYA').map(rm => (
+                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
+                      ))}
+                    </select>
+                    <div style={{ width: '90px', flexShrink: 0 }}>
+                      <Input disabled={isManagement}
+                        fullWidth
+                        type="number"
+                        step="0.05"
+                        placeholder="L"
+                        value={recipe.cooking_oil_ratio}
+                        onChange={(e) => {
+                          const updated = [...config.bom_recipes];
+                          updated[index].cooking_oil_ratio = Number(e.target.value);
+                          setConfig({ ...config, bom_recipes: updated });
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* 4. Premix Recipe Configuration */}
+      <Card header={<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CookingPot className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" /> <strong>Resep Dasar — Pembuatan Premix</strong></div>
+        {!isManagement && (config.premix_recipes?.length || 0) === 0 && <Button variant="secondary" size="sm" onClick={handleAddPremixRecipe} leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}>Tambah Resep Premix</Button>}
+      </div>}>
+        <p style={{ margin: 0, marginBottom: 'var(--space-2)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
+          Standar komposisi bahan baku (Terigu, Bumbu, dll) untuk menghasilkan 1 batch Tepung Premix.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          {(config.premix_recipes || []).map((recipe, index) => (
+            <div
+              key={`premix-${index}`}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr 2fr auto',
+                gap: 'var(--space-2)',
+                alignItems: 'start',
+                padding: 'var(--space-3)',
+                background: 'var(--bg-subtle)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Nama Output</span>
                 <Input disabled={isManagement}
-                  value={recipe.product_name}
+                  value={recipe.premix_name}
                   onChange={(e) => {
-                    const updated = [...config.bom_recipes];
-                    updated[index].product_name = e.target.value;
-                    setConfig({ ...config, bom_recipes: updated });
+                    const updated = [...(config.premix_recipes || [])];
+                    updated[index].premix_name = e.target.value;
+                    setConfig({ ...config, premix_recipes: updated });
                   }}
                 />
               </div>
 
-              <div>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Jamur (kg)</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Output (kg)</span>
                 <Input disabled={isManagement}
                   type="number"
                   step="0.1"
-                  value={recipe.raw_mushroom_ratio}
+                  value={recipe.output_qty}
                   onChange={(e) => {
-                    const updated = [...config.bom_recipes];
-                    updated[index].raw_mushroom_ratio = Number(e.target.value);
-                    setConfig({ ...config, bom_recipes: updated });
+                    const updated = [...(config.premix_recipes || [])];
+                    updated[index].output_qty = Number(e.target.value);
+                    setConfig({ ...config, premix_recipes: updated });
                   }}
                 />
               </div>
 
-              <div>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Premiks (kg)</span>
-                <Input disabled={isManagement}
-                  type="number"
-                  step="0.05"
-                  value={recipe.premix_flour_ratio}
-                  onChange={(e) => {
-                    const updated = [...config.bom_recipes];
-                    updated[index].premix_flour_ratio = Number(e.target.value);
-                    setConfig({ ...config, bom_recipes: updated });
-                  }}
-                />
-              </div>
-
-              <div>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Minyak (L)</span>
-                <Input disabled={isManagement}
-                  type="number"
-                  step="0.05"
-                  value={recipe.cooking_oil_ratio}
-                  onChange={(e) => {
-                    const updated = [...config.bom_recipes];
-                    updated[index].cooking_oil_ratio = Number(e.target.value);
-                    setConfig({ ...config, bom_recipes: updated });
-                  }}
-                />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Komposisi (kg)</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {recipe.ingredients.map((ing, iIdx) => (
+                    <div key={iIdx} style={{ display: 'flex', gap: '8px' }}>
+                        <select
+                          disabled={isManagement}
+                          className="input"
+                          style={{ flex: 1, minWidth: 0 }}
+                          value={ing.raw_material_id || ''}
+                          onChange={(e) => {
+                            const updated = [...(config.premix_recipes || [])];
+                            const selectedId = e.target.value;
+                            const selectedRm = rawMaterials.find(rm => rm.id === selectedId);
+                            updated[index].ingredients[iIdx].raw_material_id = selectedId;
+                            updated[index].ingredients[iIdx].name = selectedRm ? selectedRm.name : '';
+                            setConfig({ ...config, premix_recipes: updated });
+                          }}
+                        >
+                          <option value="" disabled>-- Pilih Bahan --</option>
+                          {rawMaterials
+                            .map(rm => (
+                            <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
+                          ))}
+                        </select>
+                      <div style={{ width: '90px', flexShrink: 0 }}>
+                        <Input disabled={isManagement}
+                          fullWidth
+                          type="number"
+                          step="0.1"
+                          placeholder="Qty"
+                          value={ing.qty}
+                          onChange={(e) => {
+                            const updated = [...(config.premix_recipes || [])];
+                            updated[index].ingredients[iIdx].qty = Number(e.target.value);
+                            setConfig({ ...config, premix_recipes: updated });
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {!isManagement && (
+                    <Button variant="secondary" size="sm" onClick={() => {
+                      const updated = [...(config.premix_recipes || [])];
+                      updated[index].ingredients.push({ name: '', qty: 0 });
+                      setConfig({ ...config, premix_recipes: updated });
+                    }} style={{ alignSelf: 'flex-start', marginTop: '4px' }}>+ Tambah Bahan</Button>
+                  )}
+                </div>
               </div>
 
               <div style={{ paddingTop: '16px' }}>
@@ -262,8 +493,8 @@ export default function ProductionStandardsPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    onClick={() => handleRemoveRecipe(index)}
-                    aria-label={`Hapus resep ${recipe.product_name}`}
+                    onClick={() => handleRemovePremixRecipe(index)}
+                    aria-label={`Hapus resep premix`}
                   >
                     <Trash2 className="w-4 h-4 text-[var(--color-danger-600)]" aria-hidden="true" />
                   </Button>

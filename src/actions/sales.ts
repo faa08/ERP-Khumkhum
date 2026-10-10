@@ -180,8 +180,10 @@ export async function getSalesRealtimeTracking(): Promise<{
       }
     }
 
-    // 5. Bangun rincian per produk
-    const productsStock: FinishedGoodSalesStock[] = productsList.map(prod => {
+    // 5. Bangun rincian per produk (Hanya yang ada di inventaris operasional)
+    const validProducts = productsList.filter(prod => inventoryMap.has(prod.id));
+    
+    const productsStock: FinishedGoodSalesStock[] = validProducts.map(prod => {
       const name = prod.name || '';
       const nameLower = name.toLowerCase();
 

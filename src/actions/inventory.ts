@@ -26,22 +26,32 @@ export async function getInventorySummary(): Promise<{
     const rmIds = data?.filter(inv => inv.item_type === 'RAW_MATERIAL').map(inv => inv.item_id) || [];
     const prodIds = data?.filter(inv => inv.item_type === 'PRODUCT').map(inv => inv.item_id) || [];
 
-    const [rmRes, prodRes] = await Promise.all([
-      rmIds.length > 0 ? supabaseAdmin.from('raw_materials').select('id, name').in('id', rmIds) : { data: [] },
-      prodIds.length > 0 ? supabaseAdmin.from('products').select('id, name').in('id', prodIds) : { data: [] }
+    const [rmRes, prodRes, settingsRes] = await Promise.all([
+      rmIds.length > 0 ? supabaseAdmin.from('raw_materials').select('id, name, material_category, rop').in('id', rmIds) : { data: [] },
+      prodIds.length > 0 ? supabaseAdmin.from('products').select('id, name').in('id', prodIds) : { data: [] },
+      supabaseAdmin.from('settings').select('value').eq('key', 'product_rops').single()
     ]);
 
-    const rmMap = new Map(rmRes.data?.map(rm => [rm.id, rm.name]) || []);
-    const prodMap = new Map(prodRes.data?.map(p => [p.id, p.name]) || []);
+    const rmMap = new Map(rmRes.data?.map(rm => [rm.id, rm]) || []);
+    const prodMap = new Map(prodRes.data?.map(p => [p.id, p]) || []);
+    const productRops = settingsRes.data?.value || {};
 
     const enriched = (data || []).map((inv: any) => {
       let item_name = 'Unknown';
+      let material_category = '';
+      let master_rop = 0;
+      
       if (inv.item_type === 'RAW_MATERIAL') {
-        item_name = rmMap.get(inv.item_id) || 'Bahan Baku';
+        const rm = rmMap.get(inv.item_id);
+        item_name = rm?.name || 'Bahan Baku';
+        material_category = rm?.material_category || 'Utama';
+        master_rop = rm?.rop || 0;
       } else if (inv.item_type === 'PRODUCT') {
-        item_name = prodMap.get(inv.item_id) || 'Produk';
+        const p = prodMap.get(inv.item_id);
+        item_name = p?.name || 'Produk';
+        master_rop = productRops[inv.item_id] || 0;
       }
-      return { ...inv, item_name };
+      return { ...inv, item_name, material_category, master_rop };
     });
 
     return { success: true, data: enriched as DbInventory[] };
@@ -205,29 +215,43 @@ export async function getInventoryForecasting(inventoryId: string): Promise<{
   }
 }
 
-export async function receiveNonMushroomItem(payload: { item_name: string, uom: string, quantity: number, notes?: string }): Promise<{ success: boolean; error?: string }> {
+export async function receiveNonMushroomItem(payload: { item_name: string, uom: string, quantity: number, notes?: string, item_type?: string }): Promise<{ success: boolean; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
-    const batchNumber = `INB-NONJMR-${format(new Date(), 'yyyyMMdd')}-${Math.floor(Math.random() * 10000)}`;
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
+    const itemType = payload.item_type || 'RAW_MATERIAL';
 
-    // 1. Find or create raw_material
-    let rawMaterialId = '';
-    const { data: existingRm } = await supabaseAdmin.from('raw_materials').select('id').ilike('name', payload.item_name).maybeSingle();
+    // 1. Find or create master item
+    let masterItemId = '';
     
-    if (existingRm) {
-      rawMaterialId = existingRm.id;
+    if (itemType === 'PRODUCT') {
+      const { data: existingProd } = await supabaseAdmin.from('products').select('id').ilike('name', payload.item_name).maybeSingle();
+      if (existingProd) {
+        masterItemId = existingProd.id;
+      } else {
+        const sku = `PROD-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
+        const { data: newProd, error: prodError } = await supabaseAdmin.from('products').insert({
+          sku,
+          name: payload.item_name,
+        }).select('id').single();
+        if (prodError) throw prodError;
+        masterItemId = newProd.id;
+      }
     } else {
-      const code = `RM-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
-      const { data: newRm, error: rmError } = await supabaseAdmin.from('raw_materials').insert({
-        code,
-        name: payload.item_name,
-        uom: payload.uom || 'kg',
-        min_stock: 0,
-        rop: 0
-      }).select('id').single();
-      
-      if (rmError) throw rmError;
-      rawMaterialId = newRm.id;
+      const { data: existingRm } = await supabaseAdmin.from('raw_materials').select('id').ilike('name', payload.item_name).maybeSingle();
+      if (existingRm) {
+        masterItemId = existingRm.id;
+      } else {
+        const code = `RM-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
+        const { data: newRm, error: rmError } = await supabaseAdmin.from('raw_materials').insert({
+          code,
+          name: payload.item_name,
+          uom: payload.uom || 'kg',
+          min_stock: 0,
+          rop: 0
+        }).select('id').single();
+        if (rmError) throw rmError;
+        masterItemId = newRm.id;
+      }
     }
 
     // 2. Find or create inventory
@@ -235,8 +259,8 @@ export async function receiveNonMushroomItem(payload: { item_name: string, uom: 
     let currentQty = 0;
     const { data: existingInv } = await supabaseAdmin.from('inventory')
       .select('id, quantity')
-      .eq('item_type', 'RAW_MATERIAL')
-      .eq('item_id', rawMaterialId)
+      .eq('item_type', itemType)
+      .eq('item_id', masterItemId)
       .maybeSingle();
 
     if (existingInv) {
@@ -254,8 +278,8 @@ export async function receiveNonMushroomItem(payload: { item_name: string, uom: 
 
       const { data: newInv, error: invError } = await supabaseAdmin.from('inventory').insert({
         warehouse_id: warehouseId,
-        item_type: 'RAW_MATERIAL',
-        item_id: rawMaterialId,
+        item_type: itemType,
+        item_id: masterItemId,
         quantity: payload.quantity,
         reorder_point: 0
       }).select('id').single();
@@ -270,7 +294,7 @@ export async function receiveNonMushroomItem(payload: { item_name: string, uom: 
       movement_type: 'IN',
       quantity: payload.quantity,
       reference_type: 'MANUAL_INBOUND',
-      notes: payload.notes ? `${payload.notes} (Batch: ${batchNumber})` : `Batch: ${batchNumber}`,
+      notes: payload.notes || 'Inbound Manual',
       created_by: user.userId
     });
 
@@ -450,8 +474,13 @@ export async function transferToConsignment(payload: { inventory_id: string, tar
 export async function deleteInventoryItem(id: string): Promise<{ success: boolean; error?: string }> {
   try {
     await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    
+    // Hapus riwayat pergerakan stok terlebih dahulu karena constraint foreign key
+    await supabaseAdmin.from('stock_movements').delete().eq('inventory_id', id);
+    
     const { error } = await supabaseAdmin.from('inventory').delete().eq('id', id);
     if (error) throw error;
+    
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -483,5 +512,48 @@ export async function updateInventoryItem(
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
+  }
+}
+
+import { revalidatePath } from 'next/cache';
+
+export async function syncInventoryWithMaster(): Promise<{ success: boolean; error?: string; count: number }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    const { data: mainWarehouse } = await supabaseAdmin.from('warehouses').select('id').order('name').limit(1).single();
+    if (!mainWarehouse) throw new Error('No warehouse found');
+    
+    const { data: rawMaterials } = await supabaseAdmin.from('raw_materials').select('*').is('deleted_at', null);
+    const { data: products } = await supabaseAdmin.from('products').select('*').is('deleted_at', null);
+    const { data: existingInv } = await supabaseAdmin.from('inventory').select('item_id').eq('warehouse_id', mainWarehouse.id);
+    
+    const existingIds = new Set(existingInv?.map(i => i.item_id) || []);
+    const toInsert: any[] = [];
+    
+    if (rawMaterials) {
+      for (const rm of rawMaterials) {
+        if (!existingIds.has(rm.id)) {
+          toInsert.push({ warehouse_id: mainWarehouse.id, item_id: rm.id, item_type: 'RAW_MATERIAL', quantity: 0, reorder_point: 0 });
+        }
+      }
+    }
+    
+    if (products) {
+      for (const p of products) {
+        if (!existingIds.has(p.id)) {
+          toInsert.push({ warehouse_id: mainWarehouse.id, item_id: p.id, item_type: 'PRODUCT', quantity: 0, reorder_point: 0 });
+        }
+      }
+    }
+    
+    if (toInsert.length > 0) {
+      await supabaseAdmin.from('inventory').insert(toInsert);
+      revalidatePath('/inventory');
+      revalidatePath('/warehouse');
+    }
+    
+    return { success: true, count: toInsert.length };
+  } catch (err: any) {
+    return { success: false, error: err.message, count: 0 };
   }
 }

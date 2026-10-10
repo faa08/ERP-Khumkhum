@@ -12,11 +12,13 @@ import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck, Check, Trash2 } from 'lucide-react';
+import { Plus, MoreVertical, Eye, Leaf, AlertTriangle, CheckCircle, MessageCircle, Sprout, ClipboardCheck, Check, Trash2, Edit2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { getReceivings, createReceiving, deleteReceiving, getInboundEstimates } from '@/actions/receiving';
+import { ImportExcelModal } from '@/components/ui/ImportExcelModal';
+import { Download } from 'lucide-react';
+import { getReceivings, createReceiving, updateReceiving, deleteReceiving, getInboundEstimates } from '@/actions/receiving';
 import { getFarmers, getRawMaterials } from '@/actions/master';
 import { supabase } from '@/lib/supabase';
 import type { DbReceiving, DbWhatsAppMessage } from '@/types/database';
@@ -34,6 +36,7 @@ interface FormState {
   weight: string;
   notes: string;
   received_date: string;
+  correction_reason?: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -43,6 +46,7 @@ const EMPTY_FORM: FormState = {
   weight: '',
   notes: '',
   received_date: '',
+  correction_reason: '',
 };
 
 export default function ReceivingPage() {
@@ -56,10 +60,14 @@ export default function ReceivingPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'menunggu' | 'selesai'>('menunggu');
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [viewItem, setViewItem] = useState<DbReceiving | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
+  const [viewItem, setViewItem] = useState<DbReceiving | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+
+  // Import state
+  const [importOpen, setImportOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean; title: string; description: string;
     onConfirm: () => void; variant: 'danger' | 'primary';
@@ -111,7 +119,27 @@ export default function ReceivingPage() {
 
   // ── Handlers ────────────────────────────────────────────────────
   const handleOpenCreate = () => {
+    setEditId(null);
     setForm({ ...EMPTY_FORM, received_date: getCurrentDateTimeLocal() });
+    setDrawerOpen(true);
+  };
+
+  const handleOpenEdit = (item: DbReceiving) => {
+    setEditId(item.id);
+    let rDate = '';
+    if (item.received_date) {
+      // Ensure format is YYYY-MM-DDThh:mm for datetime-local
+      rDate = new Date(item.received_date).toISOString().slice(0, 16);
+    }
+    setForm({
+      farmer_id: item.farmer_id || '',
+      raw_material_id: item.raw_material_id || '',
+      weight_sent: item.weight_sent != null ? String(item.weight_sent) : '',
+      weight: item.weight != null ? String(item.weight) : '',
+      notes: item.notes || '',
+      received_date: rDate,
+      correction_reason: '',
+    });
     setDrawerOpen(true);
   };
 
@@ -123,24 +151,45 @@ export default function ReceivingPage() {
       toast.error('Lengkapi semua field yang wajib diisi');
       return;
     }
+    
+    if (editId && !form.correction_reason?.trim()) {
+      toast.error('Alasan revisi wajib diisi');
+      return;
+    }
+    
     setIsSaving(true);
-    const res = await createReceiving({
-      farmer_id: form.farmer_id,
-      raw_material_id: finalRawMaterialId,
-      weight_sent: parseFloat(form.weight_sent),
-      weight: parseFloat(form.weight),
-      notes: form.notes || undefined,
-      received_date: form.received_date || undefined,
-    });
+    let res;
+    if (editId) {
+      res = await updateReceiving({
+        id: editId,
+        weight: parseFloat(form.weight),
+        weight_sent: parseFloat(form.weight_sent),
+        notes: form.notes || undefined,
+        correction_reason: form.correction_reason || 'Revisi data',
+        received_date: form.received_date || undefined,
+      });
+    } else {
+      res = await createReceiving({
+        farmer_id: form.farmer_id,
+        raw_material_id: finalRawMaterialId,
+        weight_sent: parseFloat(form.weight_sent),
+        weight: parseFloat(form.weight),
+        notes: form.notes || undefined,
+        received_date: form.received_date || undefined,
+      });
+    }
     setIsSaving(false);
+    
     if (res.success) {
-      toast.success('Penerimaan berhasil dicatat! Nota WA terkirim ke petani.');
+      toast.success(editId ? 'Revisi penerimaan berhasil disimpan!' : 'Penerimaan berhasil dicatat! Nota WA terkirim ke petani.');
       setDrawerOpen(false);
       loadData();
     } else {
       toast.error(res.error || 'Gagal menyimpan');
     }
   };
+
+
 
   const handleView = (item: DbReceiving) => { setViewItem(item); setViewOpen(true); };
 
@@ -157,6 +206,7 @@ export default function ReceivingPage() {
     },
     {
       id: 'farmer_name',
+      accessorFn: (row) => row.farmer?.name || row.farmer_id || '-',
       header: 'Petani',
       cell: ({ row }) => row.original.farmer?.name || row.original.farmer_id || '-',
     },
@@ -172,6 +222,7 @@ export default function ReceivingPage() {
     },
     {
       id: 'diff',
+      accessorFn: (row) => row.diff_percentage || 0,
       header: 'Selisih %',
       cell: ({ row }) => {
         const pct = row.original.diff_percentage;
@@ -201,7 +252,7 @@ export default function ReceivingPage() {
       cell: ({ row }) => <StatusBadge status={(row.original.status || 'received').toLowerCase()} />,
     },
     {
-      id: 'date',
+      accessorKey: 'received_date',
       header: 'Tanggal',
       cell: ({ row }) => format(new Date(row.original.received_date), 'dd/MM/yyyy HH:mm'),
     },
@@ -209,12 +260,21 @@ export default function ReceivingPage() {
       id: 'actions',
       cell: ({ row }) => {
         const item = row.original;
+        const canEdit = !isManagement && item.status !== 'SORTED';
         const canDelete = !isManagement && item.status !== 'SORTED';
         return (
           <Dropdown
             trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
             items={[
               { id: 'view', label: 'Lihat Detail', icon: <Eye size={14} aria-hidden="true" />, onClick: () => handleView(item) },
+              ...(canEdit ? [
+                {
+                  id: 'edit',
+                  label: 'Revisi Data',
+                  icon: <Edit2 size={14} aria-hidden="true" />,
+                  onClick: () => handleOpenEdit(item),
+                },
+              ] : []),
               ...(canDelete ? [
                 {
                   id: 'delete',
@@ -247,6 +307,107 @@ export default function ReceivingPage() {
       },
     },
   ], [isManagement, loadData]);
+
+  // Handlers for Import
+  const handleDownloadTemplate = async () => {
+    try {
+      const ExcelJS = (await import('exceljs')).default;
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Penerimaan');
+      
+      sheet.columns = [
+        { header: 'Nama Petani', key: 'farmer', width: 25 },
+        { header: 'Berat Kirim (kg)', key: 'weight_sent', width: 20 },
+        { header: 'Berat Terima (kg)', key: 'weight_receive', width: 20 },
+        { header: 'Catatan', key: 'notes', width: 30 },
+        { header: 'Tanggal', key: 'date', width: 20 },
+      ];
+      
+      sheet.getRow(1).eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F46E5' } };
+        cell.font = { color: { argb: 'FFFFFFFF' }, bold: true };
+        cell.alignment = { horizontal: 'center' };
+        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+      });
+      
+      sheet.addRow({
+        farmer: farmers[0]?.name || 'Contoh Petani',
+        weight_sent: 50,
+        weight_receive: 48.5,
+        notes: 'Jamur sedikit basah',
+        date: format(new Date(), 'yyyy-MM-dd')
+      });
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Template_Penerimaan_KhumKhum.xlsx';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      toast.error('Gagal membuat template Excel');
+    }
+  };
+
+  const handleImportData = async (data: any[]) => {
+    try {
+      const rawMat = rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur tiram')) || rawMaterials[0];
+      if (!rawMat) return { success: false, error: 'Bahan baku tidak ditemukan' };
+      
+      const importedRecords = [];
+      for (const row of data) {
+        const farmerName = row['Nama Petani'];
+        const weightSent = parseFloat(row['Berat Kirim (kg)']);
+        const weightReceive = parseFloat(row['Berat Terima (kg)']);
+        const notes = row['Catatan'];
+        let dateStr = row['Tanggal'];
+
+        // Jika exceljs / xlsx baca tanggal sebagai serial number Excel
+        if (typeof dateStr === 'number') {
+          const date = new Date(Math.round((dateStr - 25569) * 86400 * 1000));
+          dateStr = format(date, 'yyyy-MM-dd');
+        }
+        
+        if (!farmerName) continue;
+        const weightSentVal = parseFloat(String(weightSent)) || 0;
+        const weightReceiveVal = parseFloat(String(weightReceive)) || 0;
+        
+        if (isNaN(weightReceiveVal)) continue;
+        
+        const farmerNameClean = String(farmerName).trim().toLowerCase();
+        const farmer = farmers.find(f => f.name.toLowerCase().trim() === farmerNameClean);
+        if (!farmer) continue; 
+        
+        importedRecords.push({
+          farmer_id: farmer.id,
+          raw_material_id: rawMat.id,
+          weight_sent: weightSentVal,
+          weight: weightReceiveVal,
+          notes: notes || undefined,
+          received_date: dateStr ? new Date(dateStr).toISOString() : new Date().toISOString(),
+        });
+      }
+      
+      if (importedRecords.length === 0) {
+        return { success: false, error: 'Tidak ada data valid yang bisa diimport. Pastikan nama petani sesuai dengan master data.' };
+      }
+      
+      // Simpan satu-satu untuk saat ini
+      let successCount = 0;
+      for (const record of importedRecords) {
+        const res = await createReceiving(record);
+        if (res.success) successCount++;
+      }
+      
+      loadData();
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
 
   const draftColumns = useMemo<ColumnDef<any>[]>(() => [
     {
@@ -325,7 +486,24 @@ export default function ReceivingPage() {
           }}>
             Investor / Read-Only Mode
           </span>
-        ) : undefined}
+        ) : (
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button 
+              variant="secondary" 
+              onClick={() => setImportOpen(true)}
+              leftIcon={<Download size={16} />}
+            >
+              Import CSV / Excel
+            </Button>
+            <Button 
+              variant="primary" 
+              onClick={handleOpenCreate}
+              leftIcon={<Plus size={16} />}
+            >
+              Tambah Penerimaan
+            </Button>
+          </div>
+        )}
       />
 
       <div style={{ display: 'flex', gap: 'var(--space-2)', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-2)' }}>
@@ -368,11 +546,6 @@ export default function ReceivingPage() {
               <h3 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Draft Estimasi (Dari WhatsApp)</h3>
               <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginTop: '4px' }}>Draft otomatis hasil ekstraksi AI dari chat petani.</p>
             </div>
-            {!isManagement && (
-              <Button variant="secondary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
-                Catat Penerimaan Manual
-              </Button>
-            )}
           </div>
           <DataTable columns={draftColumns} data={draftEstimates} />
         </div>
@@ -380,42 +553,38 @@ export default function ReceivingPage() {
 
       {activeTab === 'selesai' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button variant="primary" onClick={handleOpenCreate} leftIcon={<Plus size={16} />}>
-              Catat Penerimaan Manual
-            </Button>
-          </div>
           <DataTable columns={columns} data={data} />
         </div>
       )}
 
-      {/* ── CREATE DRAWER ── */}
+      {/* ── CREATE/EDIT DRAWER ── */}
       <Modal
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title="Catat Penerimaan Bahan Baku"
+        title={editId ? "Revisi Penerimaan Bahan Baku" : "Catat Penerimaan Bahan Baku"}
         size="md"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Batal</Button>
             <Button variant="primary" onClick={handleSave} loading={isSaving}>
-              Simpan & Kirim Nota WA
+              {editId ? "Simpan Revisi" : "Simpan & Kirim Nota WA"}
             </Button>
           </>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {/* Selection removed, handled directly via button on row */}
-
           <FormField label="Petani Mitra" required>
             <select
               value={form.farmer_id}
               onChange={e => setForm(f => ({ ...f, farmer_id: e.target.value }))}
+              disabled={!!editId} // Petani tidak bisa diganti jika revisi
               style={{
                 width: '100%', padding: 'var(--space-2) var(--space-3)',
                 border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-                background: 'var(--bg-default)', color: 'var(--text-primary)',
+                background: !!editId ? 'var(--bg-muted)' : 'var(--bg-default)', 
+                color: 'var(--text-primary)',
                 fontSize: 'var(--text-sm)',
+                cursor: !!editId ? 'not-allowed' : 'default',
               }}
             >
               <option value="">-- Pilih Petani --</option>
@@ -485,6 +654,19 @@ export default function ReceivingPage() {
             </div>
           )}
 
+          {editId && (
+            <FormField label="Alasan Revisi" required>
+              <Input
+                placeholder="Contoh: Salah input angka timbangan awal"
+                value={form.correction_reason}
+                onChange={e => setForm(f => ({ ...f, correction_reason: e.target.value }))}
+              />
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-warning-600)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <AlertTriangle size={12} /> Revisi data ini akan tercatat dalam sistem audit.
+              </span>
+            </FormField>
+          )}
+
           <FormField label="Catatan (Opsional)">
             <Input
               placeholder="Catatan tambahan..."
@@ -493,17 +675,19 @@ export default function ReceivingPage() {
             />
           </FormField>
 
-          <div style={{
-            padding: 'var(--space-3)',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-primary-50)',
-            border: '1px solid var(--color-primary-200)',
-            display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
-            fontSize: 'var(--text-sm)', color: 'var(--color-primary-700)',
-          }}>
-            <MessageCircle size={14} />
-            Nota timbangan akan otomatis terkirim ke WhatsApp petani setelah disimpan.
-          </div>
+          {!editId && (
+            <div style={{
+              padding: 'var(--space-3)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-primary-50)',
+              border: '1px solid var(--color-primary-200)',
+              display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+              fontSize: 'var(--text-sm)', color: 'var(--color-primary-700)',
+            }}>
+              <MessageCircle size={14} />
+              Nota timbangan otomatis terkirim ke WhatsApp petani setelah disimpan.
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -537,6 +721,15 @@ export default function ReceivingPage() {
           </div>
         )}
       </Modal>
+
+      <ImportExcelModal
+        isOpen={importOpen}
+        onClose={() => setImportOpen(false)}
+        title="Import Data Penerimaan"
+        expectedColumns={['Nama Petani', 'Berat Kirim (kg)', 'Berat Terima (kg)']}
+        onDownloadTemplate={handleDownloadTemplate}
+        onImportData={handleImportData}
+      />
 
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}

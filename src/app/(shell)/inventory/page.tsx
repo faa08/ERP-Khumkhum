@@ -16,11 +16,11 @@ import { useToast } from '@/hooks/useToast';
 import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment, updateInventoryItem, deleteInventoryItem } from '@/actions/inventory';
-import { getRawMaterials, getWarehouses } from '@/actions/master';
+import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment, updateInventoryItem, deleteInventoryItem, syncInventoryWithMaster } from '@/actions/inventory';
+import { getRawMaterials, getWarehouses, getProducts } from '@/actions/master';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
-import type { DbInventory, DbStockMovement, DbRawMaterial } from '@/types/database';
+import type { DbInventory, DbStockMovement, DbRawMaterial, DbProduct } from '@/types/database';
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string; rop: number }> = {
   RAW_MATERIAL: { label: 'Bahan Baku Jamur', icon: <Sprout className="w-6 h-6 text-currentColor" aria-hidden="true" />, color: 'var(--color-success-600)', rop: 50 },
@@ -45,6 +45,7 @@ export default function InventoryPage() {
   const [inboundForm, setInboundForm] = useState({ item_name: '', uom: 'kg', quantity: 0, notes: '' });
   const [isSavingInbound, setIsSavingInbound] = useState(false);
   const [masterRawMaterials, setMasterRawMaterials] = useState<DbRawMaterial[]>([]);
+  const [masterProducts, setMasterProducts] = useState<DbProduct[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   
   const [transferOpen, setTransferOpen] = useState(false);
@@ -68,11 +69,12 @@ export default function InventoryPage() {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [invRes, mvRes, lossRes, rmRes, whRes] = await Promise.all([
+    const [invRes, mvRes, lossRes, rmRes, prodRes, whRes] = await Promise.all([
       getInventorySummary(),
       getStockMovements(),
       getLossReport(),
       getRawMaterials(),
+      getProducts(),
       getWarehouses(),
     ]);
     
@@ -90,10 +92,16 @@ export default function InventoryPage() {
     
     if (lossRes.success && lossRes.data) setLossData(lossRes.data);
     if (rmRes.success && rmRes.data) setMasterRawMaterials(rmRes.data);
+    if (prodRes.success && prodRes.data) setMasterProducts(prodRes.data);
     if (whRes.success && whRes.data) setWarehouses(whRes.data);
     
     setIsLoading(false);
   }, [isWarehouseMode]);
+
+  // Sync missing master data to inventory when the page is loaded once
+  useEffect(() => {
+    syncInventoryWithMaster();
+  }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -136,7 +144,10 @@ export default function InventoryPage() {
       return;
     }
     setIsSavingInbound(true);
-    const res = await receiveNonMushroomItem(inboundForm);
+    const res = await receiveNonMushroomItem({ 
+      ...inboundForm, 
+      item_type: isWarehouseMode ? 'RAW_MATERIAL' : 'PRODUCT' 
+    });
     if (res.success) {
       toast.success('Penerimaan barang berhasil');
       setInboundDrawerOpen(false);
@@ -260,7 +271,7 @@ export default function InventoryPage() {
 
   const invColumns = useMemo<ColumnDef<DbInventory>[]>(() => [
     {
-      id: 'item_name',
+      accessorKey: 'item_name',
       header: 'Item',
       cell: ({ row }) => (
         <div>
@@ -271,12 +282,12 @@ export default function InventoryPage() {
         </div>
       ),
     },
-    { id: 'warehouse', header: 'Gudang', cell: ({ row }) => row.original.warehouse?.name || '-' },
+    { id: 'warehouse', accessorFn: (row) => row.warehouse?.name || '-', header: 'Gudang', cell: ({ row }) => row.original.warehouse?.name || '-' },
     {
       accessorKey: 'quantity',
       header: 'Stok (kg)',
       cell: ({ row }) => {
-        const rop = row.original.reorder_point || CATEGORY_CONFIG[row.original.item_type]?.rop || 0;
+        const rop = row.original.reorder_point || (row.original as any).master_rop || 0;
         const low = row.original.quantity < rop;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -304,20 +315,23 @@ export default function InventoryPage() {
     },
     {
       id: 'status',
+      accessorFn: (row) => {
+        const rop = row.reorder_point || (row as any).master_rop || 0;
+        return row.quantity === 0 ? 0 : row.quantity < rop ? 1 : 2; // sort by stock status severity
+      },
       header: 'Status',
       cell: ({ row }) => {
-        const rop = row.original.reorder_point || CATEGORY_CONFIG[row.original.item_type]?.rop || 0;
+        const rop = row.original.reorder_point || (row.original as any).master_rop || 0;
         const status = row.original.quantity === 0 ? 'out_of_stock' : row.original.quantity < rop ? 'low_stock' : 'in_stock';
         return <StatusBadge status={status} />;
       },
     },
-    { accessorKey: 'reorder_point', header: 'ROP (kg)', cell: ({ row }) => row.original.reorder_point || CATEGORY_CONFIG[row.original.item_type]?.rop || 0 },
-    { accessorKey: 'lead_time_days', header: 'Lead Time (Hari)', cell: ({ row }) => row.original.lead_time_days ? `${row.original.lead_time_days} Hari` : '-' },
     {
       id: 'rop',
+      accessorFn: (row) => row.reorder_point || (row as any).master_rop || 0,
       header: 'ROP',
       cell: ({ row }) => {
-        const rop = row.original.reorder_point || CATEGORY_CONFIG[row.original.item_type]?.rop || 0;
+        const rop = row.original.reorder_point || (row.original as any).master_rop || 0;
         return (
           <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
             {rop.toLocaleString('id-ID')} kg
@@ -326,47 +340,35 @@ export default function InventoryPage() {
       },
     },
     {
-      id: 'updated',
+      accessorKey: 'last_updated_at',
       header: 'Update Terakhir',
       cell: ({ row }) => format(new Date(row.original.last_updated_at), 'dd/MM/yyyy HH:mm'),
     },
     ...(isManagement ? [] : [{
       id: 'actions',
       cell: ({ row }: { row: any }) => {
-        if (isWarehouseMode) {
-          return (
-            <Dropdown
-              trigger={
-                <Button variant="secondary" size="sm" style={{ padding: '6px' }}>
-                  <MoreVertical size={16} />
-                </Button>
-              }
-              items={[
-                { id: 'info', label: 'Info Detail', icon: <Info size={14} />, onClick: () => { setInfoInv(row.original); setInfoOpen(true); } },
-                { id: 'edit', label: 'Edit Data', icon: <Edit size={14} />, onClick: () => { 
-                    setEditInv(row.original); 
-                    setEditForm({ 
-                      quantity: row.original.quantity || 0, 
-                      reorder_point: row.original.reorder_point || 0, 
-                      lead_time_days: row.original.lead_time_days || 0 
-                    }); 
-                    setEditOpen(true); 
-                } },
-                { id: 'div', label: '', divider: true },
-                { id: 'delete', label: 'Hapus Item', icon: <Trash2 size={14} />, danger: true, onClick: () => { setDeleteInv(row.original); setDeleteOpen(true); } },
-              ]}
-            />
-          );
-        }
-        
         return (
-          <Button variant="secondary" size="sm" onClick={() => {
-            setTransferInv(row.original);
-            setTransferForm({ quantity: 0, target_warehouse_id: '', notes: '' });
-            setTransferOpen(true);
-          }}>
-            Kirim Konsinyasi
-          </Button>
+          <Dropdown
+            trigger={
+              <Button variant="secondary" size="sm" style={{ padding: '6px' }}>
+                <MoreVertical size={16} />
+              </Button>
+            }
+            items={[
+              { id: 'info', label: 'Info Detail', icon: <Info size={14} />, onClick: () => { setInfoInv(row.original); setInfoOpen(true); } },
+              { id: 'edit', label: 'Edit Data', icon: <Edit size={14} />, onClick: () => { 
+                  setEditInv(row.original); 
+                  setEditForm({ 
+                    quantity: row.original.quantity || 0, 
+                    reorder_point: row.original.reorder_point || 0,
+                    lead_time_days: row.original.lead_time_days || 0
+                  }); 
+                  setEditOpen(true); 
+              } },
+              { id: 'div', label: '', divider: true },
+              { id: 'delete', label: 'Hapus Item', icon: <Trash2 size={14} />, danger: true, onClick: () => { setDeleteInv(row.original); setDeleteOpen(true); } },
+            ]}
+          />
         );
       },
     }]),
@@ -434,7 +436,7 @@ export default function InventoryPage() {
       <Modal
         isOpen={inboundDrawerOpen}
         onClose={() => setInboundDrawerOpen(false)}
-        title="Input Pemasukan Barang (Non-Jamur)"
+        title={`Input Pemasukan ${isWarehouseMode ? 'Barang (Non-Jamur)' : 'Produk Jadi'}`}
         size="md"
         footer={
           <>
@@ -449,16 +451,26 @@ export default function InventoryPage() {
               value={inboundForm.item_name}
               onChange={e => {
                 const val = e.target.value;
-                const selected = masterRawMaterials.find(rm => rm.name === val);
+                let selectedUom = inboundForm.uom;
+                if (isWarehouseMode) {
+                  const selected = masterRawMaterials.find(rm => rm.name === val);
+                  if (selected) selectedUom = selected.uom;
+                } else {
+                  selectedUom = 'pcs';
+                }
                 setInboundForm(f => ({ 
                   ...f, 
                   item_name: val,
-                  uom: selected ? selected.uom : f.uom 
+                  uom: selectedUom 
                 }));
               }}
               options={[
-                { value: '', label: 'Pilih Bahan Baku dari Master Data...' },
-                ...Array.from(new Set(masterRawMaterials.map(rm => rm.name))).map(name => ({ value: name, label: name }))
+                { value: '', label: `Pilih ${isWarehouseMode ? 'Bahan Baku' : 'Produk Jadi'} dari Master Data...` },
+                ...Array.from(new Set(
+                  isWarehouseMode 
+                    ? masterRawMaterials.map(rm => rm.name)
+                    : masterProducts.map(p => p.name)
+                )).map(name => ({ value: name, label: name }))
               ]}
             />
           </FormField>
@@ -467,7 +479,7 @@ export default function InventoryPage() {
               value={inboundForm.uom}
               onChange={e => setInboundForm(f => ({ ...f, uom: e.target.value }))}
               placeholder="e.g. kg, liter, pcs"
-              disabled
+              disabled={isWarehouseMode}
             />
           </FormField>
           <FormField label="Jumlah (kg/pcs)" required>
@@ -556,13 +568,6 @@ export default function InventoryPage() {
               type="number" step="0.01" min="0"
               value={editForm.reorder_point.toString()} 
               onChange={e => setEditForm(f => ({ ...f, reorder_point: parseFloat(e.target.value) || 0 }))} 
-            />
-          </FormField>
-          <FormField label="Lead Time (Hari)">
-            <Input 
-              type="number" step="1" min="0"
-              value={editForm.lead_time_days.toString()} 
-              onChange={e => setEditForm(f => ({ ...f, lead_time_days: parseInt(e.target.value, 10) || 0 }))} 
             />
           </FormField>
         </div>

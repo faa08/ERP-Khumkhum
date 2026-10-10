@@ -80,6 +80,7 @@ import {
 } from '@/actions/production';
 import { supabase } from '@/lib/supabase';
 import { getPpicData } from '@/actions/ppic';
+import { PremixMixingForm } from '@/components/production/PremixMixingForm';
 import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry } from '@/types/database';
 import { FLAVOR_VARIANTS, PACKAGING_TYPES, PACKAGING_WEIGHTS } from '@/types/database';
 
@@ -153,7 +154,7 @@ function addMinutesToTimeString(timeStr: string, minutesToAdd: number): string {
 export default function ProductionPage() {
   const { user } = useAuth();
   const isManagement = user?.role === 'MANAGEMENT';
-  const [activeTab, setActiveTab] = useState<'FRYING' | 'PACKING'>('FRYING');
+  const [activeTab, setActiveTab] = useState<'FRYING' | 'PACKING' | 'MIXING'>('FRYING');
   const toast = useToast();
 
   // ── Shared state ──
@@ -161,6 +162,15 @@ export default function ProductionPage() {
   const [products, setProducts] = useState<DbProduct[]>([]);
   const [rawMaterials, setRawMaterials] = useState<(DbRawMaterial & { available_stock?: number })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  // ── SPK Creation state ──
+  const [createSpkOpen, setCreateSpkOpen] = useState(false);
+  const [isCreatingSpk, setIsCreatingSpk] = useState(false);
+  const [spkForm, setSpkForm] = useState({
+    product_id: '',
+    target_quantity: '',
+    start_date: format(new Date(), 'yyyy-MM-dd'),
+    notes: '',
+  });
 
   // ── Frying state ──
   const [fryingBatches, setFryingBatches] = useState<DbFryingBatch[]>([]);
@@ -276,6 +286,35 @@ export default function ProductionPage() {
     setSelectedSpkForQc(spkData);
     setSubmitQcNotes('');
     setSubmitQcOpen(true);
+  };
+
+  const handleCreateSpk = async () => {
+    if (!spkForm.product_id || !spkForm.target_quantity || !spkForm.start_date) {
+      toast.error('Lengkapi semua field yang wajib');
+      return;
+    }
+    setIsCreatingSpk(true);
+    const { createProductionOrder } = await import('@/actions/production');
+    
+    // Temukan nama varian berdasarkan product_id
+    const selectedProduct = products.find(p => p.id === spkForm.product_id);
+    const variantName = selectedProduct ? selectedProduct.name : spkForm.product_id;
+
+    const res = await createProductionOrder({
+      product_variant: variantName,
+      target_quantity: parseFloat(spkForm.target_quantity),
+      start_date: spkForm.start_date,
+      notes: spkForm.notes,
+    });
+    setIsCreatingSpk(false);
+    if (res.success) {
+      toast.success('SPK baru berhasil dibuat!');
+      setCreateSpkOpen(false);
+      setSpkForm({ product_id: '', target_quantity: '', start_date: format(new Date(), 'yyyy-MM-dd'), notes: '' });
+      loadData(); // refresh data
+    } else {
+      toast.error(res.error || 'Gagal membuat SPK');
+    }
   };
 
   const handleConfirmSubmitQc = async () => {
@@ -955,6 +994,7 @@ export default function ProductionPage() {
     },
     {
       id: 'timer',
+      accessorFn: (row) => getBatchElapsedSeconds(row) || 0,
       header: 'Timer / Durasi',
       cell: ({ row }) => {
         const batch = row.original;
@@ -1200,6 +1240,7 @@ export default function ProductionPage() {
     },
     {
       id: 'status',
+      accessorFn: (row) => row.finished_at ? 2 : row.started_at ? 1 : 0,
       header: 'Status',
       cell: ({ row }) => {
         const batch = row.original;
@@ -1266,6 +1307,10 @@ export default function ProductionPage() {
     },
     {
       id: 'spk_wajan',
+      accessorFn: (row) => {
+        const order = orders.find(o => o.id === row.production_order_id) || row.production_order;
+        return order?.batch_number || '';
+      },
       header: 'SPK & Wajan Asal',
       cell: ({ row }) => {
         const order = orders.find(o => o.id === row.original.production_order_id) || row.original.production_order;
@@ -1378,6 +1423,7 @@ export default function ProductionPage() {
   const tabs = [
     { key: 'FRYING' as const, label: 'Produksi Goreng Jamur', icon: <Flame className="w-4 h-4 text-currentColor" aria-hidden="true" /> },
     { key: 'PACKING' as const, label: 'Produksi Packing Rasa', icon: <Package className="w-4 h-4 text-currentColor" aria-hidden="true" /> },
+    { key: 'MIXING' as const, label: 'Mixing (Bikin Premix)', icon: <CookingPot className="w-4 h-4 text-currentColor" aria-hidden="true" /> },
   ];
 
   return (
@@ -1395,7 +1441,15 @@ export default function ProductionPage() {
           }}>
             Investor / Read-Only Mode
           </span>
-        ) : undefined}
+        ) : (
+          <Button 
+            variant="primary" 
+            onClick={() => setCreateSpkOpen(true)}
+            leftIcon={<Plus size={16} />}
+          >
+            Buat SPK Baru
+          </Button>
+        )}
       />
 
       {/* ── TAB SWITCHER ── */}
@@ -1764,6 +1818,15 @@ export default function ProductionPage() {
             <DataTable columns={packingColumns} data={packingEntries} />
           </div>
         </>
+      )}
+
+      {/* ════════════════════════════════════════════ */}
+      {/* TAB 3: MIXING PREMIX                        */}
+      {/* ════════════════════════════════════════════ */}
+      {activeTab === 'MIXING' && (
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <PremixMixingForm />
+        </div>
       )}
 
       {/* ═══════════════════════════════════════════════ */}
@@ -2597,6 +2660,60 @@ export default function ProductionPage() {
       </Modal>
 
 
+
+      {/* SPK Creation Modal */}
+      <Modal
+        isOpen={createSpkOpen}
+        onClose={() => setCreateSpkOpen(false)}
+        title="Buat SPK Baru"
+        size="md"
+        footer={
+          <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end', width: '100%' }}>
+            <Button variant="ghost" onClick={() => setCreateSpkOpen(false)} disabled={isCreatingSpk}>Batal</Button>
+            <Button variant="primary" onClick={handleCreateSpk} loading={isCreatingSpk}>Buat SPK</Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <FormField label="Varian Produk (Hasil Akhir)" required>
+            <Select
+              options={[
+                { value: '', label: '-- Pilih Varian Produk --' },
+                ...products.map(p => ({ value: p.id, label: p.name }))
+              ]}
+              value={spkForm.product_id}
+              onChange={(e) => setSpkForm({ ...spkForm, product_id: e.target.value })}
+            />
+          </FormField>
+
+          <FormField label="Target Jumlah Produksi (Kemasan / Pcs)" required>
+            <Input
+              type="number"
+              min="1"
+              value={spkForm.target_quantity}
+              onChange={(e) => setSpkForm({ ...spkForm, target_quantity: e.target.value })}
+              placeholder="Misal: 500"
+            />
+          </FormField>
+
+          <FormField label="Tanggal Mulai Produksi" required>
+            <Input
+              type="date"
+              value={spkForm.start_date}
+              onChange={(e) => setSpkForm({ ...spkForm, start_date: e.target.value })}
+            />
+          </FormField>
+
+          <FormField label="Catatan Tambahan (Opsional)">
+            <Textarea
+              rows={2}
+              value={spkForm.notes}
+              onChange={(e) => setSpkForm({ ...spkForm, notes: e.target.value })}
+              placeholder="Instruksi khusus untuk tim produksi..."
+            />
+          </FormField>
+        </div>
+      </Modal>
 
       {/* Confirm Dialog */}
       <ConfirmDialog

@@ -25,7 +25,7 @@ export default function RawmaterialsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DbRawMaterial | null>(null);
   
-  const [form, setForm] = useState({ code: '', name: '', uom: '', min_stock: 0, rop: 0 });
+  const [form, setForm] = useState({ code: '', name: '', uom: '', min_stock: 0, rop: 0, material_category: '' });
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -55,7 +55,7 @@ export default function RawmaterialsPage() {
 
   const handleCreate = () => {
     setSelectedItem(null);
-    setForm({ code: '', name: '', uom: '', min_stock: 0, rop: 0 });
+    setForm({ code: '', name: '', uom: '', min_stock: 0, rop: 0, material_category: '' });
     setDrawerOpen(true);
   };
 
@@ -66,7 +66,8 @@ export default function RawmaterialsPage() {
       name: item.name || '',
       uom: item.uom || '',
       min_stock: item.min_stock || 0,
-      rop: item.rop || 0
+      rop: item.rop || 0,
+      material_category: item.material_category || ''
     });
     setDrawerOpen(true);
   };
@@ -122,6 +123,7 @@ export default function RawmaterialsPage() {
   const columns = useMemo<ColumnDef<DbRawMaterial>[]>(() => [
     { accessorKey: 'code', header: 'Code' },
     { accessorKey: 'name', header: 'Name' },
+    { accessorKey: 'material_category', header: 'Kategori' },
     { accessorKey: 'uom', header: 'Unit of Measure (UOM)' },
     { accessorKey: 'min_stock', header: 'Minimum Stock' },
     { accessorKey: 'rop', header: 'Reorder Point (ROP)' },
@@ -182,6 +184,24 @@ export default function RawmaterialsPage() {
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))} 
               placeholder="e.g. Jamur Tiram Basah" 
             />
+          </FormField>
+          <FormField label="Kategori" required>
+            <select
+              value={form.material_category}
+              onChange={e => setForm(f => ({ ...f, material_category: e.target.value }))}
+              style={{
+                width: '100%', padding: 'var(--space-2) var(--space-3)',
+                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+                background: 'var(--bg-default)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)'
+              }}
+            >
+              <option value="">-- Pilih Kategori --</option>
+              <option value="Jamur">Jamur (Utama)</option>
+              <option value="Bumbu">Bumbu (Pendukung)</option>
+              <option value="Tepung">Tepung (Pendukung)</option>
+              <option value="Minyak">Minyak (Pendukung)</option>
+              <option value="Packaging">Packaging</option>
+            </select>
           </FormField>
           <FormField label="Unit of Measure (UOM)" required>
             <Input 

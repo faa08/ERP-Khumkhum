@@ -212,6 +212,7 @@ export default function SortingPage() {
   const columns = useMemo<ColumnDef<DbSorting>[]>(() => [
     {
       id: 'receiving_no',
+      accessorFn: (row) => row.receiving?.batch_number || row.receiving_id,
       header: 'No. Penerimaan',
       cell: ({ row }) => (
         <span style={{ fontFamily: 'monospace', fontWeight: 600, color: 'var(--color-primary-600)' }}>
@@ -221,21 +222,25 @@ export default function SortingPage() {
     },
     {
       id: 'farmer',
+      accessorFn: (row) => (row as any).receiving?.farmer?.name || '',
       header: 'Petani',
       cell: ({ row }) => (row.original as any).receiving?.farmer?.name || '-',
     },
     {
       id: 'leaf_weight',
+      accessorFn: (row) => row.leaf_weight != null ? row.leaf_weight : row.accepted_quantity,
       header: 'Daun (kg)',
       cell: ({ row }) => row.original.leaf_weight != null ? `${row.original.leaf_weight} kg` : `${row.original.accepted_quantity} kg`,
     },
     {
       id: 'stem_weight',
+      accessorFn: (row) => row.stem_weight != null ? row.stem_weight : row.waste,
       header: 'Batang (kg)',
       cell: ({ row }) => row.original.stem_weight != null ? `${row.original.stem_weight} kg` : `${row.original.waste} kg`,
     },
     {
       id: 'leaf_pct',
+      accessorFn: (row) => row.leaf_percentage || 0,
       header: '% Daun',
       cell: ({ row }) => {
         const pct = row.original.leaf_percentage;
@@ -246,6 +251,7 @@ export default function SortingPage() {
     },
     {
       id: 'grade',
+      accessorFn: (row) => row.quality_grade || '',
       header: 'Grade',
       cell: ({ row }) => {
         const g = row.original.quality_grade || '-';
@@ -262,7 +268,7 @@ export default function SortingPage() {
       },
     },
     {
-      id: 'date',
+      accessorKey: 'sorting_date',
       header: 'Tanggal',
       cell: ({ row }) => format(new Date(row.original.sorting_date), 'dd/MM/yyyy HH:mm'),
     },
@@ -391,7 +397,7 @@ export default function SortingPage() {
               <option value="">-- Pilih Nomor Penerimaan --</option>
               {unsortedReceivings.map(r => (
                 <option key={r.id} value={r.id}>
-                  {r.batch_number} ΓÇö {(r as any).farmer?.name || 'Petani'} ({r.weight} kg)
+                  {r.batch_number} - {(r as any).farmer?.name || 'Petani'} ({r.weight} kg)
                 </option>
               ))}
             </select>

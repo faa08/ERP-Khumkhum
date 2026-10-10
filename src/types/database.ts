@@ -384,10 +384,20 @@ export interface QcParetoItem {
 // STANDARDS & FORECAST TYPES
 // ─────────────────────────────────────────────
 
+export interface PremixRecipe {
+  premix_name: string;
+  output_qty: number;
+  ingredients: { name: string; qty: number; raw_material_id?: string }[];
+}
+
 export interface BomRecipe {
+  product_id?: string;
   product_name: string;
+  raw_mushroom_id?: string;
   raw_mushroom_ratio: number;
+  premix_flour_id?: string;
   premix_flour_ratio: number;
+  cooking_oil_id?: string;
   cooking_oil_ratio: number;
   seasoning_ratio: number;
 }
@@ -403,6 +413,7 @@ export interface ProductionStandardConfig {
   default_rating_factor?: number;
   default_allowance_factor?: number;
   bom_recipes: BomRecipe[];
+  premix_recipes?: PremixRecipe[];
   seasoning_per_variant?: SeasoningConfig[];
 }
 

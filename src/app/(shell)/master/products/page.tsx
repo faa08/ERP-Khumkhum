@@ -25,7 +25,7 @@ export default function ProductsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DbProduct | null>(null);
   
-  const [form, setForm] = useState({ sku: '', name: '', description: '' });
+  const [form, setForm] = useState({ sku: '', name: '', description: '', rop: 0 });
   const [isSaving, setIsSaving] = useState(false);
 
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -55,7 +55,7 @@ export default function ProductsPage() {
 
   const handleCreate = () => {
     setSelectedItem(null);
-    setForm({ sku: '', name: '', description: '' });
+    setForm({ sku: '', name: '', description: '', rop: 0 });
     setDrawerOpen(true);
   };
 
@@ -64,7 +64,8 @@ export default function ProductsPage() {
     setForm({
       sku: item.sku || '',
       name: item.name || '',
-      description: item.description || ''
+      description: item.description || '',
+      rop: (item as any).rop || 0
     });
     setDrawerOpen(true);
   };
@@ -121,6 +122,7 @@ export default function ProductsPage() {
     { accessorKey: 'sku', header: 'SKU' },
     { accessorKey: 'name', header: 'Name' },
     { accessorKey: 'description', header: 'Description' },
+    { accessorKey: 'rop', header: 'Reorder Point (ROP)' },
     ...(isManagement ? [] : [{
       id: 'actions',
       cell: ({ row }: { row: any }) => (
@@ -184,6 +186,13 @@ export default function ProductsPage() {
               value={form.description} 
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))} 
               placeholder="Deskripsi produk" 
+            />
+          </FormField>
+          <FormField label="Reorder Point (ROP)">
+            <Input 
+              type="number"
+              value={form.rop.toString()} 
+              onChange={e => setForm(f => ({ ...f, rop: parseFloat(e.target.value) || 0 }))} 
             />
           </FormField>
         </div>

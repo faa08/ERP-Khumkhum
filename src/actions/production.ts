@@ -2057,3 +2057,113 @@ export async function getFryingPackingMetrics(): Promise<{
   }
 }
 
+
+export interface MixPremixInput {
+  premix_item_id: string; // The raw material ID of the Premix being produced
+  output_qty: number;
+  ingredients: { inventory_id: string, qty: number }[];
+  notes?: string;
+}
+
+export async function recordPremixMixing(input: MixPremixInput): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT']);
+
+    if (!input.premix_item_id || input.output_qty <= 0) {
+      return { success: false, error: 'Premix dan hasil kuantitas harus diisi (>0)' };
+    }
+
+    if (!input.ingredients || input.ingredients.length === 0) {
+      return { success: false, error: 'Bahan baku yang dipakai harus diisi' };
+    }
+
+    // 1. Validate all ingredients stock first
+    for (const ing of input.ingredients) {
+      const { data: inv } = await supabaseAdmin
+        .from('inventory')
+        .select('quantity, item_id, item_type')
+        .eq('id', ing.inventory_id)
+        .single();
+      
+      if (!inv || inv.quantity < ing.qty) {
+        return { success: false, error: 'Stok bahan baku tidak mencukupi untuk salah satu komponen' };
+      }
+    }
+
+    // 2. Deduct ingredients stock
+    for (const ing of input.ingredients) {
+      const { data: inv } = await supabaseAdmin
+        .from('inventory')
+        .select('quantity')
+        .eq('id', ing.inventory_id)
+        .single();
+        
+      if(inv) {
+        await supabaseAdmin.from('inventory').update({ 
+          quantity: inv.quantity - ing.qty,
+          last_updated_at: new Date().toISOString()
+        }).eq('id', ing.inventory_id);
+
+        await supabaseAdmin.from('stock_movements').insert({
+          inventory_id: ing.inventory_id,
+          movement_type: 'OUT',
+          quantity: ing.qty,
+          reference_type: 'MIXING_PREMIX',
+          notes: `Dipakai untuk pembuatan premix ${input.output_qty}kg`,
+          created_by: user.userId
+        });
+      }
+    }
+
+    // 3. Add to Premix inventory
+    // Find if premix inventory exists
+    const { data: existingInv } = await supabaseAdmin
+      .from('inventory')
+      .select('id, quantity')
+      .eq('item_type', 'RAW_MATERIAL')
+      .eq('item_id', input.premix_item_id)
+      .maybeSingle();
+
+    let invId = '';
+    if (existingInv) {
+      invId = existingInv.id;
+      await supabaseAdmin.from('inventory').update({
+        quantity: existingInv.quantity + input.output_qty,
+        last_updated_at: new Date().toISOString()
+      }).eq('id', invId);
+    } else {
+      const { data: wh } = await supabaseAdmin.from('warehouses').select('id').limit(1).single();
+      const warehouseId = wh?.id;
+      
+      if (!warehouseId) throw new Error('Warehouse not found');
+
+      const { data: newInv, error: invError } = await supabaseAdmin.from('inventory').insert({
+        warehouse_id: warehouseId,
+        item_type: 'RAW_MATERIAL',
+        item_id: input.premix_item_id,
+        quantity: input.output_qty,
+        reorder_point: 0
+      }).select('id').single();
+
+      if (invError) throw invError;
+      invId = newInv.id;
+    }
+
+    // 4. Movement for Premix
+    await supabaseAdmin.from('stock_movements').insert({
+      inventory_id: invId,
+      movement_type: 'IN',
+      quantity: input.output_qty,
+      reference_type: 'MIXING_PREMIX',
+      notes: input.notes || 'Hasil Produksi Premix',
+      created_by: user.userId
+    });
+    
+    // revalidatePath('/production');
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('recordPremixMixing error:', err);
+    return { success: false, error: err.message };
+  }
+}

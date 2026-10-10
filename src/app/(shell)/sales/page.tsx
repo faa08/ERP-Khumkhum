@@ -326,7 +326,7 @@ export default function SalesPage() {
   // ── Columns ────────────────────────────────────────────────────
   const columns = useMemo<ColumnDef<DbSalesOrder>[]>(() => [
     {
-      id: 'order_number',
+      accessorKey: 'order_number',
       header: 'No. SO',
       cell: ({ row }) => (
         <div>
@@ -341,6 +341,7 @@ export default function SalesPage() {
     },
     {
       id: 'customer',
+      accessorFn: (row) => row.customer?.name || '',
       header: 'Customer / Distributor',
       cell: ({ row }) => (
         <div>
@@ -360,6 +361,7 @@ export default function SalesPage() {
     },
     {
       id: 'items_summary',
+      accessorFn: (row) => row.items?.reduce((acc, it) => acc + Number(it.quantity || 0), 0) || 0,
       header: 'Produk Jadi (Kemasan)',
       cell: ({ row }) => {
         const items = row.original.items || [];
@@ -384,6 +386,7 @@ export default function SalesPage() {
     },
     {
       id: 'stock_status',
+      accessorFn: (row) => row.status === 'SHIPPED' || row.status === 'COMPLETED' ? 2 : 1,
       header: 'Status Alokasi Stok',
       cell: ({ row }) => {
         const items = row.original.items || [];
@@ -465,7 +468,7 @@ export default function SalesPage() {
       },
     },
     {
-      id: 'total',
+      accessorKey: 'total_amount',
       header: 'Total Nilai',
       cell: ({ row }) => (
         <span style={{ fontWeight: 700, color: 'var(--color-success-700)', fontSize: 'var(--text-sm)' }}>

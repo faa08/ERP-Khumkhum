@@ -39,6 +39,7 @@ const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
       seasoning_ratio: 0.07,
     },
   ],
+  premix_recipes: [],
   seasoning_per_variant: [
     { variant: 'Original', seasoning_ratio_per_kg: 0.05, seasoning_name: 'Bumbu Gurih Original' },
     { variant: 'Balado', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Balado Pedas' },

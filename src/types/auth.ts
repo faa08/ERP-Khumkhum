@@ -68,5 +68,5 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   SALES:       ['dashboard', 'master', 'sales', 'inventory', 'traceability'],
   SORTING:     ['sorting'],
   FARMER:      [], // Petani tidak login ke web — interaksi via WhatsApp
-  IT_MAINTENANCE: ['dashboard', 'settings'],
+  IT_MAINTENANCE: ['*'], // IT Maintenance butuh akses ke semua fitur untuk testing
 };

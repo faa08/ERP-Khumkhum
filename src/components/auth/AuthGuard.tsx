@@ -66,7 +66,7 @@ export function AuthGuard({ children, requiredPermission }: AuthGuardProps) {
   }
 
   // Check Maintenance Mode
-  if (maintenanceMode.isActive && user?.role !== 'SUPER_ADMIN' && user?.role !== 'IT_MAINTENANCE') {
+  if (maintenanceMode.isActive && user?.role !== 'IT_MAINTENANCE') {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
         <EmptyState

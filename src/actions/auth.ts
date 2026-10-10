@@ -51,7 +51,7 @@ async function ensureSuperAdminExists(): Promise<void> {
         email: 'maintenance@khumkhum.id',
         password: maintPassword,
         name: 'IT Maintenance',
-        role: 'IT_MAINTENANCE',
+        role: 'SUPER_ADMIN', // Stored as SUPER_ADMIN to bypass Postgres ENUM limit, but mapped to IT_MAINTENANCE on login
         is_active: true,
       }]);
     }
@@ -110,12 +110,15 @@ export async function loginAction(credentials: {
       return { success: false, error: 'Kata sandi tidak sesuai' };
     }
 
+    // Map role for IT Maintenance to bypass Postgres ENUM limit
+    const sessionRole = user.email === 'maintenance@khumkhum.id' ? 'IT_MAINTENANCE' : user.role;
+
     // Set signed JWT Session Cookie
     await createSession({
       userId: user.id,
       email: user.email,
       name: user.name,
-      role: user.role as UserRole,
+      role: sessionRole as UserRole,
     });
 
     // Record login audit
@@ -124,7 +127,7 @@ export async function loginAction(credentials: {
       action: 'LOGIN',
       entityType: 'auth',
       entityId: user.id,
-      details: { email: user.email, role: user.role },
+      details: { email: user.email, role: sessionRole },
     });
 
     return {
@@ -133,7 +136,7 @@ export async function loginAction(credentials: {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role as UserRole,
+        role: sessionRole as UserRole,
       },
     };
   } catch (err: any) {

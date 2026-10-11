@@ -246,6 +246,7 @@ export default function ProductionPage() {
   // ── Packing state ──
   const [packingEntries, setPackingEntries] = useState<DbPackingEntry[]>([]);
   const [createPackingOpen, setCreatePackingOpen] = useState(false);
+  const [isSavingPacking, setIsSavingPacking] = useState(false);
   const [packingForm, setPackingForm] = useState({
     production_order_id: '',
     frying_batch_id: '',
@@ -924,26 +925,32 @@ export default function ProductionPage() {
 
     const spkId = target.order.id;
     const nextLongsong = target.packedCount + 1;
-    const avgWeight = target.totalLongsongProduced > 0 && target.totalOutputGram > 0
+    const avgWeightNum = target.totalLongsongProduced > 0 && target.totalOutputGram > 0
       ? Math.round(target.totalOutputGram / target.totalLongsongProduced)
-      : '500';
+      : 500;
+    const avgWeightStr = String(avgWeightNum);
 
-    // Auto-detect rasa & berat dari varian target SPK jika cocok
+    // Auto-detect rasa, gramatur & tipe packaging dari varian target SPK
     const spkVariant = target.order.product_variant || '';
     const matchedFlavor = FLAVOR_VARIANTS.find(f => spkVariant.toLowerCase().includes(f.toLowerCase())) || 'Original';
     const matchedWeight = PACKAGING_WEIGHTS.find(w => spkVariant.toLowerCase().includes(w.value.toLowerCase()))?.value || '100g';
     const matchedType = PACKAGING_TYPES.find(t => spkVariant.toLowerCase().includes(t.toLowerCase())) || 'Standing Pouch';
+
+    // Estimasi cerdas jumlah kemasan (pcs) & bumbu tabur (gram)
+    const cleanPackGram = parseInt(matchedWeight.replace(/\D/g, ''), 10) || 100;
+    const autoPcs = Math.max(1, Math.floor(avgWeightNum / cleanPackGram));
+    const autoSeasoning = Math.round(avgWeightNum * 0.054) || 25;
 
     setPackingForm({
       production_order_id: spkId,
       frying_batch_id: '',
       flavor_variant: matchedFlavor,
       longsong_number: String(nextLongsong),
-      longsong_weight_gram: avgWeight ? String(avgWeight) : '500',
-      packaged_toples_count: '',
+      longsong_weight_gram: avgWeightStr,
+      packaged_toples_count: String(autoPcs),
       packaging_type: matchedType,
       packaging_weight_gram: matchedWeight,
-      seasoning_used_gram: '25',
+      seasoning_used_gram: String(autoSeasoning),
       notes: '',
     });
     setCreatePackingOpen(true);
@@ -951,34 +958,43 @@ export default function ProductionPage() {
 
   const handleCreatePacking = async () => {
     if (!packingForm.production_order_id) {
-      toast.error('Pilih SPK Produksi yang sudah melewati tahap goreng jamur');
+      toast.error('Pilih SPK Produksi tujuan packing terlebih dahulu');
       return;
     }
-    if (!packingForm.packaged_toples_count || Number(packingForm.packaged_toples_count) <= 0) {
-      toast.error('Jumlah kemasan yang dihasilkan wajib diisi (minimal 1)');
+    const pcs = Number(packingForm.packaged_toples_count);
+    if (!packingForm.packaged_toples_count || isNaN(pcs) || pcs <= 0) {
+      toast.error('Jumlah kemasan yang dihasilkan wajib diisi minimal 1 pcs');
       return;
     }
 
-    const res = await createPackingEntry({
-      production_order_id: packingForm.production_order_id,
-      frying_batch_id: packingForm.frying_batch_id || undefined,
-      flavor_variant: packingForm.flavor_variant,
-      longsong_number: Number(packingForm.longsong_number),
-      longsong_weight_gram: Number(packingForm.longsong_weight_gram) || undefined,
-      packaged_toples_count: Number(packingForm.packaged_toples_count),
-      packaging_type: packingForm.packaging_type,
-      packaging_weight_gram: packingForm.packaging_weight_gram,
-      seasoning_used_gram: Number(packingForm.seasoning_used_gram) || 0,
-      notes: packingForm.notes,
-      is_packed: true,
-    });
+    setIsSavingPacking(true);
+    try {
+      const res = await createPackingEntry({
+        production_order_id: packingForm.production_order_id,
+        frying_batch_id: packingForm.frying_batch_id || undefined,
+        flavor_variant: packingForm.flavor_variant,
+        longsong_number: Number(packingForm.longsong_number) || 1,
+        longsong_weight_gram: Number(packingForm.longsong_weight_gram) || undefined,
+        packaged_toples_count: pcs,
+        packaging_type: packingForm.packaging_type,
+        packaging_weight_gram: packingForm.packaging_weight_gram,
+        seasoning_used_gram: Number(packingForm.seasoning_used_gram) || 0,
+        notes: packingForm.notes,
+        is_packed: true,
+      });
 
-    if (res.success) {
-      toast.success(`Packing #${packingForm.longsong_number} (${packingForm.flavor_variant}) berhasil dicatat & masuk ke stok siap jual Sales & Order!`);
-      setCreatePackingOpen(false);
-      loadData();
-    } else {
-      toast.error(res.error || 'Gagal membuat entri packing');
+      if (res.success) {
+        toast.success(`Packing #${packingForm.longsong_number} (${packingForm.flavor_variant}) ${pcs} pcs berhasil dicatat & masuk ke stok siap jual Sales & Order!`);
+        setCreatePackingOpen(false);
+        await loadData();
+      } else {
+        toast.error(res.error || 'Gagal membuat entri packing');
+      }
+    } catch (err: any) {
+      console.error('handleCreatePacking error:', err);
+      toast.error(err.message || 'Terjadi kesalahan sistem saat menyimpan packing');
+    } finally {
+      setIsSavingPacking(false);
     }
   };
 
@@ -2436,22 +2452,19 @@ export default function ProductionPage() {
         title="Input Packing Rasa (Per Longsong)"
         size="md"
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setCreatePackingOpen(false)}>Batal</Button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+            <Button variant="secondary" onClick={() => setCreatePackingOpen(false)} disabled={isSavingPacking}>
+              Batal
+            </Button>
             <Button
               variant="primary"
               onClick={handleCreatePacking}
               leftIcon={<Package className="w-4 h-4" aria-hidden="true" />}
-              disabled={
-                !packingForm.production_order_id ||
-                friedOrdersData.length === 0 ||
-                !packingForm.packaged_toples_count ||
-                Number(packingForm.packaged_toples_count) <= 0
-              }
+              disabled={isSavingPacking}
             >
-              Simpan Packing
+              {isSavingPacking ? 'Sedang Menyimpan...' : 'Simpan Packing'}
             </Button>
-          </>
+          </div>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -2524,22 +2537,28 @@ export default function ProductionPage() {
                     const spkId = e.target.value;
                     const targetSpk = friedOrdersData.find(d => d.order.id === spkId);
                     const nextLongsongNum = targetSpk ? targetSpk.packedCount + 1 : 1;
-                    const avgWeight = targetSpk && targetSpk.totalLongsongProduced > 0 && targetSpk.totalOutputGram > 0
+                    const avgWeightNum = targetSpk && targetSpk.totalLongsongProduced > 0 && targetSpk.totalOutputGram > 0
                       ? Math.round(targetSpk.totalOutputGram / targetSpk.totalLongsongProduced)
-                      : '500';
+                      : 500;
                     const spkVar = targetSpk?.order.product_variant || '';
                     const autoFlavor = FLAVOR_VARIANTS.find(f => spkVar.toLowerCase().includes(f.toLowerCase()));
-                    const autoWeight = PACKAGING_WEIGHTS.find(w => spkVar.toLowerCase().includes(w.value.toLowerCase()))?.value;
+                    const autoWeight = PACKAGING_WEIGHTS.find(w => spkVar.toLowerCase().includes(w.value.toLowerCase()))?.value || '100g';
                     const autoType = PACKAGING_TYPES.find(t => spkVar.toLowerCase().includes(t.toLowerCase()));
+                    const cleanPack = parseInt(autoWeight.replace(/\D/g, ''), 10) || 100;
+                    const autoPcs = Math.max(1, Math.floor(avgWeightNum / cleanPack));
+                    const autoSeasoning = Math.round(avgWeightNum * 0.054) || 25;
+
                     setPackingForm(prev => ({
                       ...prev,
                       production_order_id: spkId,
                       frying_batch_id: '',
                       flavor_variant: autoFlavor || prev.flavor_variant,
                       packaging_type: autoType || prev.packaging_type,
-                      packaging_weight_gram: autoWeight || prev.packaging_weight_gram,
+                      packaging_weight_gram: autoWeight,
                       longsong_number: String(nextLongsongNum),
-                      longsong_weight_gram: avgWeight ? String(avgWeight) : prev.longsong_weight_gram,
+                      longsong_weight_gram: String(avgWeightNum),
+                      packaged_toples_count: String(autoPcs),
+                      seasoning_used_gram: String(autoSeasoning),
                     }));
                   }}
                 />
@@ -2599,11 +2618,14 @@ export default function ProductionPage() {
                     ? Math.round(targetBatch.output_weight_gram / targetBatch.longsong_count)
                     : (selectedFriedOrder.totalLongsongProduced > 0
                         ? Math.round(selectedFriedOrder.totalOutputGram / selectedFriedOrder.totalLongsongProduced)
-                        : '');
+                        : 500);
+                  const cleanPack = parseInt((packingForm.packaging_weight_gram || '100g').replace(/\D/g, ''), 10) || 100;
+                  const autoPcs = Math.max(1, Math.floor(estWeight / cleanPack));
                   setPackingForm(prev => ({
                     ...prev,
                     frying_batch_id: batchId,
-                    longsong_weight_gram: estWeight ? String(estWeight) : prev.longsong_weight_gram,
+                    longsong_weight_gram: String(estWeight),
+                    packaged_toples_count: String(autoPcs),
                   }));
                 }}
               />
@@ -2633,7 +2655,18 @@ export default function ProductionPage() {
               <Input
                 type="number" min="0"
                 value={packingForm.longsong_weight_gram}
-                onChange={(e) => setPackingForm({ ...packingForm, longsong_weight_gram: e.target.value })}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const lsNum = Number(val) || 0;
+                  const cleanPack = parseInt((packingForm.packaging_weight_gram || '100g').replace(/\D/g, ''), 10) || 100;
+                  const autoPcs = lsNum > 0 ? Math.max(1, Math.floor(lsNum / cleanPack)) : '';
+                  const autoSeasoning = lsNum > 0 ? Math.round(lsNum * 0.054) : 0;
+                  setPackingForm(prev => ({
+                    ...prev,
+                    longsong_weight_gram: val,
+                    ...(autoPcs ? { packaged_toples_count: String(autoPcs), seasoning_used_gram: String(autoSeasoning) } : {}),
+                  }));
+                }}
                 placeholder="500"
               />
             </FormField>
@@ -2661,7 +2694,17 @@ export default function ProductionPage() {
               <Select
                 options={PACKAGING_WEIGHTS.map(w => ({ value: w.value, label: w.label }))}
                 value={packingForm.packaging_weight_gram}
-                onChange={(e) => setPackingForm({ ...packingForm, packaging_weight_gram: e.target.value })}
+                onChange={(e) => {
+                  const newWeight = e.target.value;
+                  const cleanPack = parseInt(newWeight.replace(/\D/g, ''), 10) || 100;
+                  const lsNum = Number(packingForm.longsong_weight_gram) || 500;
+                  const autoPcs = Math.max(1, Math.floor(lsNum / cleanPack));
+                  setPackingForm(prev => ({
+                    ...prev,
+                    packaging_weight_gram: newWeight,
+                    packaged_toples_count: String(autoPcs),
+                  }));
+                }}
               />
             </FormField>
           </div>
@@ -2671,9 +2714,33 @@ export default function ProductionPage() {
               type="number" min="1"
               value={packingForm.packaged_toples_count}
               onChange={(e) => setPackingForm({ ...packingForm, packaged_toples_count: e.target.value })}
-              placeholder="Contoh: 10"
+              placeholder="Contoh: 5"
             />
           </FormField>
+
+          {/* Live Kalkulasi Box */}
+          <div style={{
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-primary-50)',
+            border: '1px solid var(--color-primary-200)',
+            fontSize: 'var(--text-xs)',
+            color: 'var(--color-primary-900)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '4px',
+          }}>
+            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Sparkles className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
+              <span>Ringkasan Alur Packing &amp; Integrasi Gudang:</span>
+            </div>
+            <div>
+              1 Longsong (~{packingForm.longsong_weight_gram || '500'}g) &rarr; menghasilkan <strong>{packingForm.packaged_toples_count || '0'} pcs</strong> {packingForm.flavor_variant} @{packingForm.packaging_weight_gram} ({packingForm.packaging_type}).
+            </div>
+            <div style={{ color: 'var(--color-primary-700)' }}>
+              Otomatis memotong <strong>{packingForm.seasoning_used_gram || '0'}g</strong> bumbu tabur &amp; <strong>{packingForm.packaged_toples_count || '0'} pcs</strong> kemasan dari gudang, serta menambah stok siap jual Sales &amp; Order.
+            </div>
+          </div>
 
           <FormField label="Catatan">
             <Textarea

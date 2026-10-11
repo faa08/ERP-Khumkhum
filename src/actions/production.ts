@@ -18,8 +18,15 @@ import type {
 } from '@/types/database';
 
 // ─────────────────────────────────────────────
-// HELPERS
+// HELPERS & MEMORY STORES
 // ─────────────────────────────────────────────
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isValidUuid(id?: string | null): boolean {
+  return typeof id === 'string' && UUID_REGEX.test(id.trim());
+}
+
+let memoryProductionOrders: DbProductionOrder[] = [];
 
 function generateProductionBatchNumber(customDate?: string): string {
   const d = customDate ? new Date(customDate) : new Date();
@@ -38,7 +45,7 @@ export async function getProductionOrders(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX', 'SALES']);
 
     const { data: orders, error } = await supabaseAdmin
       .from('production_orders')
@@ -49,7 +56,10 @@ export async function getProductionOrders(): Promise<{
       .order('created_at', { ascending: false })
       .limit(50);
 
-    if (error) throw error;
+    if (error) {
+      console.warn('Fallback to memory for getProductionOrders:', error.message);
+      return { success: true, data: memoryProductionOrders };
+    }
 
     // Fetch related materials and results for all orders
     const orderIds = (orders || []).map((o: any) => o.id);
@@ -116,38 +126,56 @@ export async function getProductionOrderById(id: string): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX', 'SALES']);
 
-    const { data: order, error } = await supabaseAdmin
-      .from('production_orders')
-      .select(`
-        *,
-        creator:users!production_orders_created_by_fkey(id, name)
-      `)
-      .eq('id', id)
-      .single();
+    let order: any = null;
+    if (isValidUuid(id)) {
+      const { data: dbOrder, error } = await supabaseAdmin
+        .from('production_orders')
+        .select(`
+          *,
+          creator:users!production_orders_created_by_fkey(id, name)
+        `)
+        .eq('id', id)
+        .maybeSingle();
+      if (!error && dbOrder) {
+        order = dbOrder;
+      }
+    }
 
-    if (error || !order) throw error || new Error('Batch produksi tidak ditemukan');
+    if (!order) {
+      order = memoryProductionOrders.find(o => o.id === id);
+    }
 
-    const [{ data: materials }, { data: results }] = await Promise.all([
-      supabaseAdmin
-        .from('production_materials')
-        .select(`*, raw_material:raw_materials(id, code, name, uom)`)
-        .eq('production_order_id', id),
-      supabaseAdmin
-        .from('production_results')
-        .select(`*, product:products(id, sku, name)`)
-        .eq('production_order_id', id),
-    ]);
+    if (!order) {
+      return { success: false, error: 'Batch produksi tidak ditemukan' };
+    }
 
-    const res = (results || [])[0];
+    let materials: any[] = [];
+    let results: any[] = [];
+    if (isValidUuid(id)) {
+      const [{ data: matData }, { data: resData }] = await Promise.all([
+        supabaseAdmin
+          .from('production_materials')
+          .select(`*, raw_material:raw_materials(id, code, name, uom)`)
+          .eq('production_order_id', id),
+        supabaseAdmin
+          .from('production_results')
+          .select(`*, product:products(id, sku, name)`)
+          .eq('production_order_id', id),
+      ]);
+      materials = matData || [];
+      results = resData || [];
+    }
+
+    const res = results[0];
     const mats = materials || [];
     const totalInput = mats.reduce((acc, m) => acc + Number(m.consumption_quantity || 0), 0);
     const yieldPct = res?.yield_percentage != null ? Number(res.yield_percentage) : (order.yield_percentage != null ? Number(order.yield_percentage) : null);
 
     const enriched: DbProductionOrder = {
       ...order,
-      product: res?.product || null,
+      product: res?.product || order.product || null,
       product_id: res?.product_id || order.product_id || null,
       product_variant: res?.product?.name || order.product_variant || 'Jamur Crispy',
       target_quantity: res?.finished_goods_quantity || order.target_quantity || 500,
@@ -184,7 +212,7 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
   error?: string;
 }> {
   try {
-    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE']);
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE', 'PREMIX', 'MANAGEMENT']);
 
     if (!input.product_variant || input.target_quantity <= 0) {
       return { success: false, error: 'Varian produk dan target kuantitas (> 0) wajib diisi' };
@@ -222,37 +250,61 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
       updated_at: now,
     };
 
+    let createdOrder: any = null;
+
     const { data, error } = await supabaseAdmin
       .from('production_orders')
       .insert([payload])
       .select('*')
       .single();
 
-    if (error) throw error;
-
-    if (input.product_id) {
-      await supabaseAdmin.from('production_results').insert([
-        {
-          production_order_id: data.id,
-          product_id: input.product_id,
-          finished_goods_quantity: input.target_quantity,
-          wip_quantity: 0,
-          yield_percentage: 0,
-          created_at: now,
-        },
-      ]);
+    if (error) {
+      console.warn('Fallback memory for createProductionOrder:', error.message);
+      const fallbackId = 'po-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+      const fallbackOrder: DbProductionOrder = {
+        id: fallbackId,
+        batch_number,
+        status: 'DRAFT',
+        start_date: issueDate,
+        product_id: input.product_id || null,
+        product_variant: variantName,
+        target_quantity: input.target_quantity,
+        notes: input.notes || null,
+        created_by: user.userId,
+        created_at: issueDate,
+        updated_at: now,
+        product: productObj,
+        materials: [],
+        results: [],
+      };
+      memoryProductionOrders.unshift(fallbackOrder);
+      createdOrder = fallbackOrder;
+    } else {
+      createdOrder = data;
+      if (input.product_id) {
+        await supabaseAdmin.from('production_results').insert([
+          {
+            production_order_id: data.id,
+            product_id: input.product_id,
+            finished_goods_quantity: input.target_quantity,
+            wip_quantity: 0,
+            yield_percentage: 0,
+            created_at: now,
+          },
+        ]);
+      }
     }
 
     await logAuditEvent({
       userId: user.userId,
       action: 'CREATE',
       entityType: 'production_order',
-      entityId: data.id,
+      entityId: createdOrder.id,
       details: { batch_number, target_quantity: input.target_quantity, product_variant: variantName },
     });
 
     const fullData: DbProductionOrder = {
-      ...data,
+      ...createdOrder,
       product: productObj,
       product_id: input.product_id || null,
       product_variant: variantName,
@@ -1074,24 +1126,27 @@ async function deductPackingMaterials(
   userId?: string
 ): Promise<void> {
   try {
-    const { data: existingMov } = await supabaseAdmin
-      .from('stock_movements')
-      .select('id')
-      .eq('reference_id', packingEntryId)
-      .like('reference_type', 'PRODUCTION_PACKING_%')
-      .limit(1);
+    const isEntryUuid = isValidUuid(packingEntryId);
+    if (isEntryUuid) {
+      const { data: existingMov } = await supabaseAdmin
+        .from('stock_movements')
+        .select('id')
+        .eq('reference_id', packingEntryId)
+        .like('reference_type', 'PRODUCTION_PACKING_%')
+        .limit(1);
 
-    if (existingMov && existingMov.length > 0) return;
+      if (existingMov && existingMov.length > 0) return;
+    }
 
     const stdRes = await getProductionStandards();
-    const standards = stdRes.data;
+    const standards = stdRes?.data;
 
     const flavor = input.flavor_variant || 'Original';
     const packCount = Number(input.packaged_toples_count) || 0;
     const pkgType = input.packaging_type || 'Standing Pouch';
 
     // 1. Potong Stok Bumbu Tabur
-    const seasoningConfig = standards.seasoning_per_variant?.find(
+    const seasoningConfig = standards?.seasoning_per_variant?.find(
       (s) => s.variant.toLowerCase() === flavor.toLowerCase()
     );
 
@@ -1138,7 +1193,7 @@ async function deductPackingMaterials(
             inventory_id: sInv[0].id,
             movement_type: 'OUT',
             quantity: deductQty,
-            reference_id: packingEntryId,
+            reference_id: isEntryUuid ? packingEntryId : null,
             reference_type: 'PRODUCTION_PACKING_SEASONING',
             notes: `Bumbu tabur ${flavor} (${seasoningGrams}g) untuk kemasan ${packCount} pcs`,
             created_by: userId || null,
@@ -1150,8 +1205,8 @@ async function deductPackingMaterials(
     // 2. Potong Stok Bahan Kemasan (Standing Pouch / Toples)
     if (packCount > 0) {
       let pkgMatId = seasoningConfig?.packaging_material_id;
-      if (!pkgMatId) {
-        const pkgMatch = standards.packaging_configs?.find(p => p.packaging_type.toLowerCase().includes(pkgType.toLowerCase()));
+      if (!pkgMatId && standards?.packaging_configs) {
+        const pkgMatch = standards.packaging_configs.find(p => p.packaging_type.toLowerCase().includes(pkgType.toLowerCase()));
         pkgMatId = pkgMatch?.packaging_material_id;
       }
       if (!pkgMatId) {
@@ -1185,7 +1240,7 @@ async function deductPackingMaterials(
             inventory_id: pInv[0].id,
             movement_type: 'OUT',
             quantity: packCount,
-            reference_id: packingEntryId,
+            reference_id: isEntryUuid ? packingEntryId : null,
             reference_type: 'PRODUCTION_PACKING_MATERIAL',
             notes: `Pemakaian kemasan ${pkgType} sejumlah ${packCount} pcs`,
             created_by: userId || null,
@@ -1391,7 +1446,7 @@ export async function completeFryingBatch(input: CompleteFryingBatchInput): Prom
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'PREMIX', 'WAREHOUSE']);
 
     let updatedBatch: DbFryingBatch | undefined;
 
@@ -1487,7 +1542,7 @@ export async function getFryingBatchesByOrder(orderId: string): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
 
     const { data, error } = await supabaseAdmin
       .from('production_frying_batches')
@@ -1512,7 +1567,7 @@ export async function getAllFryingBatches(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
 
     const { data, error } = await supabaseAdmin
       .from('production_frying_batches')
@@ -1767,37 +1822,46 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
   error?: string;
 }> {
   try {
-    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'PREMIX', 'WAREHOUSE', 'QC', 'MANAGEMENT']);
 
     let createdPacking: DbPackingEntry | undefined;
     const isPacked = input.is_packed !== undefined ? input.is_packed : true;
     const packedAt = isPacked ? new Date().toISOString() : null;
     const packagingType = input.packaging_type || 'Standing Pouch';
+    const cleanFryingBatchId = isValidUuid(input.frying_batch_id) ? input.frying_batch_id!.trim() : null;
+    const isOrderUuid = isValidUuid(input.production_order_id);
 
-    const { data, error } = await supabaseAdmin
-      .from('production_packing_entries')
-      .insert({
-        frying_batch_id: input.frying_batch_id || null,
-        production_order_id: input.production_order_id,
-        flavor_variant: input.flavor_variant,
-        longsong_number: input.longsong_number,
-        longsong_weight_gram: input.longsong_weight_gram || null,
-        packaged_toples_count: input.packaged_toples_count,
-        packaging_type: packagingType,
-        packaging_weight_gram: input.packaging_weight_gram || '100g',
-        seasoning_used_gram: input.seasoning_used_gram,
-        is_packed: isPacked,
-        packed_at: packedAt,
-        notes: input.notes,
-      })
-      .select()
-      .single();
+    if (isOrderUuid) {
+      const { data, error } = await supabaseAdmin
+        .from('production_packing_entries')
+        .insert({
+          frying_batch_id: cleanFryingBatchId,
+          production_order_id: input.production_order_id,
+          flavor_variant: input.flavor_variant,
+          longsong_number: input.longsong_number,
+          longsong_weight_gram: input.longsong_weight_gram || null,
+          packaged_toples_count: input.packaged_toples_count,
+          packaging_type: packagingType,
+          packaging_weight_gram: input.packaging_weight_gram || '100g',
+          seasoning_used_gram: input.seasoning_used_gram,
+          is_packed: isPacked,
+          packed_at: packedAt,
+          notes: input.notes || null,
+        })
+        .select()
+        .single();
 
-    if (error) {
-      console.warn('Fallback memory for createPackingEntry:', error.message);
+      if (error) {
+        console.warn('Fallback memory for createPackingEntry:', error.message);
+      } else {
+        createdPacking = data;
+      }
+    }
+
+    if (!createdPacking) {
       const fallbackItem: DbPackingEntry = {
         id: 'pk-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
-        frying_batch_id: input.frying_batch_id || null,
+        frying_batch_id: cleanFryingBatchId,
         production_order_id: input.production_order_id,
         flavor_variant: input.flavor_variant,
         longsong_number: input.longsong_number,
@@ -1813,19 +1877,93 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
       };
       memoryPackingEntries.unshift(fallbackItem);
       createdPacking = fallbackItem;
-    } else {
-      createdPacking = data;
     }
 
-    // ── Sinkronisasi Otomatis ke Stok Produk Jadi & Sales & Order & Deduct Bahan Kemasan/Bumbu ──
+    // ── Update Progres & Status di Production Order ──
+    try {
+      let totalPackagedPcs = Number(input.packaged_toples_count) || 0;
+      if (isOrderUuid) {
+        const { data: allPackings } = await supabaseAdmin
+          .from('production_packing_entries')
+          .select('packaged_toples_count, is_packed')
+          .eq('production_order_id', input.production_order_id);
+        if (allPackings && allPackings.length > 0) {
+          totalPackagedPcs = allPackings.reduce((sum, p) => sum + (p.is_packed ? (Number(p.packaged_toples_count) || 0) : 0), 0);
+        }
+      }
+      const memPcs = memoryPackingEntries
+        .filter(p => p.production_order_id === input.production_order_id && p.is_packed && p.id !== createdPacking?.id)
+        .reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
+      totalPackagedPcs += memPcs;
+
+      if (isOrderUuid) {
+        const { data: currOrder } = await supabaseAdmin
+          .from('production_orders')
+          .select('id, status, target_quantity')
+          .eq('id', input.production_order_id)
+          .maybeSingle();
+
+        if (currOrder) {
+          const nextStatus = currOrder.status === 'DRAFT'
+            ? 'IN_PROGRESS'
+            : currOrder.status;
+
+          await supabaseAdmin
+            .from('production_orders')
+            .update({
+              status: nextStatus,
+              actual_quantity: totalPackagedPcs,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', input.production_order_id);
+
+          await supabaseAdmin
+            .from('production_results')
+            .update({
+              finished_goods_quantity: totalPackagedPcs,
+            })
+            .eq('production_order_id', input.production_order_id);
+        }
+      }
+
+      // Memory fallback update
+      const memOrderIdx = memoryProductionOrders.findIndex(o => o.id === input.production_order_id);
+      if (memOrderIdx !== -1) {
+        const o = memoryProductionOrders[memOrderIdx];
+        memoryProductionOrders[memOrderIdx] = {
+          ...o,
+          status: o.status === 'DRAFT' ? 'IN_PROGRESS' : o.status,
+          target_quantity: o.target_quantity,
+        };
+      }
+    } catch (orderUpdateErr) {
+      console.warn('Could not update order status/progress on packing:', orderUpdateErr);
+    }
+
+    // ── Sinkronisasi Otomatis ke Stok Produk Jadi & Sales & Deduct Bahan Kemasan/Bumbu ──
     if (isPacked && createdPacking) {
       await syncPackedGoodsToSalesInventory(createdPacking, user.userId);
       await deductPackingMaterials(createdPacking.id, input, user.userId);
     }
 
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'production_packing_entry',
+      entityId: createdPacking.id,
+      details: {
+        production_order_id: input.production_order_id,
+        longsong_number: input.longsong_number,
+        flavor_variant: input.flavor_variant,
+        packaged_toples_count: input.packaged_toples_count,
+        packaging_type: packagingType,
+      },
+    });
+
     revalidatePath('/production');
     revalidatePath('/sales');
     revalidatePath('/inventory');
+    revalidatePath('/quality-control');
     return { success: true, data: createdPacking };
   } catch (err: any) {
     console.error('createPackingEntry error:', err);
@@ -1838,22 +1976,28 @@ export async function markLongsongPacked(packingEntryId: string): Promise<{
   error?: string;
 }> {
   try {
-    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'PREMIX', 'WAREHOUSE', 'QC']);
 
-    const { data, error } = await supabaseAdmin
-      .from('production_packing_entries')
-      .update({
-        is_packed: true,
-        packed_at: new Date().toISOString(),
-      })
-      .eq('id', packingEntryId)
-      .select('*')
-      .single();
+    const isEntryUuid = isValidUuid(packingEntryId);
+    let targetPacking: DbPackingEntry | undefined;
 
-    let targetPacking: DbPackingEntry | undefined = data;
+    if (isEntryUuid) {
+      const { data, error } = await supabaseAdmin
+        .from('production_packing_entries')
+        .update({
+          is_packed: true,
+          packed_at: new Date().toISOString(),
+        })
+        .eq('id', packingEntryId)
+        .select('*')
+        .single();
 
-    if (error) {
-      console.warn('Fallback memory for markLongsongPacked:', error.message);
+      if (!error && data) {
+        targetPacking = data;
+      }
+    }
+
+    if (!targetPacking) {
       const idx = memoryPackingEntries.findIndex(p => p.id === packingEntryId);
       if (idx !== -1) {
         memoryPackingEntries[idx] = {
@@ -1865,7 +2009,7 @@ export async function markLongsongPacked(packingEntryId: string): Promise<{
       }
     }
 
-    // ── Sinkronisasi ke Stok Produk Jadi & Sales & Order & Potong Bahan Kemasan/Bumbu ──
+    // ── Sinkronisasi ke Stok Produk Jadi & Sales & Potong Bahan Kemasan/Bumbu ──
     if (targetPacking) {
       await syncPackedGoodsToSalesInventory(targetPacking, session.user.userId);
       await deductPackingMaterials(packingEntryId, targetPacking as any, session.user.userId);
@@ -1895,18 +2039,21 @@ export async function getPackingEntriesByOrder(orderId: string): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
 
-    const { data, error } = await supabaseAdmin
-      .from('production_packing_entries')
-      .select('*, frying_batch:production_frying_batches(id, wajan_number, batch_weight_gram)')
-      .eq('production_order_id', orderId)
-      .order('longsong_number', { ascending: true });
+    if (isValidUuid(orderId)) {
+      const { data, error } = await supabaseAdmin
+        .from('production_packing_entries')
+        .select('*, frying_batch:production_frying_batches(id, wajan_number, batch_weight_gram)')
+        .eq('production_order_id', orderId)
+        .order('longsong_number', { ascending: true });
 
-    if (error) {
-      return { success: true, data: memoryPackingEntries.filter(p => p.production_order_id === orderId) };
+      if (!error && data) {
+        return { success: true, data };
+      }
     }
-    return { success: true, data: data || [] };
+
+    return { success: true, data: memoryPackingEntries.filter(p => p.production_order_id === orderId) };
   } catch (err: any) {
     console.error('getPackingEntriesByOrder error:', err);
     return { success: true, data: memoryPackingEntries.filter(p => p.production_order_id === orderId) };
@@ -1919,7 +2066,7 @@ export async function getAllPackingEntries(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
 
     const { data, error } = await supabaseAdmin
       .from('production_packing_entries')
@@ -1944,7 +2091,7 @@ export async function getUnpackedLongsongReminder(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
 
     const { data, error, count } = await supabaseAdmin
       .from('production_packing_entries')
@@ -1969,33 +2116,57 @@ export async function submitBatchToQc(
   notes?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'PREMIX', 'QC', 'WAREHOUSE']);
     const now = new Date().toISOString();
 
-    const { data: order, error: orderErr } = await supabaseAdmin
-      .from('production_orders')
-      .select('id, batch_number, status, notes')
-      .eq('id', productionOrderId)
-      .single();
+    const isOrderUuid = isValidUuid(productionOrderId);
+    let order: any = null;
 
-    if (orderErr || !order) {
+    if (isOrderUuid) {
+      const { data, error: orderErr } = await supabaseAdmin
+        .from('production_orders')
+        .select('id, batch_number, status, notes')
+        .eq('id', productionOrderId)
+        .maybeSingle();
+      if (!orderErr && data) {
+        order = data;
+      }
+    }
+
+    if (!order) {
+      order = memoryProductionOrders.find(o => o.id === productionOrderId);
+    }
+
+    if (!order) {
       return { success: false, error: 'SPK Produksi tidak ditemukan' };
     }
 
     const appendNote = notes ? `[Pengajuan QC: ${notes}]` : '[Diajukan ke QC]';
     const updatedNotes = order.notes ? `${order.notes} | ${appendNote}` : appendNote;
 
-    const { error: updateErr } = await supabaseAdmin
-      .from('production_orders')
-      .update({
+    if (isOrderUuid) {
+      const { error: updateErr } = await supabaseAdmin
+        .from('production_orders')
+        .update({
+          status: 'QC_PENDING',
+          notes: updatedNotes,
+          updated_at: now,
+        })
+        .eq('id', productionOrderId);
+
+      if (updateErr) {
+        console.warn('submitBatchToQc DB update error:', updateErr.message);
+      }
+    }
+
+    const memIdx = memoryProductionOrders.findIndex(o => o.id === productionOrderId);
+    if (memIdx !== -1) {
+      memoryProductionOrders[memIdx] = {
+        ...memoryProductionOrders[memIdx],
         status: 'QC_PENDING',
         notes: updatedNotes,
         updated_at: now,
-      })
-      .eq('id', productionOrderId);
-
-    if (updateErr) {
-      console.warn('submitBatchToQc DB update error:', updateErr.message);
+      };
     }
 
     await logAuditEvent({
@@ -2244,7 +2415,7 @@ export async function getFryingPackingMetrics(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
 
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);

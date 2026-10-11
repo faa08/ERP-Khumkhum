@@ -67,9 +67,9 @@ export async function getQcInspections(): Promise<{
             start_date: po.start_date,
             end_date: po.end_date,
             product: r?.product || null,
-            product_variant: r?.product?.name || 'Jamur Crispy Original 100g',
+            product_variant: r?.product?.name || po.product_variant || 'Jamur Crispy',
             yield_percentage: r?.yield_percentage || null,
-            target_quantity: r?.finished_goods_quantity || 500,
+            target_quantity: r?.finished_goods_quantity || po.target_quantity || 500,
           };
         }
       }
@@ -187,7 +187,7 @@ export async function getPendingQcBatches(): Promise<{
         ...order,
         product: res?.product || null,
         product_id: res?.product_id || null,
-        product_variant: packagingSummary || res?.product?.name || order.product_variant || 'Jamur Crispy Original 100g',
+        product_variant: packagingSummary || res?.product?.name || order.product_variant || 'Jamur Crispy',
         target_quantity: totalPackaged > 0 ? totalPackaged : (res?.finished_goods_quantity || order.target_quantity || 500),
         total_packaged_count: totalPackaged,
         qc_rework_notes: reworkNotes,

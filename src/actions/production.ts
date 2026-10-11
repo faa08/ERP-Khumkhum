@@ -92,7 +92,7 @@ export async function getProductionOrders(): Promise<{
         ...order,
         product: res?.product || null,
         product_id: res?.product_id || order.product_id || null,
-        product_variant: res?.product?.name || order.product_variant || 'Jamur Crispy Original 100g',
+        product_variant: res?.product?.name || order.product_variant || 'Jamur Crispy',
         target_quantity: res?.finished_goods_quantity || order.target_quantity || 500,
         input_weight: totalInput > 0 ? totalInput : (order.input_weight || null),
         output_weight: res?.finished_goods_quantity ? (res.finished_goods_quantity * 0.1) : (order.output_weight || null),
@@ -149,7 +149,7 @@ export async function getProductionOrderById(id: string): Promise<{
       ...order,
       product: res?.product || null,
       product_id: res?.product_id || order.product_id || null,
-      product_variant: res?.product?.name || order.product_variant || 'Jamur Crispy Original 100g',
+      product_variant: res?.product?.name || order.product_variant || 'Jamur Crispy',
       target_quantity: res?.finished_goods_quantity || order.target_quantity || 500,
       input_weight: totalInput > 0 ? totalInput : (order.input_weight || null),
       output_weight: res?.finished_goods_quantity ? (res.finished_goods_quantity * 0.1) : (order.output_weight || null),
@@ -194,10 +194,29 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
     const batch_number = generateProductionBatchNumber(input.start_date);
     const now = new Date().toISOString();
 
+    let productObj = null;
+    let variantName = input.product_variant;
+
+    if (input.product_id) {
+      const { data: p } = await supabaseAdmin
+        .from('products')
+        .select('id, sku, name')
+        .eq('id', input.product_id)
+        .maybeSingle();
+      if (p) {
+        productObj = p;
+        variantName = p.name;
+      }
+    }
+
     const payload = {
       batch_number,
       status: 'DRAFT',
       start_date: issueDate,
+      product_id: input.product_id || null,
+      product_variant: variantName,
+      target_quantity: input.target_quantity,
+      notes: input.notes || null,
       created_by: user.userId,
       created_at: issueDate,
       updated_at: now,
@@ -211,15 +230,7 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
 
     if (error) throw error;
 
-    let productObj = null;
     if (input.product_id) {
-      const { data: p } = await supabaseAdmin
-        .from('products')
-        .select('id, sku, name')
-        .eq('id', input.product_id)
-        .single();
-      productObj = p;
-
       await supabaseAdmin.from('production_results').insert([
         {
           production_order_id: data.id,
@@ -237,14 +248,14 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
       action: 'CREATE',
       entityType: 'production_order',
       entityId: data.id,
-      details: { batch_number, target_quantity: input.target_quantity, product_variant: input.product_variant },
+      details: { batch_number, target_quantity: input.target_quantity, product_variant: variantName },
     });
 
     const fullData: DbProductionOrder = {
       ...data,
       product: productObj,
       product_id: input.product_id || null,
-      product_variant: productObj?.name || input.product_variant,
+      product_variant: variantName,
       target_quantity: input.target_quantity,
       input_weight: null,
       output_weight: null,

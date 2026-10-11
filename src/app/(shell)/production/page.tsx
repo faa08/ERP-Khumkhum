@@ -302,6 +302,7 @@ export default function ProductionPage() {
     const variantName = selectedProduct ? selectedProduct.name : spkForm.product_id;
 
     const res = await createProductionOrder({
+      product_id: spkForm.product_id,
       product_variant: variantName,
       target_quantity: parseFloat(spkForm.target_quantity),
       start_date: spkForm.start_date,
@@ -897,15 +898,20 @@ export default function ProductionPage() {
       ? Math.round(defaultTarget.totalOutputGram / defaultTarget.totalLongsongProduced)
       : '';
 
+    // Auto-detect rasa & berat dari varian target SPK jika cocok
+    const spkVariant = defaultTarget.order.product_variant || '';
+    const matchedFlavor = FLAVOR_VARIANTS.find(f => spkVariant.toLowerCase().includes(f.toLowerCase())) || 'Original';
+    const matchedWeight = PACKAGING_WEIGHTS.find(w => spkVariant.toLowerCase().includes(w.value.toLowerCase()))?.value || '100g';
+
     setPackingForm({
       production_order_id: spkId,
       frying_batch_id: '',
-      flavor_variant: 'Original',
+      flavor_variant: matchedFlavor,
       longsong_number: String(nextLongsong),
       longsong_weight_gram: avgWeight ? String(avgWeight) : '',
       packaged_toples_count: '',
       packaging_type: 'Standing Pouch',
-      packaging_weight_gram: '100g',
+      packaging_weight_gram: matchedWeight,
       seasoning_used_gram: '25',
       notes: '',
     });
@@ -2434,10 +2440,15 @@ export default function ProductionPage() {
                   const avgWeight = targetSpk && targetSpk.totalLongsongProduced > 0
                     ? Math.round(targetSpk.totalOutputGram / targetSpk.totalLongsongProduced)
                     : '';
+                  const spkVar = targetSpk?.order.product_variant || '';
+                  const autoFlavor = FLAVOR_VARIANTS.find(f => spkVar.toLowerCase().includes(f.toLowerCase()));
+                  const autoWeight = PACKAGING_WEIGHTS.find(w => spkVar.toLowerCase().includes(w.value.toLowerCase()))?.value;
                   setPackingForm(prev => ({
                     ...prev,
                     production_order_id: spkId,
                     frying_batch_id: '',
+                    flavor_variant: autoFlavor || prev.flavor_variant,
+                    packaging_weight_gram: autoWeight || prev.packaging_weight_gram,
                     longsong_number: String(nextLongsongNum),
                     longsong_weight_gram: avgWeight ? String(avgWeight) : prev.longsong_weight_gram,
                   }));

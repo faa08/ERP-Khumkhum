@@ -70,7 +70,10 @@ export async function loginAction(credentials: {
   try {
     await ensureSuperAdminExists();
 
-    const normalizedInput = credentials.username.trim().toLowerCase();
+    let normalizedInput = credentials.username.trim().toLowerCase();
+    if (normalizedInput === 'maintanance' || normalizedInput === 'maintanance@khumkhum.id') {
+      normalizedInput = 'maintenance@khumkhum.id';
+    }
     const isEmail = normalizedInput.includes('@');
 
     // Query user by email (or default alias if 'admin' entered)

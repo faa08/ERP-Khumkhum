@@ -15,7 +15,8 @@ export type UserRole =
   | 'SALES'
   | 'SORTING'
   | 'FARMER'
-  | 'IT_MAINTENANCE';
+  | 'IT_MAINTENANCE'
+  | 'PREMIX';
 
 export interface DbUser {
   id: string;
@@ -72,6 +73,9 @@ export interface DbRawMaterial {
   rop?: number | null;
   unit_price?: number | null;
   stock_quantity?: number | null;
+  packaging_type?: string | null;
+  flavor_variant?: string | null;
+  package_weight?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;

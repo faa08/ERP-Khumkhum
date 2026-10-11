@@ -55,6 +55,23 @@ async function ensureSuperAdminExists(): Promise<void> {
         is_active: true,
       }]);
     }
+
+    const { data: existingPremix } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('email', 'premix@khumkhum.id')
+      .maybeSingle();
+
+    if (!existingPremix) {
+      const premixPassword = await bcrypt.hash('premix123', 10);
+      await supabaseAdmin.from('users').insert([{
+        email: 'premix@khumkhum.id',
+        password: premixPassword,
+        name: 'Petugas Premix & Bumbu',
+        role: 'PRODUCTION', // Stored as PRODUCTION to bypass Postgres ENUM limit, mapped to PREMIX on login
+        is_active: true,
+      }]);
+    }
   } catch (err) {
     console.error('Failed to check/seed default accounts:', err);
   }
@@ -82,6 +99,8 @@ export async function loginAction(credentials: {
       query = query.ilike('email', normalizedInput);
     } else if (normalizedInput === 'admin') {
       query = query.or('email.ilike.admin@khumkhum.id,email.ilike.admin');
+    } else if (normalizedInput === 'premix') {
+      query = query.or('email.ilike.premix@khumkhum.id,email.ilike.premix');
     } else {
       query = query.or(`email.ilike.${normalizedInput},email.ilike.${normalizedInput}@khumkhum.id`);
     }
@@ -113,8 +132,12 @@ export async function loginAction(credentials: {
       return { success: false, error: 'Kata sandi tidak sesuai' };
     }
 
-    // Map role for IT Maintenance to bypass Postgres ENUM limit
-    const sessionRole = user.email === 'maintenance@khumkhum.id' ? 'IT_MAINTENANCE' : user.role;
+    // Map role for IT Maintenance and Premix to bypass Postgres ENUM limit
+    const sessionRole = user.email === 'maintenance@khumkhum.id'
+      ? 'IT_MAINTENANCE'
+      : user.email === 'premix@khumkhum.id'
+      ? 'PREMIX'
+      : user.role;
 
     // Set signed JWT Session Cookie
     await createSession({

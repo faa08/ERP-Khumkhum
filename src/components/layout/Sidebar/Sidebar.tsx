@@ -23,7 +23,8 @@ import {
   ClipboardList,
   Scale,
   CalendarDays,
-  LineChart
+  LineChart,
+  Sparkles,
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
 
@@ -45,6 +46,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Scale:           <Scale size={16} />,
   CalendarDays:    <CalendarDays size={16} />,
   LineChart:       <LineChart size={16} />,
+  Sparkles:        <Sparkles size={16} />,
 };
 
 type ProtectedNavGroup = Omit<NavGroup, 'items'> & {
@@ -71,6 +73,7 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
           { id: 'ppic',       label: 'PPIC & Jadwal',       href: '/ppic',       icon: 'CalendarDays',  requiredPermission: 'ppic' },
           { id: 'warehouse',  label: 'Warehouse (Bahan Baku)', href: '/warehouse', icon: 'Database', requiredPermission: 'warehouse' },
           { id: 'production', label: 'Produksi & Rendemen', href: '/production', icon: 'Factory',       requiredPermission: 'production' },
+          { id: 'premix',     label: 'Peracikan Premix & Bumbu', href: '/production/premix', icon: 'Sparkles', requiredPermission: 'premix' },
           { id: 'qc',         label: 'Quality Control (QC)', href: '/quality-control', icon: 'ShieldCheck', requiredPermission: 'qc' },
           { id: 'inventory',  label: 'Inventaris (Produk Jadi)',  href: '/inventory',  icon: 'Package',       requiredPermission: 'inventory' },
           { id: 'sales',      label: 'Sales Order & Pengiriman', href: '/sales',  icon: 'ShoppingCart',  requiredPermission: 'sales' },

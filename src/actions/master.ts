@@ -297,13 +297,25 @@ export async function getRawMaterials(): Promise<{ success: boolean; data?: DbRa
 
 export async function createRawMaterial(input: Partial<DbRawMaterial>): Promise<{ success: boolean; data?: DbRawMaterial; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
-    const { data, error } = await supabaseAdmin
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PREMIX']);
+    let { data, error } = await supabaseAdmin
       .from('raw_materials')
       .insert([input])
       .select()
       .single();
-    if (error) throw error;
+
+    if (error && (error.message?.includes('column') || error.code === '42703')) {
+      const { packaging_type, flavor_variant, package_weight, ...cleanInput } = input;
+      const retry = await supabaseAdmin
+        .from('raw_materials')
+        .insert([cleanInput])
+        .select()
+        .single();
+      if (retry.error) throw retry.error;
+      data = retry.data;
+    } else if (error) {
+      throw error;
+    }
     
     await logAuditEvent({
       userId: user.userId,
@@ -324,14 +336,27 @@ export async function createRawMaterial(input: Partial<DbRawMaterial>): Promise<
 
 export async function updateRawMaterial(id: string, input: Partial<DbRawMaterial>): Promise<{ success: boolean; data?: DbRawMaterial; error?: string }> {
   try {
-    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
-    const { data, error } = await supabaseAdmin
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PREMIX']);
+    let { data, error } = await supabaseAdmin
       .from('raw_materials')
       .update({ ...input, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+
+    if (error && (error.message?.includes('column') || error.code === '42703')) {
+      const { packaging_type, flavor_variant, package_weight, ...cleanInput } = input;
+      const retry = await supabaseAdmin
+        .from('raw_materials')
+        .update({ ...cleanInput, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+      if (retry.error) throw retry.error;
+      data = retry.data;
+    } else if (error) {
+      throw error;
+    }
 
     await logAuditEvent({
       userId: user.userId,

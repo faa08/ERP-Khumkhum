@@ -19,7 +19,8 @@ export type UserRole =
   | 'SALES'
   | 'SORTING'
   | 'FARMER'
-  | 'IT_MAINTENANCE';
+  | 'IT_MAINTENANCE'
+  | 'PREMIX';
 
 export interface User {
   id: string;
@@ -57,16 +58,18 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   SORTING:     'Petugas Sortasi',
   FARMER:      'Petani Mitra',
   IT_MAINTENANCE: 'IT Maintenance',
+  PREMIX:      'Petugas Premix & Bumbu',
 };
 
 export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   SUPER_ADMIN: ['*'],
   QC:          ['dashboard', 'qc', 'standards', 'production', 'inventory', 'master', 'traceability', 'reports', 'forecast'],
-  WAREHOUSE:   ['dashboard', 'master', 'receiving', 'inventory', 'warehouse', 'ppic', 'traceability', 'reports', 'forecast'],
-  PRODUCTION:  ['dashboard', 'production', 'ppic', 'inventory', 'traceability'],
+  WAREHOUSE:   ['dashboard', 'master', 'receiving', 'inventory', 'warehouse', 'premix', 'ppic', 'traceability', 'reports', 'forecast'],
+  PRODUCTION:  ['dashboard', 'production', 'premix', 'ppic', 'inventory', 'traceability'],
   MANAGEMENT:  ['dashboard', 'reports', 'traceability', 'master', 'production', 'inventory', 'warehouse', 'qc', 'sales', 'audit', 'forecast'],
   SALES:       ['dashboard', 'master', 'sales', 'inventory', 'traceability'],
   SORTING:     ['sorting'],
   FARMER:      [], // Petani tidak login ke web — interaksi via WhatsApp
   IT_MAINTENANCE: ['*'], // IT Maintenance butuh akses ke semua fitur untuk testing
+  PREMIX:      ['dashboard', 'premix', 'production', 'inventory', 'warehouse', 'master'],
 };

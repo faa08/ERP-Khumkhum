@@ -1049,13 +1049,15 @@ async function deductFryingRawMaterials(
           created_by: userId || null,
         });
 
-        // Rekam ke production_materials
-        await supabaseAdmin.from('production_materials').insert({
-          production_order_id: productionOrderId,
-          raw_material_id: matId,
-          consumption_quantity: mat.qty,
-          created_at: new Date().toISOString(),
-        });
+        // Rekam ke production_materials jika terhubung dengan SPK spesifik
+        if (productionOrderId) {
+          await supabaseAdmin.from('production_materials').insert({
+            production_order_id: productionOrderId,
+            raw_material_id: matId,
+            consumption_quantity: mat.qty,
+            created_at: new Date().toISOString(),
+          });
+        }
       }
     }
   } catch (err) {
@@ -1197,7 +1199,7 @@ async function deductPackingMaterials(
 }
 
 export interface CreateFryingBatchInput {
-  production_order_id: string;
+  production_order_id?: string;
   wajan_number: number;
   batch_weight_gram?: number;
   oil_temp_celsius: number;
@@ -1216,9 +1218,24 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
   error?: string;
 }> {
   try {
-    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'PREMIX']);
 
     let createdBatch: DbFryingBatch | undefined;
+
+    // Resolve order ID: jika tidak dipilih, cari SPK aktif sebagai relasi DB (foreign key constraint) atau gunakan null jika diizinkan
+    let resolvedOrderId = input.production_order_id || null;
+    if (!resolvedOrderId) {
+      const { data: latestActive } = await supabaseAdmin
+        .from('production_orders')
+        .select('id')
+        .in('status', ['DRAFT', 'IN_PROGRESS', 'REWORK'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestActive) {
+        resolvedOrderId = latestActive.id;
+      }
+    }
 
     const nowIso = new Date().toISOString();
     const startedAt = input.started_at !== undefined ? input.started_at : null;
@@ -1226,7 +1243,7 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
     const durationMinutes = input.frying_duration_minutes !== undefined ? input.frying_duration_minutes : null;
 
     const insertPayload: any = {
-      production_order_id: input.production_order_id,
+      production_order_id: resolvedOrderId,
       wajan_number: input.wajan_number,
       batch_weight_gram: input.batch_weight_gram || 800,
       oil_temp_celsius: input.oil_temp_celsius,
@@ -1251,7 +1268,7 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
       console.warn('Fallback memory for createFryingBatch:', error.message);
       const fallbackItem: DbFryingBatch = {
         id: 'fb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
-        production_order_id: input.production_order_id,
+        production_order_id: resolvedOrderId || 'pool-selongsong',
         wajan_number: input.wajan_number,
         batch_weight_gram: input.batch_weight_gram || 800,
         oil_temp_celsius: input.oil_temp_celsius,
@@ -1274,13 +1291,15 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
     }
 
     // Update production order status to IN_PROGRESS if still DRAFT
-    try {
-      await supabaseAdmin
-        .from('production_orders')
-        .update({ status: 'IN_PROGRESS' })
-        .eq('id', input.production_order_id)
-        .eq('status', 'DRAFT');
-    } catch (_) {}
+    if (resolvedOrderId) {
+      try {
+        await supabaseAdmin
+          .from('production_orders')
+          .update({ status: 'IN_PROGRESS' })
+          .eq('id', resolvedOrderId)
+          .eq('status', 'DRAFT');
+      } catch (_) {}
+    }
 
     await logAuditEvent({
       action: 'CREATE',
@@ -1293,7 +1312,7 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
     if (createdBatch) {
       await deductFryingRawMaterials(
         createdBatch.id,
-        input.production_order_id,
+        resolvedOrderId || '',
         input.batch_weight_gram || 800,
         session.user.id
       );
@@ -2343,7 +2362,7 @@ export interface MixPremixInput {
 
 export async function recordPremixMixing(input: MixPremixInput): Promise<{ success: boolean; error?: string }> {
   try {
-    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT']);
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
 
     if (!input.premix_item_id || input.output_qty <= 0) {
       return { success: false, error: 'Premix dan hasil kuantitas harus diisi (>0)' };
@@ -2435,7 +2454,10 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
       created_by: user.userId
     });
     
-    // revalidatePath('/production');
+    revalidatePath('/production');
+    revalidatePath('/production/premix');
+    revalidatePath('/warehouse');
+    revalidatePath('/inventory');
 
     return { success: true };
   } catch (err: any) {
@@ -2443,3 +2465,80 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
     return { success: false, error: err.message };
   }
 }
+
+export async function getPremixData(): Promise<{
+  success: boolean;
+  premixItems?: any[];
+  ingredients?: any[];
+  history?: any[];
+  error?: string;
+}> {
+  try {
+    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX', 'WAREHOUSE']);
+
+    // 1. Ambil data raw_materials
+    const { data: rawMats } = await supabaseAdmin
+      .from('raw_materials')
+      .select('id, code, name, uom, material_category, min_stock, stock_quantity');
+
+    const allMaterials = rawMats || [];
+
+    // Filter premix / bumbu target items
+    const premixItems = allMaterials.filter(m => {
+      const cat = (m.material_category || '').toLowerCase();
+      const n = (m.name || '').toLowerCase();
+      return cat === 'tepung' || cat === 'bumbu' || n.includes('premix') || n.includes('tepung') || n.includes('bumbu');
+    });
+
+    // 2. Ambil inventory stok bahan mentah
+    const { data: inventories } = await supabaseAdmin
+      .from('inventory')
+      .select('id, item_id, item_type, quantity, warehouse_id')
+      .eq('item_type', 'RAW_MATERIAL');
+
+    const ingredients = (inventories || []).map(inv => {
+      const rm = allMaterials.find(m => m.id === inv.item_id);
+      return {
+        ...inv,
+        name: rm?.name || 'Unknown Material',
+        code: rm?.code || '',
+        uom: rm?.uom || 'kg',
+        category: rm?.material_category || 'Bahan Mentah',
+      };
+    });
+
+    // 3. Ambil riwayat peracikan premix dari stock_movements
+    const { data: movements } = await supabaseAdmin
+      .from('stock_movements')
+      .select('id, inventory_id, movement_type, quantity, reference_type, notes, created_at, created_by')
+      .eq('reference_type', 'MIXING_PREMIX')
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    const history = (movements || []).map(mov => {
+      const inv = ingredients.find(i => i.id === mov.inventory_id);
+      return {
+        id: mov.id,
+        inventory_id: mov.inventory_id,
+        movement_type: mov.movement_type,
+        quantity: mov.quantity,
+        notes: mov.notes,
+        created_at: mov.created_at,
+        created_by: mov.created_by,
+        itemName: inv?.name || 'Premix / Bahan Baku',
+        uom: inv?.uom || 'kg',
+      };
+    });
+
+    return {
+      success: true,
+      premixItems,
+      ingredients,
+      history,
+    };
+  } catch (err: any) {
+    console.error('getPremixData error:', err);
+    return { success: false, error: err.message };
+  }
+}
+

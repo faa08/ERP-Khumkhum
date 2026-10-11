@@ -222,7 +222,6 @@ export default function ProductionPage() {
 
   const isRegularFryingValid = useMemo(() => {
     return (
-      !!regularFryingForm.production_order_id &&
       !!regularFryingForm.oil_temp_celsius &&
       !!regularFryingForm.batch_weight_gram &&
       Number(regularFryingForm.batch_weight_gram) > 0
@@ -231,7 +230,6 @@ export default function ProductionPage() {
 
   const isHaccpFryingValid = useMemo(() => {
     return (
-      !!haccpFryingForm.production_order_id &&
       !!haccpFryingForm.oil_temp_celsius &&
       !!haccpFryingForm.start_time &&
       !!haccpFryingForm.end_time &&
@@ -402,6 +400,22 @@ export default function ProductionPage() {
   }, [fryingBatches, packingEntries, fryingMetrics.unpackedLongsongCount]);
 
   // ── SPK yang Sudah Melewati Tahap Produksi Goreng Jamur (Terintegrasi ke Packing) ──
+  // Total pool longsong jamur matang curah di seluruh wajan pabrik
+  const totalAllLongsongProduced = useMemo(() => {
+    return fryingBatches.reduce((sum, b) => {
+      const isFried = (b.finished_at != null || (b.output_weight_gram != null && b.output_weight_gram > 0)) && Number(b.longsong_count) > 0;
+      return sum + (isFried ? (Number(b.longsong_count) || 0) : 0);
+    }, 0);
+  }, [fryingBatches]);
+
+  const totalAllLongsongPacked = useMemo(() => {
+    return packingEntries.filter(p => p.is_packed).length;
+  }, [packingEntries]);
+
+  const availablePoolLongsong = useMemo(() => {
+    return Math.max(0, totalAllLongsongProduced - totalAllLongsongPacked);
+  }, [totalAllLongsongProduced, totalAllLongsongPacked]);
+
   const friedOrdersData = useMemo(() => {
     const fryingByOrder: Record<string, {
       batches: DbFryingBatch[];
@@ -412,16 +426,17 @@ export default function ProductionPage() {
     fryingBatches.forEach(b => {
       const isFried = (b.finished_at != null || (b.output_weight_gram != null && b.output_weight_gram > 0)) && Number(b.longsong_count) > 0;
       if (isFried) {
-        if (!fryingByOrder[b.production_order_id]) {
-          fryingByOrder[b.production_order_id] = {
+        const orderKey = b.production_order_id || 'pool';
+        if (!fryingByOrder[orderKey]) {
+          fryingByOrder[orderKey] = {
             batches: [],
             totalLongsongProduced: 0,
             totalOutputGram: 0,
           };
         }
-        fryingByOrder[b.production_order_id].batches.push(b);
-        fryingByOrder[b.production_order_id].totalLongsongProduced += (Number(b.longsong_count) || 0);
-        fryingByOrder[b.production_order_id].totalOutputGram += (Number(b.output_weight_gram) || 0);
+        fryingByOrder[orderKey].batches.push(b);
+        fryingByOrder[orderKey].totalLongsongProduced += (Number(b.longsong_count) || 0);
+        fryingByOrder[orderKey].totalOutputGram += (Number(b.output_weight_gram) || 0);
       }
     });
 
@@ -442,29 +457,34 @@ export default function ProductionPage() {
       totalPackagedPcs: number;
     }[] = [];
 
+    // Sertakan semua SPK aktif pabrik sehingga SPK baru langsung nyambung ke packing rasa
     orders.forEach(o => {
-      if (fryingByOrder[o.id]) {
-        const frying = fryingByOrder[o.id];
-        const packedCount = packingByOrder[o.id] || 0;
-        const unpackedCount = Math.max(0, frying.totalLongsongProduced - packedCount);
-        const packagedPcs = packingEntries
-          .filter(p => p.production_order_id === o.id && p.is_packed)
-          .reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
-        result.push({
-          order: o,
-          batches: frying.batches.sort((a, b) => a.wajan_number - b.wajan_number),
-          totalLongsongProduced: frying.totalLongsongProduced,
-          totalOutputGram: frying.totalOutputGram,
-          packedCount,
-          unpackedCount,
-          totalPackagedPcs: packagedPcs,
-        });
-      }
+      const frying = fryingByOrder[o.id];
+      const packedCount = packingByOrder[o.id] || 0;
+      const packagedPcs = packingEntries
+        .filter(p => p.production_order_id === o.id && p.is_packed)
+        .reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
+
+      const totalLongsongProduced = frying ? frying.totalLongsongProduced : (availablePoolLongsong + packedCount);
+      const totalOutputGram = frying ? frying.totalOutputGram : 0;
+      const unpackedCount = frying
+        ? Math.max(0, frying.totalLongsongProduced - packedCount)
+        : availablePoolLongsong;
+
+      result.push({
+        order: o,
+        batches: frying ? frying.batches.sort((a, b) => a.wajan_number - b.wajan_number) : [],
+        totalLongsongProduced,
+        totalOutputGram,
+        packedCount,
+        unpackedCount,
+        totalPackagedPcs: packagedPcs,
+      });
     });
 
     // Fallback: Jika ada batch goreng dengan production_order_id yang belum ada di list orders
     Object.keys(fryingByOrder).forEach(orderId => {
-      if (!orders.some(o => o.id === orderId)) {
+      if (orderId !== 'pool' && !orders.some(o => o.id === orderId)) {
         const frying = fryingByOrder[orderId];
         const packedCount = packingByOrder[orderId] || 0;
         const unpackedCount = Math.max(0, frying.totalLongsongProduced - packedCount);
@@ -477,8 +497,7 @@ export default function ProductionPage() {
             batch_number: 'SPK-' + orderId.slice(0, 8),
             product_variant: 'Jamur Crispy',
             status: 'IN_PROGRESS',
-            planned_quantity: 1,
-            actual_quantity: 1,
+            target_quantity: 1,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           } as unknown as DbProductionOrder,
@@ -492,8 +511,11 @@ export default function ProductionPage() {
       }
     });
 
-    return result.sort((a, b) => b.unpackedCount - a.unpackedCount);
-  }, [orders, fryingBatches, packingEntries]);
+    return result.sort((a, b) => {
+      if (b.unpackedCount !== a.unpackedCount) return b.unpackedCount - a.unpackedCount;
+      return new Date(b.order.created_at || '').getTime() - new Date(a.order.created_at || '').getTime();
+    });
+  }, [orders, fryingBatches, packingEntries, availablePoolLongsong]);
 
   const selectedFriedOrder = useMemo(() => {
     return friedOrdersData.find(d => d.order.id === packingForm.production_order_id) || null;
@@ -701,7 +723,7 @@ export default function ProductionPage() {
   // Handler: Buka & Buat Batch Goreng Baru (Biasa / Real-time Wajan)
   const handleOpenCreateRegularFrying = () => {
     setRegularFryingForm({
-      production_order_id: orders[0]?.id || '',
+      production_order_id: '',
       wajan_number: String((fryingBatches.length > 0 ? Math.max(...fryingBatches.map(b => b.wajan_number)) : 0) + 1),
       batch_weight_gram: '800',
       oil_temp_celsius: '170',
@@ -711,10 +733,6 @@ export default function ProductionPage() {
   };
 
   const handleCreateRegularFrying = async () => {
-    if (!regularFryingForm.production_order_id) {
-      toast.error('Pilih SPK Produksi terlebih dahulu');
-      return;
-    }
     if (!regularFryingForm.oil_temp_celsius) {
       toast.error('Suhu minyak wajib diisi');
       return;
@@ -725,7 +743,7 @@ export default function ProductionPage() {
     }
 
     const res = await createFryingBatch({
-      production_order_id: regularFryingForm.production_order_id,
+      production_order_id: regularFryingForm.production_order_id || undefined,
       wajan_number: Number(regularFryingForm.wajan_number),
       batch_weight_gram: Number(regularFryingForm.batch_weight_gram) || 800,
       oil_temp_celsius: Number(regularFryingForm.oil_temp_celsius) || 170,
@@ -752,7 +770,7 @@ export default function ProductionPage() {
     const defaultStart = getCurrentTimeString();
     const defaultEnd = addMinutesToTimeString(defaultStart, 15);
     setHaccpFryingForm({
-      production_order_id: orders[0]?.id || '',
+      production_order_id: '',
       wajan_number: String((fryingBatches.length > 0 ? Math.max(...fryingBatches.map(b => b.wajan_number)) : 0) + 1),
       batch_weight_gram: '800',
       oil_temp_celsius: '170',
@@ -767,10 +785,6 @@ export default function ProductionPage() {
   };
 
   const handleCreateHaccpFrying = async () => {
-    if (!haccpFryingForm.production_order_id) {
-      toast.error('Pilih SPK Produksi terlebih dahulu');
-      return;
-    }
     if (!haccpFryingForm.oil_temp_celsius) {
       toast.error('Suhu minyak wajib diisi');
       return;
@@ -801,7 +815,7 @@ export default function ProductionPage() {
     const durationMinutes = calculateTimeDifferenceMinutes(haccpFryingForm.start_time, haccpFryingForm.end_time);
 
     const res = await createFryingBatch({
-      production_order_id: haccpFryingForm.production_order_id,
+      production_order_id: haccpFryingForm.production_order_id || undefined,
       wajan_number: Number(haccpFryingForm.wajan_number),
       batch_weight_gram: Number(haccpFryingForm.batch_weight_gram) || 800,
       oil_temp_celsius: Number(haccpFryingForm.oil_temp_celsius) || 170,
@@ -884,33 +898,50 @@ export default function ProductionPage() {
   // HANDLERS — PACKING
   // ─────────────────────────────────────────────
 
-  const handleOpenCreatePacking = () => {
-    if (friedOrdersData.length === 0) {
-      toast.warning('Belum ada SPK yang menyelesaikan tahap produksi goreng jamur. Selesaikan penggorengan wajan di Tab 1 terlebih dahulu.');
+  const handleOpenCreatePacking = (targetOrderId?: string) => {
+    // Cari target SPK yang diminta secara langsung atau SPK yang masih butuh packing
+    let target = targetOrderId
+      ? friedOrdersData.find(d => d.order.id === targetOrderId)
+      : (friedOrdersData.find(d => d.unpackedCount > 0) || friedOrdersData[0]);
+
+    if (!target && orders.length > 0) {
+      const order = orders.find(o => o.id === targetOrderId) || orders[0];
+      target = {
+        order,
+        batches: [],
+        totalLongsongProduced: availablePoolLongsong,
+        totalOutputGram: 0,
+        packedCount: 0,
+        unpackedCount: availablePoolLongsong,
+        totalPackagedPcs: 0,
+      };
+    }
+
+    if (!target) {
+      toast.warning('Buat SPK Produksi baru terlebih dahulu sebelum mencatat packing.');
       return;
     }
 
-    // Prioritaskan SPK yang masih memiliki sisa longsong belum dipacking
-    const defaultTarget = friedOrdersData.find(d => d.unpackedCount > 0) || friedOrdersData[0];
-    const spkId = defaultTarget.order.id;
-    const nextLongsong = defaultTarget.packedCount + 1;
-    const avgWeight = defaultTarget.totalLongsongProduced > 0
-      ? Math.round(defaultTarget.totalOutputGram / defaultTarget.totalLongsongProduced)
-      : '';
+    const spkId = target.order.id;
+    const nextLongsong = target.packedCount + 1;
+    const avgWeight = target.totalLongsongProduced > 0 && target.totalOutputGram > 0
+      ? Math.round(target.totalOutputGram / target.totalLongsongProduced)
+      : '500';
 
     // Auto-detect rasa & berat dari varian target SPK jika cocok
-    const spkVariant = defaultTarget.order.product_variant || '';
+    const spkVariant = target.order.product_variant || '';
     const matchedFlavor = FLAVOR_VARIANTS.find(f => spkVariant.toLowerCase().includes(f.toLowerCase())) || 'Original';
     const matchedWeight = PACKAGING_WEIGHTS.find(w => spkVariant.toLowerCase().includes(w.value.toLowerCase()))?.value || '100g';
+    const matchedType = PACKAGING_TYPES.find(t => spkVariant.toLowerCase().includes(t.toLowerCase())) || 'Standing Pouch';
 
     setPackingForm({
       production_order_id: spkId,
       frying_batch_id: '',
       flavor_variant: matchedFlavor,
       longsong_number: String(nextLongsong),
-      longsong_weight_gram: avgWeight ? String(avgWeight) : '',
+      longsong_weight_gram: avgWeight ? String(avgWeight) : '500',
       packaged_toples_count: '',
-      packaging_type: 'Standing Pouch',
+      packaging_type: matchedType,
       packaging_weight_gram: matchedWeight,
       seasoning_used_gram: '25',
       notes: '',
@@ -1607,7 +1638,7 @@ export default function ProductionPage() {
                   variant="primary"
                   size="sm"
                   leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
-                  onClick={handleOpenCreatePacking}
+                  onClick={() => handleOpenCreatePacking()}
                 >
                   Packing Sekarang
                 </Button>
@@ -1712,7 +1743,7 @@ export default function ProductionPage() {
               </div>
 
               {!isManagement && (
-                <Button variant="primary" leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />} onClick={handleOpenCreatePacking}>
+                <Button variant="primary" leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />} onClick={() => handleOpenCreatePacking()}>
                   Input Packing Rasa
                 </Button>
               )}
@@ -1782,39 +1813,52 @@ export default function ProductionPage() {
                           </td>
                           {!isManagement && (
                             <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                              {s === 'RELEASED' ? (
-                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success-700)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                  <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" /> Siap Jual
-                                </span>
-                              ) : s === 'REJECTED' ? (
-                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-700)', fontWeight: 600 }}>
-                                  Dialihkan ke Karantina
-                                </span>
-                              ) : s === 'QC_PENDING' ? (
-                                <Button variant="secondary" size="sm" disabled>
-                                  Dalam Antrean QC
-                                </Button>
-                              ) : s === 'REWORK' ? (
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  leftIcon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
-                                  onClick={() => handleOpenSubmitQc(item)}
-                                >
-                                  Ajukan Ulang ke QC
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="primary"
-                                  size="sm"
-                                  leftIcon={<ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />}
-                                  onClick={() => handleOpenSubmitQc(item)}
-                                  disabled={!hasPackaged}
-                                  title={!hasPackaged ? 'Input packing terlebih dahulu' : 'Ajukan batch kemasan ini ke QC'}
-                                >
-                                  Ajukan ke QC
-                                </Button>
-                              )}
+                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                                {s !== 'RELEASED' && s !== 'REJECTED' && (
+                                  <Button
+                                    variant="primary"
+                                    size="sm"
+                                    leftIcon={<Box className="w-3.5 h-3.5" aria-hidden="true" />}
+                                    onClick={() => handleOpenCreatePacking(item.order.id)}
+                                    title="Buka form input packing rasa untuk SPK ini"
+                                  >
+                                    Packing SPK Ini
+                                  </Button>
+                                )}
+                                {s === 'RELEASED' ? (
+                                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-success-700)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" /> Siap Jual
+                                  </span>
+                                ) : s === 'REJECTED' ? (
+                                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-700)', fontWeight: 600 }}>
+                                    Dialihkan ke Karantina
+                                  </span>
+                                ) : s === 'QC_PENDING' ? (
+                                  <Button variant="secondary" size="sm" disabled>
+                                    Dalam Antrean QC
+                                  </Button>
+                                ) : s === 'REWORK' ? (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    leftIcon={<RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />}
+                                    onClick={() => handleOpenSubmitQc(item)}
+                                  >
+                                    Ajukan Ulang ke QC
+                                  </Button>
+                                ) : (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    leftIcon={<ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />}
+                                    onClick={() => handleOpenSubmitQc(item)}
+                                    disabled={!hasPackaged}
+                                    title={!hasPackaged ? 'Input packing terlebih dahulu' : 'Ajukan batch kemasan ini ke QC'}
+                                  >
+                                    Ajukan ke QC
+                                  </Button>
+                                )}
+                              </div>
                             </td>
                           )}
                         </tr>
@@ -1883,11 +1927,14 @@ export default function ProductionPage() {
             </div>
           </div>
 
-          <FormField label="Pilih SPK Produksi" required>
+          <FormField label="Alokasi Target Wajan (Opsional)">
             <Select
-              options={orders.filter(o => o.status === 'DRAFT' || o.status === 'IN_PROGRESS').map(o => ({
-                value: o.id, label: `${o.batch_number} — ${o.product_variant || 'Jamur Crispy'}`,
-              }))}
+              options={[
+                { value: '', label: 'Alokasi Selongsong Curah (Pool Stok Jamur Matang Pabrik)' },
+                ...orders.filter(o => o.status === 'DRAFT' || o.status === 'IN_PROGRESS').map(o => ({
+                  value: o.id, label: `SPK: ${o.batch_number} — ${o.product_variant || 'Jamur Crispy'}`,
+                })),
+              ]}
               value={regularFryingForm.production_order_id}
               onChange={(e) => setRegularFryingForm({ ...regularFryingForm, production_order_id: e.target.value })}
             />
@@ -1968,11 +2015,14 @@ export default function ProductionPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <FormField label="Pilih SPK Produksi" required>
+          <FormField label="Alokasi Target Wajan (Opsional)">
             <Select
-              options={orders.filter(o => o.status === 'DRAFT' || o.status === 'IN_PROGRESS').map(o => ({
-                value: o.id, label: `${o.batch_number} — ${o.product_variant || 'Jamur Crispy'}`,
-              }))}
+              options={[
+                { value: '', label: 'Alokasi Selongsong Curah (Pool Stok Jamur Matang Pabrik)' },
+                ...orders.filter(o => o.status === 'DRAFT' || o.status === 'IN_PROGRESS').map(o => ({
+                  value: o.id, label: `SPK: ${o.batch_number} — ${o.product_variant || 'Jamur Crispy'}`,
+                })),
+              ]}
               value={haccpFryingForm.production_order_id}
               onChange={(e) => setHaccpFryingForm({ ...haccpFryingForm, production_order_id: e.target.value })}
             />
@@ -2419,42 +2469,82 @@ export default function ProductionPage() {
             }}>
               <AlertTriangle className="w-5 h-5 text-[var(--color-warning-600)] shrink-0" aria-hidden="true" />
               <div>
-                <strong>Belum Ada SPK yang Menyelesaikan Goreng Jamur</strong>
+                <strong>Belum Ada SPK Produksi Aktif</strong>
                 <div style={{ fontSize: 'var(--text-xs)', marginTop: '2px' }}>
-                  Data SPK packing rasa harus melewati tahap produksi goreng jamur. Silakan input hasil wajan di Tab 1 (Penggorengan Wajan) terlebih dahulu.
+                  Silakan buat SPK baru terlebih dahulu untuk menentukan target varian rasa dan jumlah kemasan yang akan dipacking.
                 </div>
               </div>
             </div>
           ) : (
-            <FormField label="Pilih SPK Produksi (Tahap Goreng Selesai)" required>
-              <Select
-                options={friedOrdersData.map(item => ({
-                  value: item.order.id,
-                  label: `${item.order.batch_number} — ${item.order.product_variant || 'Jamur Crispy'} (${item.unpackedCount} Siap Packing / ${item.totalLongsongProduced} Longsong Masak)`,
-                }))}
-                value={packingForm.production_order_id}
-                onChange={(e) => {
-                  const spkId = e.target.value;
-                  const targetSpk = friedOrdersData.find(d => d.order.id === spkId);
-                  const nextLongsongNum = targetSpk ? targetSpk.packedCount + 1 : 1;
-                  const avgWeight = targetSpk && targetSpk.totalLongsongProduced > 0
-                    ? Math.round(targetSpk.totalOutputGram / targetSpk.totalLongsongProduced)
-                    : '';
-                  const spkVar = targetSpk?.order.product_variant || '';
-                  const autoFlavor = FLAVOR_VARIANTS.find(f => spkVar.toLowerCase().includes(f.toLowerCase()));
-                  const autoWeight = PACKAGING_WEIGHTS.find(w => spkVar.toLowerCase().includes(w.value.toLowerCase()))?.value;
-                  setPackingForm(prev => ({
-                    ...prev,
-                    production_order_id: spkId,
-                    frying_batch_id: '',
-                    flavor_variant: autoFlavor || prev.flavor_variant,
-                    packaging_weight_gram: autoWeight || prev.packaging_weight_gram,
-                    longsong_number: String(nextLongsongNum),
-                    longsong_weight_gram: avgWeight ? String(avgWeight) : prev.longsong_weight_gram,
-                  }));
-                }}
-              />
-            </FormField>
+            <>
+              {availablePoolLongsong > 0 ? (
+                <div style={{
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-success-50)',
+                  border: '1px solid var(--color-success-200)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-success-800)',
+                }}>
+                  <Sparkles className="w-4 h-4 text-[var(--color-success-600)] shrink-0" aria-hidden="true" />
+                  <span>
+                    Tersedia <strong>{availablePoolLongsong} longsong</strong> jamur matang curah dari wajan siap dibumbui &amp; dipacking.
+                  </span>
+                </div>
+              ) : (
+                <div style={{
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-warning-50)',
+                  border: '1px solid var(--color-warning-200)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-warning-800)',
+                }}>
+                  <Info className="w-4 h-4 text-[var(--color-warning-600)] shrink-0" aria-hidden="true" />
+                  <span>
+                    Stok selongsong matang saat ini 0. Pastikan wajan di Tab 1 sudah menyelesaikan penggorengan jamur.
+                  </span>
+                </div>
+              )}
+
+              <FormField label="Pilih Target SPK Produksi (Tujuan Packing)" required>
+                <Select
+                  options={friedOrdersData.map(item => ({
+                    value: item.order.id,
+                    label: `${item.order.batch_number} — ${item.order.product_variant || 'Jamur Crispy'} (Target: ${item.order.target_quantity || 0} pcs | Selesai: ${item.totalPackagedPcs} pcs)`,
+                  }))}
+                  value={packingForm.production_order_id}
+                  onChange={(e) => {
+                    const spkId = e.target.value;
+                    const targetSpk = friedOrdersData.find(d => d.order.id === spkId);
+                    const nextLongsongNum = targetSpk ? targetSpk.packedCount + 1 : 1;
+                    const avgWeight = targetSpk && targetSpk.totalLongsongProduced > 0 && targetSpk.totalOutputGram > 0
+                      ? Math.round(targetSpk.totalOutputGram / targetSpk.totalLongsongProduced)
+                      : '500';
+                    const spkVar = targetSpk?.order.product_variant || '';
+                    const autoFlavor = FLAVOR_VARIANTS.find(f => spkVar.toLowerCase().includes(f.toLowerCase()));
+                    const autoWeight = PACKAGING_WEIGHTS.find(w => spkVar.toLowerCase().includes(w.value.toLowerCase()))?.value;
+                    const autoType = PACKAGING_TYPES.find(t => spkVar.toLowerCase().includes(t.toLowerCase()));
+                    setPackingForm(prev => ({
+                      ...prev,
+                      production_order_id: spkId,
+                      frying_batch_id: '',
+                      flavor_variant: autoFlavor || prev.flavor_variant,
+                      packaging_type: autoType || prev.packaging_type,
+                      packaging_weight_gram: autoWeight || prev.packaging_weight_gram,
+                      longsong_number: String(nextLongsongNum),
+                      longsong_weight_gram: avgWeight ? String(avgWeight) : prev.longsong_weight_gram,
+                    }));
+                  }}
+                />
+              </FormField>
+            </>
           )}
 
           {/* Integrated Status Card */}

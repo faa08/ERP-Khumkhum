@@ -90,6 +90,7 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
         children: [
           { id: 'setup-wizard', label: 'Setup Wizard (Mulai Sini)', href: '/master/setup-wizard', disallowedRoles: ['MANAGEMENT'] },
           { id: 'hub', label: 'Pusat Master Data', href: '/master' },
+          { id: 'production-standards', label: 'Standar Produksi & Resep', href: '/master/production-standards' },
           { id: 'historical-import', label: 'Impor Data Historis', href: '/master/historical-import', disallowedRoles: ['MANAGEMENT'] },
         ],
       },

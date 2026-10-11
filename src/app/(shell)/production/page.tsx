@@ -48,6 +48,7 @@ import {
   Box,
   Info,
   Pencil,
+  Sliders,
 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, isToday, isThisMonth, isThisYear, startOfDay, endOfDay } from 'date-fns';
@@ -1442,13 +1443,22 @@ export default function ProductionPage() {
             Investor / Read-Only Mode
           </span>
         ) : (
-          <Button 
-            variant="primary" 
-            onClick={() => setCreateSpkOpen(true)}
-            leftIcon={<Plus size={16} />}
-          >
-            Buat SPK Baru
-          </Button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <Button 
+              variant="secondary" 
+              onClick={() => { window.location.href = '/master/production-standards'; }}
+              leftIcon={<Sliders size={16} aria-hidden="true" />}
+            >
+              Standar Resep (BOM)
+            </Button>
+            <Button 
+              variant="primary" 
+              onClick={() => setCreateSpkOpen(true)}
+              leftIcon={<Plus size={16} aria-hidden="true" />}
+            >
+              Buat SPK Baru
+            </Button>
+          </div>
         )}
       />
 

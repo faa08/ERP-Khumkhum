@@ -18,34 +18,35 @@ const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
   default_allowance_factor: 0.15,
   bom_recipes: [
     {
-      product_name: 'Jamur Crispy Original 100g',
+      product_name: 'Jamur Crispy (Resep Dasar Penggorengan)',
       raw_mushroom_ratio: 1.0,
       premix_flour_ratio: 0.25,
       cooking_oil_ratio: 0.30,
       seasoning_ratio: 0.05,
     },
+  ],
+  premix_recipes: [
     {
-      product_name: 'Jamur Crispy Balado Pedas 100g',
-      raw_mushroom_ratio: 1.0,
-      premix_flour_ratio: 0.25,
-      cooking_oil_ratio: 0.30,
-      seasoning_ratio: 0.08,
-    },
-    {
-      product_name: 'Jamur Crispy BBQ Smoked 100g',
-      raw_mushroom_ratio: 1.0,
-      premix_flour_ratio: 0.25,
-      cooking_oil_ratio: 0.30,
-      seasoning_ratio: 0.07,
+      premix_name: 'Tepung Premix KhumKhum',
+      output_qty: 10,
+      ingredients: [
+        { name: 'Tepung Terigu', qty: 8 },
+        { name: 'Tepung Tapioka', qty: 1 },
+        { name: 'Bawang Putih Bubuk', qty: 1 },
+      ],
     },
   ],
-  premix_recipes: [],
   seasoning_per_variant: [
     { variant: 'Original', seasoning_ratio_per_kg: 0.05, seasoning_name: 'Bumbu Gurih Original' },
     { variant: 'Balado', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Balado Pedas' },
     { variant: 'BBQ', seasoning_ratio_per_kg: 0.07, seasoning_name: 'Bumbu Tabur BBQ Smoked' },
     { variant: 'Pedas Manis', seasoning_ratio_per_kg: 0.07, seasoning_name: 'Bumbu Tabur Pedas Manis' },
     { variant: 'Super Pedas', seasoning_ratio_per_kg: 0.10, seasoning_name: 'Bumbu Tabur Super Pedas Lv.5' },
+  ],
+  packaging_configs: [
+    { packaging_type: 'Standing Pouch', packaging_name: 'Standing Pouch KhumKhum 60g/75g', pieces_per_unit: 1 },
+    { packaging_type: 'Toples', packaging_name: 'Toples 500 Gram', pieces_per_unit: 1 },
+    { packaging_type: 'Kemasan Bantal Alumunium', packaging_name: 'Kemasan Bantal Alumunium', pieces_per_unit: 1 },
   ],
 };
 
@@ -80,11 +81,89 @@ export async function getProductionStandards(): Promise<{
       .eq('key', 'production_standards')
       .single();
 
-    if (error || !data?.value) {
-      return { success: true, data: DEFAULT_PRODUCTION_STANDARDS };
+    let mergedConfig: ProductionStandardConfig = {
+      ...DEFAULT_PRODUCTION_STANDARDS,
+      ...(data?.value || {}),
+    };
+
+    // Auto-match & link raw materials jika ID belum terisi
+    try {
+      const { data: rawMats } = await supabaseAdmin
+        .from('raw_materials')
+        .select('id, name, code, material_category')
+        .is('deleted_at', null);
+
+      if (rawMats && rawMats.length > 0) {
+        const findRm = (keywords: string[]) =>
+          rawMats.find((rm: any) =>
+            keywords.some(
+              (k) =>
+                rm.name.toLowerCase().includes(k) ||
+                (rm.code && rm.code.toLowerCase().includes(k))
+            )
+          )?.id;
+
+        const mushroomId = findRm(['jamur tiram segar', 'jamur tiram', 'jmr-trm']) || rawMats[0]?.id;
+        const premixId = findRm(['tepung premix', 'premix', 'rm-prx']) || rawMats[1]?.id;
+        const oilId = findRm(['minyak goreng', 'minyak', 'rm-miny']) || rawMats[2]?.id;
+
+        // Pastikan minimal ada 1 resep dasar goreng
+        if (!mergedConfig.bom_recipes || mergedConfig.bom_recipes.length === 0) {
+          mergedConfig.bom_recipes = [...DEFAULT_PRODUCTION_STANDARDS.bom_recipes];
+        }
+
+        // Auto-link bom_recipes
+        mergedConfig.bom_recipes = mergedConfig.bom_recipes.map((r: any) => ({
+          ...r,
+          raw_mushroom_id: r.raw_mushroom_id || mushroomId,
+          premix_flour_id: r.premix_flour_id || premixId,
+          cooking_oil_id: r.cooking_oil_id || oilId,
+        }));
+
+        // Auto-link seasoning per variant
+        const baladoId = findRm(['balado', 'bt-bld']);
+        const bbqId = findRm(['barbeque', 'bbq', 'bt-bbq']);
+        const pmId = findRm(['pedas manis', 'bt-pm']);
+        const spId = findRm(['super pedas', 'bt-sp']);
+        const oriId = findRm(['gurih', 'paket bumbu', 'rm-pake', 'ori']) || findRm(['bumbu']);
+        const pouchId = findRm(['kemasan bantal', 'packaging', 'pck', 'rm-kema']) || findRm(['pouch', 'kemasan']);
+        const toplesId = findRm(['toples', 'rm-topl']);
+
+        const defaultSeasonings = DEFAULT_PRODUCTION_STANDARDS.seasoning_per_variant || [];
+        const existingSeasonings = mergedConfig.seasoning_per_variant || defaultSeasonings;
+
+        mergedConfig.seasoning_per_variant = existingSeasonings.map((s: any) => {
+          let sId = s.seasoning_material_id;
+          if (!sId) {
+            if (s.variant === 'Balado') sId = baladoId;
+            else if (s.variant === 'BBQ') sId = bbqId;
+            else if (s.variant === 'Pedas Manis') sId = pmId;
+            else if (s.variant === 'Super Pedas') sId = spId;
+            else if (s.variant === 'Original') sId = oriId;
+          }
+          return {
+            ...s,
+            seasoning_material_id: sId,
+            packaging_material_id: s.packaging_material_id || (s.packaging_type === 'Toples' ? toplesId : pouchId),
+          };
+        });
+
+        // Auto-link packaging configs
+        if (!mergedConfig.packaging_configs || mergedConfig.packaging_configs.length === 0) {
+          mergedConfig.packaging_configs = [...(DEFAULT_PRODUCTION_STANDARDS.packaging_configs || [])];
+        }
+        mergedConfig.packaging_configs = mergedConfig.packaging_configs.map((p: any) => ({
+          ...p,
+          packaging_material_id:
+            p.packaging_material_id ||
+            (p.packaging_type.toLowerCase().includes('toples') ? toplesId : pouchId),
+        }));
+      }
+    } catch (enrichErr) {
+      console.warn('Auto-match raw materials warning:', enrichErr);
     }
 
-    return { success: true, data: { ...DEFAULT_PRODUCTION_STANDARDS, ...data.value } };
+    return { success: true, data: mergedConfig };
   } catch (err: any) {
     console.error('getProductionStandards error:', err);
     return { success: true, data: DEFAULT_PRODUCTION_STANDARDS };

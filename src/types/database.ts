@@ -402,6 +402,21 @@ export interface BomRecipe {
   seasoning_ratio: number;
 }
 
+export interface PackagingConfig {
+  packaging_type: string;
+  packaging_material_id?: string;
+  packaging_name: string;
+  pieces_per_unit: number;
+}
+
+export interface SeasoningConfig {
+  variant: FlavorVariant;
+  seasoning_ratio_per_kg: number;
+  seasoning_name: string;
+  seasoning_material_id?: string;
+  packaging_material_id?: string;
+}
+
 export interface ProductionStandardConfig {
   min_yield_percentage: number;
   warning_yield_percentage: number;
@@ -415,12 +430,7 @@ export interface ProductionStandardConfig {
   bom_recipes: BomRecipe[];
   premix_recipes?: PremixRecipe[];
   seasoning_per_variant?: SeasoningConfig[];
-}
-
-export interface SeasoningConfig {
-  variant: FlavorVariant;
-  seasoning_ratio_per_kg: number;
-  seasoning_name: string;
+  packaging_configs?: PackagingConfig[];
 }
 
 export interface DefectCategoryConfig {

@@ -6,6 +6,22 @@ export interface AuthGuardResult {
   user: SessionPayload;
 }
 
+interface CachedUserStatus {
+  role: UserRole;
+  is_active: boolean;
+  expiresAt: number;
+}
+
+const userAuthCache = new Map<string, CachedUserStatus>();
+
+export function invalidateUserAuthCache(userId?: string) {
+  if (userId) {
+    userAuthCache.delete(userId);
+  } else {
+    userAuthCache.clear();
+  }
+}
+
 /**
  * Strict role-based guard for Server Actions & Route Handlers.
  * Throws Error if unauthorized or forbidden.
@@ -19,28 +35,53 @@ export async function requireAuth(allowedRoles?: UserRole[]): Promise<AuthGuardR
     throw new Error('UNAUTHORIZED: Silakan masuk terlebih dahulu');
   }
 
-  // Double check active status in database
-  const { data: dbUser, error } = await supabaseAdmin
-    .from('users')
-    .select('id, role, is_active')
-    .eq('id', session.userId)
-    .single();
+  const now = Date.now();
+  let dbUserRole = session.role;
+  let isActive = true;
 
-  if (error || !dbUser || !dbUser.is_active) {
+  const cached = userAuthCache.get(session.userId);
+  if (cached && cached.expiresAt > now) {
+    dbUserRole = cached.role;
+    isActive = cached.is_active;
+  } else {
+    // Check active status in database
+    const { data: dbUser, error } = await supabaseAdmin
+      .from('users')
+      .select('id, role, is_active')
+      .eq('id', session.userId)
+      .single();
+
+    if (error || !dbUser || !dbUser.is_active) {
+      userAuthCache.delete(session.userId);
+      throw new Error('UNAUTHORIZED: Akun Anda tidak aktif atau tidak ditemukan');
+    }
+
+    dbUserRole = dbUser.role as UserRole;
+    isActive = dbUser.is_active;
+
+    // Cache valid user status for 60 seconds
+    userAuthCache.set(session.userId, {
+      role: dbUserRole,
+      is_active: isActive,
+      expiresAt: now + 60_000,
+    });
+  }
+
+  if (!isActive) {
     throw new Error('UNAUTHORIZED: Akun Anda tidak aktif atau tidak ditemukan');
   }
 
   // Check role authorization (SUPER_ADMIN always has access)
   if (allowedRoles && allowedRoles.length > 0) {
-    if (dbUser.role !== 'SUPER_ADMIN' && !allowedRoles.includes(dbUser.role as UserRole)) {
-      throw new Error(`FORBIDDEN: Peran ${dbUser.role} tidak memiliki hak akses ke modul ini`);
+    if (dbUserRole !== 'SUPER_ADMIN' && !allowedRoles.includes(dbUserRole as UserRole)) {
+      throw new Error(`FORBIDDEN: Peran ${dbUserRole} tidak memiliki hak akses ke modul ini`);
     }
   }
 
   return {
     user: {
       ...session,
-      role: dbUser.role as UserRole,
+      role: dbUserRole as UserRole,
     },
   };
 }

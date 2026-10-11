@@ -5,6 +5,21 @@ import { requireAuth } from '@/lib/auth-guard';
 import { logAuditEvent } from '@/actions/audit';
 import { revalidatePath } from 'next/cache';
 
+interface CachedSetting {
+  value: any;
+  expiresAt: number;
+}
+
+const settingsCache = new Map<string, CachedSetting>();
+
+export async function invalidateSettingCache(key?: string) {
+  if (key) {
+    settingsCache.delete(key);
+  } else {
+    settingsCache.clear();
+  }
+}
+
 /**
  * Get setting value by key
  */
@@ -14,6 +29,12 @@ export async function getSettingAction(key: string): Promise<{
   error?: string;
 }> {
   try {
+    const now = Date.now();
+    const cached = settingsCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      return { success: true, value: cached.value };
+    }
+
     const { data, error } = await supabaseAdmin
       .from('settings')
       .select('key, value, updated_at')
@@ -23,6 +44,9 @@ export async function getSettingAction(key: string): Promise<{
     if (error) {
       return { success: false, error: error.message };
     }
+
+    // Cache setting for 30 seconds
+    settingsCache.set(key, { value: data?.value, expiresAt: now + 30_000 });
 
     return { success: true, value: data?.value };
   } catch (err: any) {
@@ -53,6 +77,9 @@ export async function saveSettingAction(
     if (error) {
       return { success: false, error: error.message };
     }
+
+    // Invalidate cached key
+    settingsCache.delete(key);
 
     await logAuditEvent({
       userId: currentUser.userId,

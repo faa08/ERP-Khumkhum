@@ -20,9 +20,12 @@ export function AuthGuard({ children, requiredPermission }: AuthGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
-  const [maintenanceMode, setMaintenanceMode] = useState<{ isActive: boolean; message: string } | null>(null);
+  const [maintenanceMode, setMaintenanceMode] = useState<{ isActive: boolean; message: string }>({
+    isActive: false,
+    message: '',
+  });
 
-  // Fetch Maintenance Mode status
+  // Fetch Maintenance Mode status asynchronously without blocking render
   useEffect(() => {
     async function checkMaintenance() {
       const res = await getSettingAction('maintenance_mode');
@@ -31,8 +34,6 @@ export function AuthGuard({ children, requiredPermission }: AuthGuardProps) {
           isActive: !!res.value.isActive,
           message: res.value.message || 'Sistem sedang dalam pemeliharaan (maintenance) rutin.'
         });
-      } else {
-        setMaintenanceMode({ isActive: false, message: '' });
       }
     }
     checkMaintenance();
@@ -57,7 +58,7 @@ export function AuthGuard({ children, requiredPermission }: AuthGuardProps) {
   }, [isAuthenticated, isLoading, user, router, pathname, requiredPermission]);
 
   // Loading state
-  if (isLoading || isAuthorized === null || maintenanceMode === null) {
+  if (isLoading || isAuthorized === null) {
     return (
       <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
         <span>Loading...</span>

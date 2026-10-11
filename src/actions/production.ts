@@ -47,7 +47,7 @@ export async function getProductionOrders(): Promise<{
         creator:users!production_orders_created_by_fkey(id, name)
       `)
       .order('created_at', { ascending: false })
-      .limit(100);
+      .limit(50);
 
     if (error) throw error;
 

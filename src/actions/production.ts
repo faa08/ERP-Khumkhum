@@ -670,8 +670,8 @@ export async function getProductionFormOptions(): Promise<{
     await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE', 'MANAGEMENT']);
 
     const [{ data: products }, { data: rawMaterials }, { data: inventory }] = await Promise.all([
-      supabaseAdmin.from('products').select('*').order('name'),
-      supabaseAdmin.from('raw_materials').select('*').order('name'),
+      supabaseAdmin.from('products').select('*').is('deleted_at', null).order('name'),
+      supabaseAdmin.from('raw_materials').select('*').is('deleted_at', null).order('name'),
       supabaseAdmin.from('inventory').select('item_id, quantity').eq('item_type', 'RAW_MATERIAL'),
     ]);
 
@@ -725,10 +725,11 @@ export async function getSpkSuggestions(): Promise<{
   try {
     await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE', 'MANAGEMENT']);
 
-    // 1. Get all products
+    // 1. Get all active products
     const { data: products } = await supabaseAdmin
       .from('products')
       .select('id, name, sku')
+      .is('deleted_at', null)
       .order('name');
 
     if (!products || products.length === 0) {
@@ -1600,7 +1601,7 @@ export async function syncPackedGoodsToSalesInventory(
     // 2. Cari produk yang cocok di tabel products
     let matchedProduct: any = null;
     try {
-      const { data: prods } = await supabaseAdmin.from('products').select('*');
+      const { data: prods } = await supabaseAdmin.from('products').select('*').is('deleted_at', null);
       if (prods && prods.length > 0) {
         // Coba cari nama produk yang memuat nama rasa dan berat
         matchedProduct = prods.find((p: any) => {

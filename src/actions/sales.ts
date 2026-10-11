@@ -82,7 +82,7 @@ export async function getSalesRealtimeTracking(): Promise<{
     // 1. Ambil produk dari Supabase (dan fallback default)
     let productsList: any[] = [];
     try {
-      const { data: prods } = await supabaseAdmin.from('products').select('*').order('name');
+      const { data: prods } = await supabaseAdmin.from('products').select('*').is('deleted_at', null).order('name');
       if (prods && prods.length > 0) {
         productsList = prods;
       }

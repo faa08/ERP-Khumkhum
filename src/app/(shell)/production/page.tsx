@@ -2699,8 +2699,8 @@ export default function ProductionPage() {
           <FormField label="Varian Produk (Hasil Akhir)" required>
             <Select
               options={[
-                { value: '', label: '-- Pilih Varian Produk --' },
-                ...products.map(p => ({ value: p.id, label: p.name }))
+                { value: '', label: '-- Pilih Varian Produk (Master Data) --' },
+                ...products.map(p => ({ value: p.id, label: `${p.name}${p.sku ? ` (${p.sku})` : ''}` }))
               ]}
               value={spkForm.product_id}
               onChange={(e) => setSpkForm({ ...spkForm, product_id: e.target.value })}

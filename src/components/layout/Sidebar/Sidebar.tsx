@@ -144,6 +144,38 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
   },
 ];
 
+function getAllHrefs(groups: ProtectedNavGroup[]): string[] {
+  const hrefs: string[] = [];
+  function collect(items: NavItem[]) {
+    for (const item of items) {
+      if (item.href) hrefs.push(item.href);
+      if (item.children) collect(item.children);
+    }
+  }
+  for (const g of groups) {
+    collect(g.items);
+  }
+  return hrefs;
+}
+
+const ALL_NAV_HREFS = getAllHrefs(NAV_GROUPS);
+
+export function isNavActive(itemHref: string | undefined, currentPath: string, allHrefs: string[] = ALL_NAV_HREFS): boolean {
+  if (!itemHref) return false;
+  if (currentPath === itemHref) return true;
+  if (!currentPath.startsWith(itemHref + '/')) return false;
+
+  // Jika currentPath diawali itemHref + '/', pastikan tidak ada menu nav lain yang lebih spesifik
+  const hasMoreSpecificMatch = allHrefs.some(
+    (otherHref) =>
+      otherHref !== itemHref &&
+      otherHref.length > itemHref.length &&
+      (currentPath === otherHref || currentPath.startsWith(otherHref + '/'))
+  );
+
+  return !hasMoreSpecificMatch;
+}
+
 // ─────────────────────────────────────────────
 // SIDEBAR ITEM
 // ─────────────────────────────────────────────
@@ -156,11 +188,24 @@ interface SidebarItemProps {
 
 function SidebarItem({ item, isCollapsed, depth = 0 }: SidebarItemProps) {
   const pathname = usePathname();
-  const [isExpanded, setIsExpanded] = useState(false);
 
-  const isActive = item.href
-    ? pathname === item.href || pathname.startsWith(item.href + '/')
-    : false;
+  const isChildActive = React.useMemo(() => {
+    if (!item.children || item.children.length === 0) return false;
+    const checkChild = (children: NavItem[]): boolean => {
+      return children.some(c => isNavActive(c.href, pathname) || (c.children && checkChild(c.children)));
+    };
+    return checkChild(item.children);
+  }, [item.children, pathname]);
+
+  const [isExpanded, setIsExpanded] = useState(isChildActive);
+
+  React.useEffect(() => {
+    if (isChildActive) {
+      setIsExpanded(true);
+    }
+  }, [isChildActive]);
+
+  const isActive = isNavActive(item.href, pathname);
   const hasChildren = item.children && item.children.length > 0;
   const icon = item.icon ? ICON_MAP[item.icon] : null;
 

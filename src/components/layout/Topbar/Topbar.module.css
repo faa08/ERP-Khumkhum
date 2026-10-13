@@ -228,7 +228,8 @@
 .notifHeaderLeft {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
+  min-width: 0;
 }
 
 .notifHeaderTitle {
@@ -236,23 +237,40 @@
   font-weight: 700;
   color: var(--ink, #2A1810);
   margin: 0;
+  white-space: nowrap;
 }
 
 .notifCountPill {
   display: inline-flex;
   align-items: center;
-  padding: 1px 7px;
+  gap: 5px;
+  padding: 3px 8px;
   border-radius: var(--radius-full);
-  font-size: 10px;
-  font-weight: 700;
-  background-color: rgba(220, 38, 38, 0.12);
-  color: var(--color-danger-700, #B91C1C);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background-color: #FEF2F2;
+  color: #B91C1C;
+  border: 1px solid #FECACA;
+  box-shadow: 0 1px 2px rgba(220, 38, 38, 0.05);
+}
+
+.notifCountDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: #DC2626;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 .notifHeaderActions {
   display: flex;
   align-items: center;
   gap: var(--space-1);
+  flex-shrink: 0;
 }
 
 .notifTextBtn {

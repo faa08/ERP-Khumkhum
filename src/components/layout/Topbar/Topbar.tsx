@@ -168,6 +168,7 @@ export function Topbar() {
                   <h3 className={styles.notifHeaderTitle}>Pemberitahuan Pabrik</h3>
                   {unreadCount > 0 && (
                     <span className={styles.notifCountPill}>
+                      <span className={styles.notifCountDot} aria-hidden="true" />
                       {unreadCount} Baru
                     </span>
                   )}

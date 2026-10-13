@@ -1,0 +1,191 @@
+/**
+ * KhumKhum ERP — Modern Form Controls Styling
+ * Memberikan styling premium, seragam, dan nyaman untuk semua form controls (select, input, addon)
+ */
+
+/* ─── NATIVE & CUSTOM SELECT CONTROLS ─── */
+select,
+.input-select {
+  display: block;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: var(--bg-surface, #FFFBF2);
+  border: 1.5px solid var(--border-default, rgba(139, 94, 60, 0.22));
+  border-radius: var(--radius-md, 8px);
+  padding: 8px 36px 8px 12px;
+  font-size: var(--font-size-sm, 13px);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  color: var(--text-primary, #2A1810);
+  line-height: 1.4;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238B5E3C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px 16px;
+  cursor: pointer;
+  transition: border-color var(--transition-fast, 0.15s ease), box-shadow var(--transition-fast, 0.15s ease), background-color var(--transition-fast, 0.15s ease);
+  box-shadow: 0 1px 2px rgba(42, 24, 16, 0.04);
+}
+
+select:hover:not(:disabled),
+.input-select:hover:not(:disabled) {
+  border-color: var(--mushroom, #8B5E3C);
+  background-color: #FFFFFF;
+}
+
+select:focus-visible,
+select:focus,
+.input-select:focus {
+  outline: none;
+  border-color: var(--chili, #D31F26);
+  box-shadow: 0 0 0 3px rgba(211, 31, 38, 0.15);
+  background-color: #FFFFFF;
+}
+
+select:disabled,
+.input-select:disabled {
+  background-color: rgba(240, 224, 184, 0.35);
+  color: var(--text-tertiary, #8B7265);
+  cursor: not-allowed;
+  opacity: 0.8;
+  border-color: rgba(139, 94, 60, 0.15);
+}
+
+select option {
+  background-color: #FFFDF8;
+  color: var(--text-primary, #2A1810);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* ─── INPUT GROUP (INPUT DENGAN SATUAN / ADDON) ─── */
+.input-group {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  position: relative;
+  border-radius: var(--radius-md, 8px);
+}
+
+.input-group > input,
+.input-group > .input {
+  flex: 1;
+  min-width: 0;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-right: none !important;
+  background-color: var(--bg-surface, #FFFBF2);
+  border: 1.5px solid var(--border-default, rgba(139, 94, 60, 0.22));
+  padding: 8px 12px;
+  font-size: var(--font-size-sm, 13px);
+  color: var(--text-primary, #2A1810);
+  border-radius: var(--radius-md, 8px);
+  transition: all 0.15s ease;
+}
+
+.input-group > input:hover:not(:disabled) {
+  border-color: var(--mushroom, #8B5E3C);
+}
+
+.input-group > input:focus {
+  outline: none;
+  border-color: var(--chili, #D31F26);
+  box-shadow: 0 0 0 3px rgba(211, 31, 38, 0.15);
+  z-index: 1;
+}
+
+.input-group-addon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  background-color: var(--cream-dark, #F2ECE1);
+  color: var(--ink-soft, #5A4234);
+  border: 1.5px solid var(--border-default, rgba(139, 94, 60, 0.22));
+  border-left: 1px solid rgba(139, 94, 60, 0.15);
+  border-top-right-radius: var(--radius-md, 8px);
+  border-bottom-right-radius: var(--radius-md, 8px);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
+/* ─── FORMULA CARD SPECIFIC STYLING ─── */
+.formula-card {
+  padding: 16px;
+  border-radius: var(--radius-lg, 12px);
+  border: 1.5px solid rgba(139, 94, 60, 0.18);
+  background: linear-gradient(180deg, #FFFDF8 0%, #FAF5EB 100%);
+  box-shadow: 0 2px 6px rgba(42, 24, 16, 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.2s ease;
+}
+
+.formula-card:hover {
+  border-color: rgba(139, 94, 60, 0.35);
+  box-shadow: 0 4px 12px rgba(42, 24, 16, 0.06);
+}
+
+.formula-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.formula-card-badge-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background-color: var(--color-primary-700, #8B5E3C);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.formula-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink, #2A1810);
+}
+
+.formula-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2.5px 8px;
+  border-radius: var(--radius-full, 9999px);
+  background-color: rgba(139, 94, 60, 0.10);
+  color: var(--color-primary-800, #6E4527);
+  white-space: nowrap;
+}
+
+.formula-tag--primary {
+  background-color: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+}
+
+.formula-tag--coating {
+  background-color: #E0E7FF;
+  color: #3730A3;
+  border: 1px solid #C7D2FE;
+}
+
+.formula-tag--oil {
+  background-color: #FEF3DC;
+  color: #C96A16;
+  border: 1px solid #FED7AA;
+}

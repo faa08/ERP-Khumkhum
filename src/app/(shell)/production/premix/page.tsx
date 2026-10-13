@@ -286,14 +286,6 @@ export default function PremixProductionPage() {
               <select
                 value={form.premix_item_id}
                 onChange={e => setForm({ ...form, premix_item_id: e.target.value })}
-                style={{
-                  width: '100%',
-                  padding: 'var(--space-2) var(--space-3)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-default)',
-                  background: 'var(--bg-default)',
-                  fontSize: 'var(--text-sm)',
-                }}
               >
                 <option value="">-- Pilih Target Hasil Racikan --</option>
                 {premixItems.map(item => (
@@ -370,14 +362,7 @@ export default function PremixProductionPage() {
                   <select
                     value={ing.inventory_id}
                     onChange={e => handleUpdateIngredient(ing._id, 'inventory_id', e.target.value)}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: 'var(--radius-md)',
-                      border: '1px solid var(--border-default)',
-                      background: 'var(--bg-default)',
-                      fontSize: 'var(--text-xs)',
-                    }}
+                    style={{ flex: 1, minWidth: 0 }}
                   >
                     <option value="">-- Pilih Bahan Baku Gudang --</option>
                     {ingredients.map(inv => (

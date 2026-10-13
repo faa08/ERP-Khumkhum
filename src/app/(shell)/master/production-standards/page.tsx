@@ -345,100 +345,148 @@ export default function ProductionStandardsPage() {
             </div>
 
             {/* Frying Formula Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
               {/* 1. Jamur Mentah */}
-              <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-default)', background: 'var(--bg-default)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>1. Jamur Tiram Bersih</strong>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>Bahan Baku Utama</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <select
-                    disabled={isManagement}
-                    className="input"
-                    style={{ width: '100%' }}
-                    value={baseFryingRecipe.raw_mushroom_id || ''}
-                    onChange={(e) => updateBaseRecipe({ raw_mushroom_id: e.target.value })}
-                  >
-                    <option value="" disabled>-- Pilih Bahan Jamur --</option>
-                    {rawMaterials.filter(rm => rm.name.toLowerCase().includes('jamur')).map(rm => (
-                      <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                    ))}
-                  </select>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Input
-                      disabled={isManagement}
-                      type="number"
-                      step="0.1"
-                      value={baseFryingRecipe.raw_mushroom_ratio}
-                      onChange={(e) => updateBaseRecipe({ raw_mushroom_ratio: Number(e.target.value) })}
-                    />
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>kg (Basis Rasio)</span>
+              <div className="formula-card">
+                <div className="formula-card-header">
+                  <div className="formula-card-title">
+                    <span className="formula-card-badge-num">1</span>
+                    <strong>Jamur Tiram Bersih</strong>
                   </div>
+                  <span className="formula-tag formula-tag--primary">Bahan Baku Utama</span>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      Pilih Material Gudang:
+                    </label>
+                    <select
+                      disabled={isManagement}
+                      value={baseFryingRecipe.raw_mushroom_id || ''}
+                      onChange={(e) => updateBaseRecipe({ raw_mushroom_id: e.target.value })}
+                    >
+                      <option value="" disabled>-- Pilih Bahan Jamur --</option>
+                      {rawMaterials.filter(rm => rm.name.toLowerCase().includes('jamur')).map(rm => (
+                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      Takaran Basis Rasio:
+                    </label>
+                    <div className="input-group">
+                      <input
+                        disabled={isManagement}
+                        type="number"
+                        step="0.1"
+                        value={baseFryingRecipe.raw_mushroom_ratio}
+                        onChange={(e) => updateBaseRecipe({ raw_mushroom_ratio: Number(e.target.value) })}
+                      />
+                      <span className="input-group-addon">kg (Basis Acuan)</span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '-2px' }}>
+                    Dasar acuan 1.0 unit rasio bahan penggorengan
+                  </span>
                 </div>
               </div>
 
               {/* 2. Tepung Premiks */}
-              <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-default)', background: 'var(--bg-default)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>2. Tepung Premiks</strong>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>Campuran Pelapis</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <select
-                    disabled={isManagement}
-                    className="input"
-                    style={{ width: '100%' }}
-                    value={baseFryingRecipe.premix_flour_id || ''}
-                    onChange={(e) => updateBaseRecipe({ premix_flour_id: e.target.value })}
-                  >
-                    <option value="" disabled>-- Pilih Bahan Premiks --</option>
-                    {rawMaterials.filter(rm => rm.name.toLowerCase().includes('premix') || rm.name.toLowerCase().includes('tepung')).map(rm => (
-                      <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                    ))}
-                  </select>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Input
-                      disabled={isManagement}
-                      type="number"
-                      step="0.01"
-                      value={baseFryingRecipe.premix_flour_ratio}
-                      onChange={(e) => updateBaseRecipe({ premix_flour_ratio: Number(e.target.value) })}
-                    />
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>kg per 1 kg jamur</span>
+              <div className="formula-card">
+                <div className="formula-card-header">
+                  <div className="formula-card-title">
+                    <span className="formula-card-badge-num">2</span>
+                    <strong>Tepung Premiks</strong>
                   </div>
+                  <span className="formula-tag formula-tag--coating">Campuran Pelapis</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      Pilih Material Gudang:
+                    </label>
+                    <select
+                      disabled={isManagement}
+                      value={baseFryingRecipe.premix_flour_id || ''}
+                      onChange={(e) => updateBaseRecipe({ premix_flour_id: e.target.value })}
+                    >
+                      <option value="" disabled>-- Pilih Bahan Premiks --</option>
+                      {rawMaterials.filter(rm => rm.name.toLowerCase().includes('premix') || rm.name.toLowerCase().includes('tepung')).map(rm => (
+                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      Rasio Pemakaian per 1 kg Jamur:
+                    </label>
+                    <div className="input-group">
+                      <input
+                        disabled={isManagement}
+                        type="number"
+                        step="0.01"
+                        value={baseFryingRecipe.premix_flour_ratio}
+                        onChange={(e) => updateBaseRecipe({ premix_flour_ratio: Number(e.target.value) })}
+                      />
+                      <span className="input-group-addon">kg / 1 kg jamur</span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '-2px' }}>
+                    Tepung pelapis bumbu krispi KhumKhum
+                  </span>
                 </div>
               </div>
 
               {/* 3. Minyak Goreng */}
-              <div style={{ padding: 'var(--space-3)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-default)', background: 'var(--bg-default)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>3. Minyak Goreng</strong>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>Media Menggoreng</span>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <select
-                    disabled={isManagement}
-                    className="input"
-                    style={{ width: '100%' }}
-                    value={baseFryingRecipe.cooking_oil_id || ''}
-                    onChange={(e) => updateBaseRecipe({ cooking_oil_id: e.target.value })}
-                  >
-                    <option value="" disabled>-- Pilih Minyak Goreng --</option>
-                    {rawMaterials.filter(rm => rm.name.toLowerCase().includes('minyak')).map(rm => (
-                      <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                    ))}
-                  </select>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Input
-                      disabled={isManagement}
-                      type="number"
-                      step="0.01"
-                      value={baseFryingRecipe.cooking_oil_ratio}
-                      onChange={(e) => updateBaseRecipe({ cooking_oil_ratio: Number(e.target.value) })}
-                    />
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>liter per 1 kg jamur</span>
+              <div className="formula-card">
+                <div className="formula-card-header">
+                  <div className="formula-card-title">
+                    <span className="formula-card-badge-num">3</span>
+                    <strong>Minyak Goreng</strong>
                   </div>
+                  <span className="formula-tag formula-tag--oil">Media Menggoreng</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      Pilih Material Gudang:
+                    </label>
+                    <select
+                      disabled={isManagement}
+                      value={baseFryingRecipe.cooking_oil_id || ''}
+                      onChange={(e) => updateBaseRecipe({ cooking_oil_id: e.target.value })}
+                    >
+                      <option value="" disabled>-- Pilih Minyak Goreng --</option>
+                      {rawMaterials.filter(rm => rm.name.toLowerCase().includes('minyak')).map(rm => (
+                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      Rasio Pemakaian per 1 kg Jamur:
+                    </label>
+                    <div className="input-group">
+                      <input
+                        disabled={isManagement}
+                        type="number"
+                        step="0.01"
+                        value={baseFryingRecipe.cooking_oil_ratio}
+                        onChange={(e) => updateBaseRecipe({ cooking_oil_ratio: Number(e.target.value) })}
+                      />
+                      <span className="input-group-addon">liter / 1 kg jamur</span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '-2px' }}>
+                    Estimasi pemakaian minyak per kilogram jamur
+                  </span>
                 </div>
               </div>
             </div>
@@ -618,17 +666,18 @@ export default function ProductionStandardsPage() {
                     key={seasoning.variant}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '160px 1fr 140px 1fr',
-                      gap: 'var(--space-3)',
+                      gridTemplateColumns: '170px 1.2fr 1.1fr 1.2fr',
+                      gap: 'var(--space-4)',
                       alignItems: 'center',
-                      padding: 'var(--space-3)',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'var(--bg-subtle)',
-                      border: '1px solid var(--border-default)',
+                      padding: '16px',
+                      borderRadius: 'var(--radius-lg, 12px)',
+                      background: 'linear-gradient(180deg, #FFFDF8 0%, #FAF5EB 100%)',
+                      border: '1.5px solid rgba(139, 94, 60, 0.18)',
+                      boxShadow: '0 1px 3px rgba(42, 24, 16, 0.04)',
                     }}
                   >
                     <div>
-                      <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', display: 'block' }}>
+                      <strong style={{ fontSize: '14px', color: 'var(--text-primary)', display: 'block' }}>
                         Varian {seasoning.variant}
                       </strong>
                       <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
@@ -637,13 +686,11 @@ export default function ProductionStandardsPage() {
                     </div>
 
                     <div>
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                         Bahan Bumbu Tabur:
-                      </span>
+                      </label>
                       <select
                         disabled={isManagement}
-                        className="input"
-                        style={{ width: '100%' }}
                         value={seasoning.seasoning_material_id || ''}
                         onChange={(e) => updateSeasoningConfig(sIdx, { seasoning_material_id: e.target.value })}
                       >
@@ -655,31 +702,27 @@ export default function ProductionStandardsPage() {
                     </div>
 
                     <div>
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                        Rasio Bumbu:
-                      </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Input
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                        Rasio Bumbu per kg Jamur:
+                      </label>
+                      <div className="input-group">
+                        <input
                           disabled={isManagement}
                           type="number"
                           step="0.005"
                           value={seasoning.seasoning_ratio_per_kg}
                           onChange={(e) => updateSeasoningConfig(sIdx, { seasoning_ratio_per_kg: Number(e.target.value) })}
                         />
-                        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                          kg/kg ({ratioGram}g)
-                        </span>
+                        <span className="input-group-addon">{ratioGram}g / kg</span>
                       </div>
                     </div>
 
                     <div>
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                         Bahan Kemasan Standar:
-                      </span>
+                      </label>
                       <select
                         disabled={isManagement}
-                        className="input"
-                        style={{ width: '100%' }}
                         value={seasoning.packaging_material_id || ''}
                         onChange={(e) => updateSeasoningConfig(sIdx, { packaging_material_id: e.target.value })}
                       >
@@ -709,19 +752,18 @@ export default function ProductionStandardsPage() {
                 <div
                   key={pkg.packaging_type}
                   style={{
-                    padding: 'var(--space-3)',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-default)',
-                    background: 'var(--bg-default)',
+                    padding: '16px',
+                    borderRadius: 'var(--radius-lg, 12px)',
+                    border: '1.5px solid rgba(139, 94, 60, 0.18)',
+                    background: 'linear-gradient(180deg, #FFFDF8 0%, #FAF5EB 100%)',
+                    boxShadow: '0 1px 3px rgba(42, 24, 16, 0.04)',
                   }}
                 >
-                  <strong style={{ fontSize: 'var(--text-sm)', display: 'block', marginBottom: '4px' }}>{pkg.packaging_type}</strong>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Material Gudang Terhubung:</span>
+                  <strong style={{ fontSize: '13.5px', color: 'var(--ink, #2A1810)', display: 'block', marginBottom: '6px' }}>{pkg.packaging_type}</strong>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>Material Gudang Terhubung:</label>
                     <select
                       disabled={isManagement}
-                      className="input"
-                      style={{ width: '100%' }}
                       value={pkg.packaging_material_id || ''}
                       onChange={(e) => updatePackagingConfig(pIdx, { packaging_material_id: e.target.value })}
                     >

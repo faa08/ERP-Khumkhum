@@ -177,11 +177,11 @@ export function Topbar() {
                   <button
                     type="button"
                     onClick={loadNotifications}
-                    className={styles.notifTextBtn}
+                    className={styles.notifIconBtn}
                     aria-label="Perbarui data notifikasi"
                     title="Segarkan data notifikasi"
                   >
-                    <RefreshCw className={cn('w-3 h-3', isRefreshing && 'animate-spin')} aria-hidden="true" />
+                    <RefreshCw className={cn('w-3.5 h-3.5', isRefreshing && 'animate-spin')} aria-hidden="true" />
                   </button>
                   {unreadCount > 0 && (
                     <button

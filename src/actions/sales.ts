@@ -110,16 +110,38 @@ export async function getSalesRealtimeTracking(): Promise<{
       console.warn('getSalesRealtimeTracking query inventory fallback:', err);
     }
 
-    // 3. Ambil data Sales Orders untuk menghitung reservasi & pengiriman
+    // 3. Ambil data Sales Orders untuk menghitung reservasi & pengiriman (Dioptimalkan)
+    let totalDbOrdersCount = 0;
+    try {
+      const { count } = await supabaseAdmin.from('sales_orders').select('*', { count: 'exact', head: true });
+      totalDbOrdersCount = count || 0;
+    } catch (err) {
+      console.warn('getSalesRealtimeTracking count fallback:', err);
+    }
+
     let allOrders: DbSalesOrder[] = [];
     try {
-      const { data: soData } = await supabaseAdmin
+      // Ambil seluruh pesanan aktif (PENDING & PROCESSING) untuk hitung reservasi real-time
+      const { data: activeSoData } = await supabaseAdmin
         .from('sales_orders')
         .select(`
           id, status, total_amount,
           items:sales_order_items(product_id, quantity, unit_price)
-        `);
-      if (soData) allOrders = soData as any[];
+        `)
+        .in('status', ['PENDING', 'PROCESSING']);
+
+      // Ambil transaksi selesai (SHIPPED & COMPLETED) terbaru untuk omzet dan rasio pemenuhan
+      const { data: completedSoData } = await supabaseAdmin
+        .from('sales_orders')
+        .select(`
+          id, status, total_amount,
+          items:sales_order_items(product_id, quantity, unit_price)
+        `)
+        .in('status', ['SHIPPED', 'COMPLETED'])
+        .order('order_date', { ascending: false })
+        .limit(500);
+
+      allOrders = [...((activeSoData as any[]) || []), ...((completedSoData as any[]) || [])];
     } catch (err) {
       console.warn('getSalesRealtimeTracking query sales orders fallback:', err);
     }
@@ -258,7 +280,7 @@ export async function getSalesRealtimeTracking(): Promise<{
       totalSoldShipped,
       totalRevenue,
       activeOrdersCount,
-      totalOrdersCount: allOrders.length,
+      totalOrdersCount: totalDbOrdersCount || allOrders.length,
       fulfillmentRate,
     };
 
@@ -304,7 +326,7 @@ export async function getSalesYears(): Promise<string[]> {
   }
 }
 
-export async function getSalesOrders(year?: string): Promise<{
+export async function getSalesOrders(year?: string, limit: number = 100): Promise<{
   success: boolean;
   data?: DbSalesOrder[];
   error?: string;
@@ -323,13 +345,14 @@ export async function getSalesOrders(year?: string): Promise<{
         )
       `)
       .order('order_date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(1000);
+      .order('created_at', { ascending: false });
 
     if (year && year !== 'ALL') {
       const startDate = `${year}-01-01T00:00:00Z`;
       const endDate = `${year}-12-31T23:59:59Z`;
-      query = query.gte('order_date', startDate).lte('order_date', endDate);
+      query = query.gte('order_date', startDate).lte('order_date', endDate).limit(500);
+    } else {
+      query = query.limit(limit);
     }
 
     const { data, error } = await query;

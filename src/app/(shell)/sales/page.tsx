@@ -96,10 +96,11 @@ export default function SalesPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Filters
+  const currentYearStr = useMemo(() => new Date().getFullYear().toString(), []);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [flavorFilter, setFlavorFilter] = useState<string>('ALL');
-  const [yearFilter, setYearFilter] = useState<string>('ALL');
-  const [availableYears, setAvailableYears] = useState<string[]>(['ALL']);
+  const [yearFilter, setYearFilter] = useState<string>(currentYearStr);
+  const [availableYears, setAvailableYears] = useState<string[]>([currentYearStr, 'ALL']);
 
   // Drawers & Modals
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -121,13 +122,15 @@ export default function SalesPage() {
 
   const toast = useToast();
 
-  const loadData = useCallback(async (showToast = false, currentYear = 'ALL') => {
+  const loadData = useCallback(async (showToast = false, selectedYear?: string) => {
     if (showToast) setIsRefreshing(true);
     else setIsLoading(true);
 
+    const yearToFetch = selectedYear !== undefined ? selectedYear : yearFilter;
+
     try {
       const [soRes, trackingRes, custRes, prodRes, yearsRes] = await Promise.all([
-        getSalesOrders(currentYear),
+        getSalesOrders(yearToFetch),
         getSalesRealtimeTracking(),
         getCustomers(),
         getProducts(),
@@ -138,7 +141,10 @@ export default function SalesPage() {
       if (trackingRes.success && trackingRes.data) setTracking(trackingRes.data);
       if (custRes.success && custRes.data) setCustomers(custRes.data as any);
       if (prodRes.success && prodRes.data) setProducts(prodRes.data as any);
-      if (yearsRes) setAvailableYears(['ALL', ...yearsRes]);
+      if (yearsRes) {
+        const uniqueYears = Array.from(new Set([currentYearStr, ...yearsRes]));
+        setAvailableYears([...uniqueYears, 'ALL']);
+      }
 
       if (showToast) {
         toast.success('Data stok packing & pesanan berhasil diperbarui secara real-time');
@@ -149,26 +155,31 @@ export default function SalesPage() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [toast]);
+  }, [toast, yearFilter, currentYearStr]);
 
   useEffect(() => {
-    loadData();
+    loadData(false, yearFilter);
 
-    // Supabase Realtime Subscription
+    // Debounce Supabase Realtime Subscription
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const handleRealtime = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        loadData(false, yearFilter);
+      }, 800);
+    };
+
     const channel = supabase
       .channel('sales_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales_orders' }, () => {
-        loadData(false);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'packing_entries' }, () => {
-        loadData(false);
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales_orders' }, handleRealtime)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'packing_entries' }, handleRealtime)
       .subscribe();
 
     return () => {
+      clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
-  }, [loadData]);
+  }, [loadData, yearFilter]);
 
   // Lookup map untuk stok produk jadi real-time
   const productsStockMap = useMemo(() => {
@@ -996,21 +1007,15 @@ export default function SalesPage() {
               <select
                 value={yearFilter}
                 onChange={e => {
-                  setYearFilter(e.target.value);
-                  loadData(false, e.target.value);
-                }}
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-default)',
-                  fontSize: '12px',
-                  background: 'var(--bg-default)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
+                  const val = e.target.value;
+                  setYearFilter(val);
+                  loadData(false, val);
                 }}
               >
                 {availableYears.map(year => (
-                  <option key={year} value={year}>{year === 'ALL' ? 'Semua' : year}</option>
+                  <option key={year} value={year}>
+                    {year === 'ALL' ? 'Semua (100 Terbaru)' : `Tahun ${year}`}
+                  </option>
                 ))}
               </select>
             </div>

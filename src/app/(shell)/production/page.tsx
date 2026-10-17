@@ -83,9 +83,10 @@ import {
   type CreatePackingEntryInput,
   type RecordFryingRunCompletionInput,
 } from '@/actions/production';
+import { getProductionStandards } from '@/actions/standards';
 import { supabase } from '@/lib/supabase';
 import { getPpicData } from '@/actions/ppic';
-import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry } from '@/types/database';
+import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry, ProductionStandardConfig } from '@/types/database';
 import { FLAVOR_VARIANTS, PACKAGING_TYPES, PACKAGING_WEIGHTS, isFryingSpk } from '@/types/database';
 
 // ─────────────────────────────────────────────
@@ -165,6 +166,7 @@ export default function ProductionPage() {
   const [orders, setOrders] = useState<DbProductionOrder[]>([]);
   const [products, setProducts] = useState<DbProduct[]>([]);
   const [rawMaterials, setRawMaterials] = useState<(DbRawMaterial & { available_stock?: number })[]>([]);
+  const [productionStandards, setProductionStandards] = useState<ProductionStandardConfig | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   // ── SPK Creation state ──
   const [createSpkOpen, setCreateSpkOpen] = useState(false);
@@ -291,6 +293,118 @@ export default function ProductionPage() {
     notes: '',
   });
 
+  // ── Standar Resep Bumbu Tabur & Kemasan Packing ──
+  const getSeasoningRatioForVariant = useCallback((variantName: string): { ratio: number; name: string } => {
+    const standardList = productionStandards?.seasoning_per_variant;
+    const matched = standardList?.find(s => s.variant.toLowerCase() === variantName.toLowerCase());
+    if (matched) {
+      return {
+        ratio: Number(matched.seasoning_ratio_per_kg) || 0.08,
+        name: matched.seasoning_name || `Bumbu Tabur ${variantName}`,
+      };
+    }
+    const vLower = variantName.toLowerCase();
+    if (vLower.includes('original')) return { ratio: 0.05, name: 'Bumbu Gurih Original' };
+    if (vLower.includes('super pedas')) return { ratio: 0.10, name: 'Bumbu Tabur Super Pedas' };
+    return { ratio: 0.08, name: `Bumbu Tabur ${variantName}` };
+  }, [productionStandards]);
+
+  const calculateRecipeSeasoningGram = useCallback((
+    flavor: string,
+    packCountStr: string,
+    packWeightStr: string,
+    longsongWeightStr?: string
+  ): number => {
+    const { ratio } = getSeasoningRatioForVariant(flavor);
+    const pcs = Number(packCountStr) || 0;
+    const cleanWeight = parseInt((packWeightStr || '60g').replace(/\D/g, ''), 10) || 60;
+
+    // Jika ada jumlah pcs kemasan yang ditentukan (misal 10 pcs @ 60g = 600g jamur)
+    if (pcs > 0) {
+      const totalWeightGrams = pcs * cleanWeight;
+      return Math.round(totalWeightGrams * ratio);
+    }
+
+    // Jika pcs belum ada tapi berat longsong ada
+    const lsWeight = Number(longsongWeightStr) || 0;
+    if (lsWeight > 0) {
+      return Math.round(lsWeight * ratio);
+    }
+
+    return 0;
+  }, [getSeasoningRatioForVariant]);
+
+  const matchedSeasoningInfo = useMemo(() => {
+    const flavor = (packingForm.flavor_variant || 'Original').trim();
+    const { ratio, name: recipeName } = getSeasoningRatioForVariant(flavor);
+    const sLower = flavor.toLowerCase();
+
+    const matchedRm = rawMaterials.find(rm => {
+      const rmName = rm.name.toLowerCase();
+      if (sLower.includes('balado')) return rmName.includes('balado');
+      if (sLower.includes('bbq')) return rmName.includes('bbq') || rmName.includes('barbeque');
+      if (sLower.includes('super pedas')) return rmName.includes('super pedas');
+      if (sLower.includes('pedas manis')) return rmName.includes('pedas manis') || rmName.includes('manis pedas');
+      if (sLower.includes('original')) return rmName.includes('gurih') || rmName.includes('original') || rmName.includes('asin');
+      if (sLower.includes('keju')) return rmName.includes('keju') || rmName.includes('cheese');
+      if (sLower.includes('jagung')) return rmName.includes('jagung');
+      return rmName.includes(sLower);
+    });
+
+    const neededGrams = Number(packingForm.seasoning_used_gram) || 0;
+    const isGramUom = matchedRm?.uom?.toLowerCase() === 'gram' || matchedRm?.uom?.toLowerCase() === 'gr';
+    const availableStockInGram = matchedRm
+      ? (isGramUom ? Number(matchedRm.available_stock || 0) : Number(matchedRm.available_stock || 0) * 1000)
+      : null;
+
+    const isStockSufficient = availableStockInGram !== null ? availableStockInGram >= neededGrams : true;
+    const stdRecommended = calculateRecipeSeasoningGram(
+      flavor,
+      packingForm.packaged_toples_count,
+      packingForm.packaging_weight_gram,
+      packingForm.longsong_weight_gram
+    );
+
+    return {
+      ratio,
+      recipeName,
+      matchedRm,
+      availableStockInGram,
+      isStockSufficient,
+      neededGrams,
+      stdRecommended,
+    };
+  }, [packingForm.flavor_variant, packingForm.seasoning_used_gram, packingForm.packaged_toples_count, packingForm.packaging_weight_gram, packingForm.longsong_weight_gram, getSeasoningRatioForVariant, calculateRecipeSeasoningGram, rawMaterials]);
+
+  const matchedPackagingInfo = useMemo(() => {
+    const pkgType = packingForm.packaging_type || 'Standing Pouch';
+    const pkgWeight = packingForm.packaging_weight_gram || '60g';
+    const neededPcs = (Number(packingForm.packaged_toples_count) || 0) + (Number(packingForm.defect_packaging_count) || 0);
+
+    const matchedRm = rawMaterials.find(rm => {
+      if (rm.material_category !== 'Packaging') return false;
+      const nameLower = rm.name.toLowerCase();
+      const pkgTypeLower = (rm.packaging_type || '').toLowerCase();
+      const typeMatch = pkgTypeLower.includes(pkgType.toLowerCase()) || nameLower.includes(pkgType.toLowerCase());
+      const weightMatch = (rm.package_weight || '').toLowerCase().includes(pkgWeight.toLowerCase()) || nameLower.includes(pkgWeight.toLowerCase());
+      return typeMatch && weightMatch;
+    }) || rawMaterials.find(rm => {
+      if (rm.material_category !== 'Packaging') return false;
+      const nameLower = rm.name.toLowerCase();
+      return nameLower.includes(pkgWeight.toLowerCase());
+    });
+
+    const availableStock = matchedRm ? Number(matchedRm.available_stock || 0) : null;
+    const isStockSufficient = availableStock !== null ? availableStock >= neededPcs : true;
+
+    return {
+      matchedRm,
+      neededPcs,
+      availableStock,
+      isStockSufficient,
+    };
+  }, [packingForm.packaging_type, packingForm.packaging_weight_gram, packingForm.packaged_toples_count, packingForm.defect_packaging_count, rawMaterials]);
+
   // ── Batch Stopwatch state (Per-batch inline timer: Running, Pause, Resume, Reset) ──
   interface BatchTimerState {
     status: 'RUNNING' | 'PAUSED' | 'IDLE';
@@ -390,12 +504,13 @@ export default function ProductionPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [ordersRes, optionsRes, fryingRes, packingRes, metricsRes] = await Promise.all([
+      const [ordersRes, optionsRes, fryingRes, packingRes, metricsRes, standardsRes] = await Promise.all([
         getProductionOrders(),
         getProductionFormOptions(),
         getAllFryingBatches(),
         getAllPackingEntries(),
         getFryingPackingMetrics(),
+        getProductionStandards(),
       ]);
 
       if (ordersRes.success && ordersRes.data) setOrders(ordersRes.data);
@@ -406,6 +521,7 @@ export default function ProductionPage() {
       if (fryingRes.success && fryingRes.data) setFryingBatches(fryingRes.data);
       if (packingRes.success && packingRes.data) setPackingEntries(packingRes.data);
       if (metricsRes.success && metricsRes.data) setFryingMetrics(metricsRes.data);
+      if (standardsRes?.success && standardsRes.data) setProductionStandards(standardsRes.data);
     } catch (err: any) {
       console.error('Gagal memuat data produksi:', err);
     } finally {
@@ -1203,10 +1319,10 @@ export default function ProductionPage() {
     const matchedWeight = PACKAGING_WEIGHTS.find(w => spkVariant.toLowerCase().includes(w.value.toLowerCase()))?.value || '100g';
     const matchedType = PACKAGING_TYPES.find(t => spkVariant.toLowerCase().includes(t.toLowerCase())) || 'Standing Pouch';
 
-    // Estimasi cerdas jumlah kemasan (pcs) & bumbu tabur (gram)
+    // Estimasi cerdas jumlah kemasan (pcs) & bumbu tabur (gram) sesuai standar resep
     const cleanPackGram = parseInt(matchedWeight.replace(/\D/g, ''), 10) || 100;
     const autoPcs = Math.max(1, Math.floor(avgWeightNum / cleanPackGram));
-    const autoSeasoning = Math.round(avgWeightNum * 0.054) || 25;
+    const autoSeasoning = calculateRecipeSeasoningGram(matchedFlavor, String(autoPcs), matchedWeight, avgWeightStr) || Math.round(avgWeightNum * 0.08);
 
     setPackingForm({
       production_order_id: spkId,
@@ -3431,7 +3547,20 @@ export default function ProductionPage() {
               <Select
                 options={FLAVOR_VARIANTS.map(v => ({ value: v, label: v }))}
                 value={packingForm.flavor_variant}
-                onChange={(e) => setPackingForm({ ...packingForm, flavor_variant: e.target.value })}
+                onChange={(e) => {
+                  const newFlavor = e.target.value;
+                  const calcSeasoning = calculateRecipeSeasoningGram(
+                    newFlavor,
+                    packingForm.packaged_toples_count,
+                    packingForm.packaging_weight_gram,
+                    packingForm.longsong_weight_gram
+                  );
+                  setPackingForm(prev => ({
+                    ...prev,
+                    flavor_variant: newFlavor,
+                    seasoning_used_gram: String(calcSeasoning),
+                  }));
+                }}
               />
             </FormField>
 
@@ -3452,13 +3581,18 @@ export default function ProductionPage() {
                 onChange={(e) => {
                   const val = e.target.value;
                   const lsNum = Number(val) || 0;
-                  const cleanPack = parseInt((packingForm.packaging_weight_gram || '100g').replace(/\D/g, ''), 10) || 100;
+                  const cleanPack = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
                   const autoPcs = lsNum > 0 ? Math.max(1, Math.floor(lsNum / cleanPack)) : '';
-                  const autoSeasoning = lsNum > 0 ? Math.round(lsNum * 0.054) : 0;
+                  const calcSeasoning = calculateRecipeSeasoningGram(
+                    packingForm.flavor_variant,
+                    String(autoPcs || '1'),
+                    packingForm.packaging_weight_gram,
+                    val
+                  );
                   setPackingForm(prev => ({
                     ...prev,
                     longsong_weight_gram: val,
-                    ...(autoPcs ? { packaged_toples_count: String(autoPcs), seasoning_used_gram: String(autoSeasoning) } : {}),
+                    ...(autoPcs ? { packaged_toples_count: String(autoPcs), seasoning_used_gram: String(calcSeasoning) } : {}),
                   }));
                 }}
                 placeholder="500"
@@ -3466,12 +3600,45 @@ export default function ProductionPage() {
             </FormField>
 
             <FormField label="Bumbu Tabur (gram)" required>
-              <Input
-                type="number" min="0" step="0.1"
-                value={packingForm.seasoning_used_gram}
-                onChange={(e) => setPackingForm({ ...packingForm, seasoning_used_gram: e.target.value })}
-                placeholder="25"
-              />
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <Input
+                  type="number" min="0" step="0.1"
+                  value={packingForm.seasoning_used_gram}
+                  onChange={(e) => setPackingForm({ ...packingForm, seasoning_used_gram: e.target.value })}
+                  placeholder="25"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const autoSeasoning = calculateRecipeSeasoningGram(
+                      packingForm.flavor_variant,
+                      packingForm.packaged_toples_count,
+                      packingForm.packaging_weight_gram,
+                      packingForm.longsong_weight_gram
+                    );
+                    setPackingForm(prev => ({ ...prev, seasoning_used_gram: String(autoSeasoning) }));
+                    toast.info(`Takaran bumbu disinkronkan ke resep standar (${autoSeasoning}g)`);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '0 10px',
+                    fontSize: '11px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-default)',
+                    color: 'var(--color-primary-700)',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    fontWeight: 500,
+                  }}
+                  title="Reset ke takaran resep standar otomatis"
+                >
+                  <RotateCcw className="w-3 h-3" aria-hidden="true" />
+                  <span>Reset Resep</span>
+                </button>
+              </div>
             </FormField>
           </div>
 
@@ -3491,13 +3658,20 @@ export default function ProductionPage() {
                     key={w.value}
                     type="button"
                     onClick={() => {
-                      const cleanPack = parseInt(w.value.replace(/\D/g, ''), 10) || 100;
+                      const cleanPack = parseInt(w.value.replace(/\D/g, ''), 10) || 60;
                       const lsNum = Number(packingForm.longsong_weight_gram) || 500;
                       const autoPcs = Math.max(1, Math.floor(lsNum / cleanPack));
+                      const calcSeasoning = calculateRecipeSeasoningGram(
+                        packingForm.flavor_variant,
+                        String(autoPcs),
+                        w.value,
+                        packingForm.longsong_weight_gram
+                      );
                       setPackingForm(prev => ({
                         ...prev,
                         packaging_weight_gram: w.value,
                         packaged_toples_count: String(autoPcs),
+                        seasoning_used_gram: String(calcSeasoning),
                       }));
                     }}
                     style={{
@@ -3520,13 +3694,20 @@ export default function ProductionPage() {
                 value={packingForm.packaging_weight_gram}
                 onChange={(e) => {
                   const newWeight = e.target.value;
-                  const cleanPack = parseInt(newWeight.replace(/\D/g, ''), 10) || 100;
+                  const cleanPack = parseInt(newWeight.replace(/\D/g, ''), 10) || 60;
                   const lsNum = Number(packingForm.longsong_weight_gram) || 500;
                   const autoPcs = Math.max(1, Math.floor(lsNum / cleanPack));
+                  const calcSeasoning = calculateRecipeSeasoningGram(
+                    packingForm.flavor_variant,
+                    String(autoPcs),
+                    newWeight,
+                    packingForm.longsong_weight_gram
+                  );
                   setPackingForm(prev => ({
                     ...prev,
                     packaging_weight_gram: newWeight,
                     packaged_toples_count: String(autoPcs),
+                    seasoning_used_gram: String(calcSeasoning),
                   }));
                 }}
               />
@@ -3538,7 +3719,20 @@ export default function ProductionPage() {
               <Input
                 type="number" min="1"
                 value={packingForm.packaged_toples_count}
-                onChange={(e) => setPackingForm({ ...packingForm, packaged_toples_count: e.target.value })}
+                onChange={(e) => {
+                  const newPcs = e.target.value;
+                  const calcSeasoning = calculateRecipeSeasoningGram(
+                    packingForm.flavor_variant,
+                    newPcs,
+                    packingForm.packaging_weight_gram,
+                    packingForm.longsong_weight_gram
+                  );
+                  setPackingForm(prev => ({
+                    ...prev,
+                    packaged_toples_count: newPcs,
+                    seasoning_used_gram: String(calcSeasoning),
+                  }));
+                }}
                 placeholder="Contoh: 5"
               />
             </FormField>
@@ -3568,9 +3762,9 @@ export default function ProductionPage() {
             </span>
           </FormField>
 
-          {/* Live Kalkulasi Box */}
+          {/* Live Kalkulasi & Integrasi Warehouse Box */}
           <div style={{
-            padding: '10px 14px',
+            padding: '12px 14px',
             borderRadius: 'var(--radius-md)',
             background: 'var(--color-primary-50)',
             border: '1px solid var(--color-primary-200)',
@@ -3578,17 +3772,101 @@ export default function ProductionPage() {
             color: 'var(--color-primary-900)',
             display: 'flex',
             flexDirection: 'column',
-            gap: '4px',
+            gap: '8px',
           }}>
-            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Sparkles className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-              <span>Ringkasan Alur Packing &amp; Integrasi Gudang &amp; QC:</span>
+            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
+                <span>Integrasi Resep Bumbu &amp; Stok Bahan Baku Warehouse:</span>
+              </div>
+              <span style={{
+                background: 'var(--color-primary-600)',
+                color: '#fff',
+                padding: '2px 8px',
+                borderRadius: 'var(--radius-full)',
+                fontSize: '11px',
+                fontWeight: 600,
+              }}>
+                Resep {packingForm.flavor_variant}: {(matchedSeasoningInfo.ratio * 100).toFixed(0)}% ({Math.round(matchedSeasoningInfo.ratio * 1000)}g/kg)
+              </span>
             </div>
-            <div>
-              {packingForm.longsongs_used_count || '1'} Longsong (~{packingForm.longsong_weight_gram || '500'}g) &rarr; menghasilkan <strong>{packingForm.packaged_toples_count || '0'} pcs</strong> {packingForm.flavor_variant} @{packingForm.packaging_weight_gram} ({packingForm.packaging_type}).
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '2px' }}>
+              {/* Kolom 1: Bumbu Tabur */}
+              <div style={{
+                background: '#fff',
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--color-primary-200)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, marginBottom: '2px' }}>
+                  <Scale className="w-3.5 h-3.5 text-[var(--color-primary-600)]" aria-hidden="true" />
+                  <span>Bumbu Tabur:</span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {matchedSeasoningInfo.matchedRm?.name || matchedSeasoningInfo.recipeName}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '12px', fontWeight: 600 }}>
+                  Dibutuhkan: <span style={{ color: 'var(--color-primary-700)' }}>{packingForm.seasoning_used_gram || '0'} gram</span>
+                </div>
+                <div style={{ fontSize: '10px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {matchedSeasoningInfo.isStockSufficient ? (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" aria-hidden="true" />
+                      <span className="text-emerald-700">
+                        Stok Gudang: {matchedSeasoningInfo.availableStockInGram !== null ? `${matchedSeasoningInfo.availableStockInGram.toLocaleString('id-ID')}g` : 'Tersedia'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-3 h-3 text-amber-600" aria-hidden="true" />
+                      <span className="text-amber-700 font-medium">
+                        Stok Gudang Kurang ({matchedSeasoningInfo.availableStockInGram?.toLocaleString('id-ID') || 0}g)
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Kolom 2: Kemasan Fisik */}
+              <div style={{
+                background: '#fff',
+                padding: '8px 10px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--color-primary-200)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, marginBottom: '2px' }}>
+                  <Package className="w-3.5 h-3.5 text-[var(--color-primary-600)]" aria-hidden="true" />
+                  <span>Kemasan Fisik:</span>
+                </div>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {matchedPackagingInfo.matchedRm?.name || `${packingForm.packaging_type} ${packingForm.packaging_weight_gram}`}
+                </div>
+                <div style={{ marginTop: '4px', fontSize: '12px', fontWeight: 600 }}>
+                  Dibutuhkan: <span style={{ color: 'var(--color-primary-700)' }}>{matchedPackagingInfo.neededPcs} pcs</span>
+                </div>
+                <div style={{ fontSize: '10px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {matchedPackagingInfo.isStockSufficient ? (
+                    <>
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" aria-hidden="true" />
+                      <span className="text-emerald-700">
+                        Stok Gudang: {matchedPackagingInfo.availableStock !== null ? `${matchedPackagingInfo.availableStock.toLocaleString('id-ID')} pcs` : 'Tersedia'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-3 h-3 text-amber-600" aria-hidden="true" />
+                      <span className="text-amber-700 font-medium">
+                        Stok Kemasan Kurang ({matchedPackagingInfo.availableStock || 0} pcs)
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
-            <div style={{ color: 'var(--color-primary-700)' }}>
-              Otomatis memotong <strong>{packingForm.seasoning_used_gram || '0'}g</strong> bumbu tabur &amp; <strong>{(Number(packingForm.packaged_toples_count) || 0) + (Number(packingForm.defect_packaging_count) || 0)} pcs</strong> kemasan dari gudang, serta masuk antrean inspeksi Quality Control (QC) sebelum dirilis ke penjualan.
+
+            <div style={{ color: 'var(--color-primary-800)', fontSize: '11px', lineHeight: 1.4, borderTop: '1px dashed var(--color-primary-200)', paddingTop: '6px' }}>
+              Saat disimpan, sistem secara otomatis memotong <strong>{packingForm.seasoning_used_gram || '0'}g bumbu {packingForm.flavor_variant}</strong> dan <strong>{matchedPackagingInfo.neededPcs} pcs kemasan</strong> dari warehouse bahan baku, serta meneruskan hasil packing ke antrean inspeksi Quality Control (QC).
             </div>
           </div>
 

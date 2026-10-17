@@ -1456,11 +1456,25 @@ async function deductFryingRawMaterials(
 /**
  * Otomatis potong stok bumbu tabur & bahan kemasan saat entri packing dicatat
  */
+const FLAVOR_SEASONING_KEYWORDS: Record<string, string[]> = {
+  balado: ['balado', 'bld'],
+  bbq: ['bbq', 'barbeque', 'barbecue'],
+  'pedas manis': ['pedas manis', 'manis pedas', 'bt-pm'],
+  'super pedas': ['super pedas', 'extra pedas', 'bt-sp'],
+  original: ['gurih', 'original', 'asin gurih', 'bumbu tabur original', 'paket bumbu'],
+  'jagung bakar': ['jagung bakar', 'jagung'],
+  keju: ['keju', 'cheese'],
+};
+
+/**
+ * Otomatis potong stok bumbu tabur & bahan kemasan saat entri packing dicatat
+ * Memastikan resep bumbu (sesuai rasio varian & gramatur kemasan) terpotong dari gudang bahan baku
+ */
 async function deductPackingMaterials(
   packingEntryId: string,
   input: CreatePackingEntryInput,
   userId?: string
-): Promise<void> {
+): Promise<{ success: boolean; seasoningGrams?: number; packagingCount?: number }> {
   try {
     const isEntryUuid = isValidUuid(packingEntryId);
     if (isEntryUuid) {
@@ -1471,81 +1485,139 @@ async function deductPackingMaterials(
         .like('reference_type', 'PRODUCTION_PACKING_%')
         .limit(1);
 
-      if (existingMov && existingMov.length > 0) return;
+      if (existingMov && existingMov.length > 0) {
+        return { success: true };
+      }
     }
 
     const stdRes = await getProductionStandards();
     const standards = stdRes?.data;
 
-    const flavor = input.flavor_variant || 'Original';
+    const flavor = (input.flavor_variant || 'Original').trim();
     const packCount = Number(input.packaged_toples_count) || 0;
     const pkgType = input.packaging_type || 'Standing Pouch';
+    const targetWeight = input.packaging_weight_gram || '60g';
+    const weightGramPerPack = parseInt(targetWeight.replace(/\D/g, ''), 10) || 60;
+    const defectCount = Number(input.defect_packaging_count) || 0;
 
-    // 1. Potong Stok Bumbu Tabur
+    // 1. Hitung Takaran Bumbu Tabur Sesuai Resep Standar Varian Rasa
     const seasoningConfig = standards?.seasoning_per_variant?.find(
       (s) => s.variant.toLowerCase() === flavor.toLowerCase()
     );
 
     let seasoningGrams = Number(input.seasoning_used_gram) || 0;
     if (seasoningGrams <= 0 && packCount > 0) {
-      const weightGramPerPack = parseInt((input.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
       const totalWeightKg = (packCount * weightGramPerPack) / 1000;
-      const ratioPerKg = Number(seasoningConfig?.seasoning_ratio_per_kg) || 0.054;
+      const ratioPerKg = Number(seasoningConfig?.seasoning_ratio_per_kg) || 0.08;
       seasoningGrams = Math.round(totalWeightKg * ratioPerKg * 1000);
     }
 
+    // ── Potong Stok Bumbu Tabur dari Warehouse Bahan Baku ──
     if (seasoningGrams > 0) {
       let seasoningMatId = seasoningConfig?.seasoning_material_id;
       if (!seasoningMatId) {
-        const { data: foundSeasoning } = await supabaseAdmin
+        const flavorKey = flavor.toLowerCase();
+        const keywords = FLAVOR_SEASONING_KEYWORDS[flavorKey] || [flavorKey];
+
+        const { data: allSeasonings } = await supabaseAdmin
           .from('raw_materials')
-          .select('id, uom')
-          .ilike('name', `%${flavor}%`)
-          .limit(1)
-          .maybeSingle();
-        seasoningMatId = foundSeasoning?.id;
+          .select('id, name, material_category, uom')
+          .is('deleted_at', null);
+
+        if (allSeasonings && allSeasonings.length > 0) {
+          const matched = allSeasonings.find((rm: any) => {
+            const nameL = rm.name.toLowerCase();
+            const catL = (rm.material_category || '').toLowerCase();
+            const isSeasoningType = catL.includes('seasoning') || catL.includes('bumbu') || nameL.includes('bumbu') || nameL.includes('tabur');
+            return isSeasoningType && keywords.some((k) => nameL.includes(k));
+          }) || allSeasonings.find((rm: any) => {
+            const nameL = rm.name.toLowerCase();
+            return keywords.some((k) => nameL.includes(k));
+          });
+
+          seasoningMatId = matched?.id;
+        }
       }
 
       if (seasoningMatId) {
         const { data: sInv } = await supabaseAdmin
           .from('inventory')
-          .select('id, quantity')
+          .select('id, quantity, warehouse_id')
           .eq('item_type', 'RAW_MATERIAL')
           .eq('item_id', seasoningMatId)
           .limit(1);
 
-        if (sInv && sInv.length > 0) {
-          const { data: rmDetail } = await supabaseAdmin.from('raw_materials').select('uom').eq('id', seasoningMatId).single();
+        let targetInvId = sInv && sInv.length > 0 ? sInv[0].id : null;
+        let currentInvQty = sInv && sInv.length > 0 ? Number(sInv[0].quantity) || 0 : 0;
+
+        // Auto-provision inventory slot di gudang bahan baku jika belum ada record
+        if (!targetInvId) {
+          const { data: whList } = await supabaseAdmin
+            .from('warehouses')
+            .select('id, name')
+            .is('deleted_at', null);
+          const mainWh = whList?.find((w: any) =>
+            w.name.toLowerCase().includes('bahan baku') ||
+            w.name.toLowerCase().includes('utama') ||
+            w.name.toLowerCase().includes('pabrik')
+          ) || whList?.[0];
+
+          if (mainWh?.id) {
+            const { data: newInv } = await supabaseAdmin
+              .from('inventory')
+              .insert({
+                warehouse_id: mainWh.id,
+                item_type: 'RAW_MATERIAL',
+                item_id: seasoningMatId,
+                quantity: 0,
+                last_updated_at: new Date().toISOString(),
+              })
+              .select('id, quantity')
+              .single();
+            if (newInv) {
+              targetInvId = newInv.id;
+              currentInvQty = 0;
+            }
+          }
+        }
+
+        if (targetInvId) {
+          const { data: rmDetail } = await supabaseAdmin
+            .from('raw_materials')
+            .select('name, uom')
+            .eq('id', seasoningMatId)
+            .single();
+
           const isGramUom = rmDetail?.uom?.toLowerCase() === 'gram' || rmDetail?.uom?.toLowerCase() === 'gr';
           const deductQty = isGramUom ? seasoningGrams : Math.round((seasoningGrams / 1000) * 1000) / 1000;
 
-          const newQty = Math.max(0, Number(sInv[0].quantity) - deductQty);
+          const newQty = Math.max(0, currentInvQty - deductQty);
           await supabaseAdmin
             .from('inventory')
             .update({ quantity: newQty, last_updated_at: new Date().toISOString() })
-            .eq('id', sInv[0].id);
+            .eq('id', targetInvId);
 
           await supabaseAdmin.from('stock_movements').insert({
-            inventory_id: sInv[0].id,
+            inventory_id: targetInvId,
             movement_type: 'OUT',
             quantity: deductQty,
             reference_id: isEntryUuid ? packingEntryId : null,
             reference_type: 'PRODUCTION_PACKING_SEASONING',
-            notes: `Bumbu tabur ${flavor} (${seasoningGrams}g) untuk kemasan ${packCount} pcs`,
+            notes: `Resep bumbu tabur ${flavor} (${seasoningGrams}g) untuk ${packCount} pcs @${targetWeight} [${rmDetail?.name || flavor}]`,
             created_by: userId || null,
           });
         }
       }
     }
 
-    // 2. Potong Stok Bahan Kemasan (Standing Pouch / Toples)
-    if (packCount > 0) {
+    // 2. Potong Stok Bahan Kemasan Fisik (Standing Pouch / Toples + Defect Scrap)
+    const totalPkgDeduct = packCount + defectCount;
+    if (totalPkgDeduct > 0) {
       let pkgMatId = seasoningConfig?.packaging_material_id;
 
       // Cek spesifik di raw_materials berdasarkan type, weight, dan flavor
       if (!pkgMatId) {
-        const targetWeight = input.packaging_weight_gram || '60g';
-        // 1. Coba cari kemasan cetak sablon rasa spesifik
+        // 1. Coba cari kemasan cetak sablon rasa spesifik & gramasi sama
         const { data: specificPkg } = await supabaseAdmin
           .from('raw_materials')
           .select('id')
@@ -1560,7 +1632,7 @@ async function deductPackingMaterials(
         if (specificPkg) {
           pkgMatId = specificPkg.id;
         } else {
-          // 2. Coba cari kemasan universal/polos dengan gramasi sama
+          // 2. Coba cari kemasan universal/polos dengan gramasi sama (misal Standing Pouch 60g)
           const { data: universalPkg } = await supabaseAdmin
             .from('raw_materials')
             .select('id')
@@ -1577,9 +1649,13 @@ async function deductPackingMaterials(
       }
 
       if (!pkgMatId && standards?.packaging_configs) {
-        const pkgMatch = standards.packaging_configs.find(p => p.packaging_type.toLowerCase().includes(pkgType.toLowerCase()));
+        const pkgMatch = standards.packaging_configs.find((p: any) =>
+          p.packaging_type.toLowerCase().includes(pkgType.toLowerCase()) ||
+          p.packaging_name.toLowerCase().includes(targetWeight.toLowerCase())
+        );
         pkgMatId = pkgMatch?.packaging_material_id;
       }
+
       if (!pkgMatId) {
         const isToples = pkgType.toLowerCase().includes('toples');
         const kw = isToples ? 'toples' : 'kemasan';
@@ -1596,32 +1672,73 @@ async function deductPackingMaterials(
       if (pkgMatId) {
         const { data: pInv } = await supabaseAdmin
           .from('inventory')
-          .select('id, quantity')
+          .select('id, quantity, warehouse_id')
           .eq('item_type', 'RAW_MATERIAL')
           .eq('item_id', pkgMatId)
           .limit(1);
 
-        if (pInv && pInv.length > 0) {
-          const newQty = Math.max(0, Number(pInv[0].quantity) - packCount);
+        let targetPkgInvId = pInv && pInv.length > 0 ? pInv[0].id : null;
+        let currentPkgQty = pInv && pInv.length > 0 ? Number(pInv[0].quantity) || 0 : 0;
+
+        // Auto-provision inventory slot jika belum ada
+        if (!targetPkgInvId) {
+          const { data: whList } = await supabaseAdmin
+            .from('warehouses')
+            .select('id, name')
+            .is('deleted_at', null);
+          const mainWh = whList?.find((w: any) =>
+            w.name.toLowerCase().includes('bahan baku') ||
+            w.name.toLowerCase().includes('utama') ||
+            w.name.toLowerCase().includes('pabrik')
+          ) || whList?.[0];
+
+          if (mainWh?.id) {
+            const { data: newInv } = await supabaseAdmin
+              .from('inventory')
+              .insert({
+                warehouse_id: mainWh.id,
+                item_type: 'RAW_MATERIAL',
+                item_id: pkgMatId,
+                quantity: 0,
+                last_updated_at: new Date().toISOString(),
+              })
+              .select('id, quantity')
+              .single();
+            if (newInv) {
+              targetPkgInvId = newInv.id;
+              currentPkgQty = 0;
+            }
+          }
+        }
+
+        if (targetPkgInvId) {
+          const newQty = Math.max(0, currentPkgQty - totalPkgDeduct);
           await supabaseAdmin
             .from('inventory')
             .update({ quantity: newQty, last_updated_at: new Date().toISOString() })
-            .eq('id', pInv[0].id);
+            .eq('id', targetPkgInvId);
 
           await supabaseAdmin.from('stock_movements').insert({
-            inventory_id: pInv[0].id,
+            inventory_id: targetPkgInvId,
             movement_type: 'OUT',
-            quantity: packCount,
+            quantity: totalPkgDeduct,
             reference_id: isEntryUuid ? packingEntryId : null,
             reference_type: 'PRODUCTION_PACKING_MATERIAL',
-            notes: `Pemakaian kemasan ${pkgType} sejumlah ${packCount} pcs`,
+            notes: `Pemakaian kemasan ${pkgType} ${targetWeight} (${packCount} pcs + defect ${defectCount} pcs) untuk ${flavor}`,
             created_by: userId || null,
           });
         }
       }
     }
+
+    return {
+      success: true,
+      seasoningGrams,
+      packagingCount: totalPkgDeduct,
+    };
   } catch (err) {
     console.warn('deductPackingMaterials warning:', err);
+    return { success: false };
   }
 }
 

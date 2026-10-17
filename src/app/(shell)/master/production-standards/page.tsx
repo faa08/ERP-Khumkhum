@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -23,12 +24,17 @@ import {
   ArrowRight,
   CheckCircle2,
   Calculator,
+  Lock,
+  RotateCcw,
+  Sparkles,
+  Database,
 } from 'lucide-react';
 import { getProductionStandards, saveProductionStandards } from '@/actions/standards';
 import { getProducts, getRawMaterials } from '@/actions/master';
 import type {
   ProductionStandardConfig,
   BomRecipe,
+  BomIngredientItem,
   DbProduct,
   DbRawMaterial,
   SeasoningConfig,
@@ -39,7 +45,7 @@ export default function ProductionStandardsPage() {
   const { user } = useAuth();
   const isManagement = user?.role === 'MANAGEMENT';
 
-  const [activeTab, setActiveTab] = useState<'FRYING' | 'PACKAGING' | 'PREMIX' | 'MACHINERY'>('FRYING');
+  const [activeTab, setActiveTab] = useState<'FRYING' | 'PACKAGING' | 'MACHINERY'>('FRYING');
 
   const [config, setConfig] = useState<ProductionStandardConfig>({
     min_yield_percentage: 80.0,
@@ -53,11 +59,12 @@ export default function ProductionStandardsPage() {
     default_allowance_factor: 0.15,
     bom_recipes: [
       {
-        product_name: 'Jamur Crispy (Resep Dasar Penggorengan)',
+        product_name: 'Jamur Crispy Polos (Resep Dasar Penggorengan Curah)',
         raw_mushroom_ratio: 1.0,
         premix_flour_ratio: 0.25,
         cooking_oil_ratio: 0.30,
-        seasoning_ratio: 0.05,
+        seasoning_ratio: 0.0,
+        ingredients: [],
       },
     ],
     premix_recipes: [],
@@ -69,7 +76,23 @@ export default function ProductionStandardsPage() {
   const [rawMaterials, setRawMaterials] = useState<DbRawMaterial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // State tambah bahan wajan baru
+  const [selectedFryingRawId, setSelectedFryingRawId] = useState('');
+  const [newFryingRatio, setNewFryingRatio] = useState('0.25');
+  const [isAddingFryingCustom, setIsAddingFryingCustom] = useState(false);
+
+  // State tambah varian rasa baru
+  const [newVariantName, setNewVariantName] = useState('');
+  const [isAddingVariant, setIsAddingVariant] = useState(false);
+
+  // State Simulasi Level 2 (Wajan Penggorengan Curah)
   const [simulatedBatchGram, setSimulatedBatchGram] = useState<number>(800);
+
+  // State Simulasi Level 3 (Finishing & Packing)
+  const [packingSimVariant, setPackingSimVariant] = useState<string>('Balado');
+  const [packingSimWeightGram, setPackingSimWeightGram] = useState<number>(60);
+  const [packingSimQty, setPackingSimQty] = useState<number>(100);
 
   const toast = useToast();
 
@@ -100,8 +123,17 @@ export default function ProductionStandardsPage() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    const res = await saveProductionStandards(config);
+    const updatedBom = [...(config.bom_recipes || [])];
+    if (updatedBom.length === 0) {
+      updatedBom.push({ ...baseFryingRecipe, ingredients: fryingIngredients });
+    } else {
+      updatedBom[0] = { ...updatedBom[0], ingredients: fryingIngredients };
+    }
+    const finalConfig = { ...config, bom_recipes: updatedBom };
+
+    const res = await saveProductionStandards(finalConfig);
     if (res.success) {
+      setConfig(finalConfig);
       toast.success('Standar parameter produksi & resep BOM berhasil disimpan');
     } else {
       toast.error(res.error || 'Gagal menyimpan konfigurasi standar');
@@ -115,62 +147,187 @@ export default function ProductionStandardsPage() {
       return config.bom_recipes[0];
     }
     return {
-      product_name: 'Jamur Crispy (Resep Dasar Penggorengan)',
+      product_name: 'Jamur Crispy Polos (Resep Dasar Penggorengan Curah)',
       raw_mushroom_ratio: 1.0,
       premix_flour_ratio: 0.25,
       cooking_oil_ratio: 0.30,
-      seasoning_ratio: 0.05,
+      seasoning_ratio: 0.0,
+      ingredients: [],
     };
   }, [config.bom_recipes]);
 
-  const updateBaseRecipe = (fields: Partial<BomRecipe>) => {
+  const updateBaseRecipe = useCallback((fields: Partial<BomRecipe>) => {
     const updatedRecipes = [...(config.bom_recipes || [])];
     if (updatedRecipes.length === 0) {
       updatedRecipes.push({ ...baseFryingRecipe, ...fields });
     } else {
       updatedRecipes[0] = { ...updatedRecipes[0], ...fields };
     }
-    setConfig({ ...config, bom_recipes: updatedRecipes });
-  };
+    setConfig(prev => ({ ...prev, bom_recipes: updatedRecipes }));
+  }, [config.bom_recipes, baseFryingRecipe]);
 
-  const handleAddAdditionalRecipe = () => {
-    const newRecipe: BomRecipe = {
-      product_name: 'Jamur Crispy Varian Khusus',
-      raw_mushroom_ratio: 1.0,
-      premix_flour_ratio: 0.25,
-      cooking_oil_ratio: 0.30,
-      seasoning_ratio: 0.05,
-    };
-    setConfig({ ...config, bom_recipes: [...(config.bom_recipes || []), newRecipe] });
-  };
+  // Daftar bahan baku wajan aktif (Dinamis dari Warehouse seperti Premix)
+  const fryingIngredients = useMemo<BomIngredientItem[]>(() => {
+    if (baseFryingRecipe.ingredients && baseFryingRecipe.ingredients.length > 0) {
+      return baseFryingRecipe.ingredients;
+    }
+    // Jika belum ada array ingredients, inisialisasi dari legacy data jika ada
+    const items: BomIngredientItem[] = [];
+    if (baseFryingRecipe.raw_mushroom_id) {
+      const rm = rawMaterials.find(r => r.id === baseFryingRecipe.raw_mushroom_id);
+      items.push({
+        raw_material_id: baseFryingRecipe.raw_mushroom_id,
+        name: rm?.name || 'Jamur Tiram Segar',
+        ratio_per_kg: Number(baseFryingRecipe.raw_mushroom_ratio) || 1.0,
+        uom: rm?.uom || 'kg',
+      });
+    }
+    if (baseFryingRecipe.premix_flour_id) {
+      const rm = rawMaterials.find(r => r.id === baseFryingRecipe.premix_flour_id);
+      items.push({
+        raw_material_id: baseFryingRecipe.premix_flour_id,
+        name: rm?.name || 'Tepung Premix KhumKhum',
+        ratio_per_kg: Number(baseFryingRecipe.premix_flour_ratio) || 0.25,
+        uom: rm?.uom || 'kg',
+      });
+    }
+    if (baseFryingRecipe.cooking_oil_id) {
+      const rm = rawMaterials.find(r => r.id === baseFryingRecipe.cooking_oil_id);
+      items.push({
+        raw_material_id: baseFryingRecipe.cooking_oil_id,
+        name: rm?.name || 'Minyak Goreng',
+        ratio_per_kg: Number(baseFryingRecipe.cooking_oil_ratio) || 0.30,
+        uom: rm?.uom || 'liter',
+      });
+    }
+    return items;
+  }, [baseFryingRecipe, rawMaterials]);
 
-  const handleRemoveRecipe = (index: number) => {
-    if (index === 0 && (config.bom_recipes || []).length === 1) {
-      toast.error('Resep dasar utama tidak boleh dihapus');
+  // Tambah bahan baru ke resep wajan
+  const handleAddFryingItem = () => {
+    if (!selectedFryingRawId) {
+      toast.error('Pilih bahan baku dari warehouse terlebih dahulu');
       return;
     }
-    const updated = (config.bom_recipes || []).filter((_, i) => i !== index);
-    setConfig({ ...config, bom_recipes: updated });
+    const rm = rawMaterials.find(r => r.id === selectedFryingRawId);
+    if (!rm) return;
+
+    if (fryingIngredients.some(i => i.raw_material_id === selectedFryingRawId)) {
+      toast.error(`${rm.name} sudah ada di daftar resep wajan`);
+      return;
+    }
+
+    const ratio = Number(newFryingRatio) || 0.1;
+    const updated = [
+      ...fryingIngredients,
+      {
+        raw_material_id: rm.id,
+        name: rm.name,
+        ratio_per_kg: ratio,
+        uom: rm.uom || 'kg',
+      },
+    ];
+
+    updateBaseRecipe({ ingredients: updated });
+    setSelectedFryingRawId('');
+    setNewFryingRatio('0.25');
+    setIsAddingFryingCustom(false);
+    toast.success(`${rm.name} berhasil ditambahkan & terkunci ke resep wajan.`);
   };
 
-  // ── Premix Recipe Helpers ──
-  const handleAddPremixRecipe = () => {
-    const newRecipe = {
-      premix_name: 'Tepung Premix KhumKhum',
-      output_qty: 10,
-      ingredients: [
-        { name: 'Tepung Terigu', qty: 8 },
-        { name: 'Tepung Tapioka', qty: 1 },
-        { name: 'Bawang Putih Bubuk', qty: 1 },
-      ],
-    };
-    setConfig({ ...config, premix_recipes: [...(config.premix_recipes || []), newRecipe] });
+  // Ubah rasio per kg bahan wajan
+  const handleChangeFryingRatio = (rawId: string, val: string) => {
+    const num = Number(val);
+    const updated = fryingIngredients.map(item =>
+      item.raw_material_id === rawId ? { ...item, ratio_per_kg: isNaN(num) ? 0 : num } : item
+    );
+    updateBaseRecipe({ ingredients: updated });
   };
 
-  const handleRemovePremixRecipe = (index: number) => {
-    const updated = (config.premix_recipes || []).filter((_, i) => i !== index);
-    setConfig({ ...config, premix_recipes: updated });
+  // Hapus satu bahan dari resep wajan
+  const handleRemoveFryingItem = (rawId: string) => {
+    const updated = fryingIngredients.filter(item => item.raw_material_id !== rawId);
+    updateBaseRecipe({ ingredients: updated });
   };
+
+  // Kosongkan seluruh bahan wajan
+  const handleClearFryingRecipe = () => {
+    updateBaseRecipe({
+      ingredients: [],
+      raw_mushroom_id: '',
+      premix_flour_id: '',
+      cooking_oil_id: '',
+      additional_ingredients: [],
+    });
+    toast.success('Daftar bahan wajan dikosongkan. Silakan tentukan bahan dari gudang.');
+  };
+
+  // Muat Formula Acuan Standar Pabrik
+  const handleLoadStandardFryingRecipe = () => {
+    const mushroom = rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur'));
+    const premix = rawMaterials.find(rm => rm.name.toLowerCase().includes('premix') || rm.name.toLowerCase().includes('tepung'));
+    const oil = rawMaterials.find(rm => rm.name.toLowerCase().includes('minyak'));
+
+    const items: BomIngredientItem[] = [];
+    if (mushroom) items.push({ raw_material_id: mushroom.id, name: mushroom.name, ratio_per_kg: 1.0, uom: mushroom.uom || 'kg' });
+    if (premix) items.push({ raw_material_id: premix.id, name: premix.name, ratio_per_kg: 0.25, uom: premix.uom || 'kg' });
+    if (oil) items.push({ raw_material_id: oil.id, name: oil.name, ratio_per_kg: 0.30, uom: oil.uom || 'liter' });
+
+    updateBaseRecipe({
+      ingredients: items,
+      raw_mushroom_id: mushroom?.id || '',
+      raw_mushroom_ratio: 1.0,
+      premix_flour_id: premix?.id || '',
+      premix_flour_ratio: 0.25,
+      cooking_oil_id: oil?.id || '',
+      cooking_oil_ratio: 0.30,
+    });
+    toast.success('Formula acuan standar wajan berhasil dimuat. Bahan terkunci, takaran rasio bebas disesuaikan.');
+  };
+
+  // ── Grouping Bahan Baku Kemasan & Bumbu untuk Dropdown Terstruktur ──
+  const packagingMaterials = useMemo(() => {
+    return rawMaterials.filter(rm => {
+      const cat = (rm.material_category || '').toLowerCase();
+      const name = (rm.name || '').toLowerCase();
+      return (
+        cat === 'packaging' ||
+        rm.uom === 'pcs' ||
+        name.includes('packaging') ||
+        name.includes('kemasan') ||
+        name.includes('pouch') ||
+        name.includes('toples') ||
+        name.includes('bantal') ||
+        name.includes('sachet') ||
+        name.includes('box')
+      );
+    });
+  }, [rawMaterials]);
+
+  const nonPackagingMaterials = useMemo(() => {
+    return rawMaterials.filter(rm => !packagingMaterials.includes(rm));
+  }, [rawMaterials, packagingMaterials]);
+
+  const seasoningMaterials = useMemo(() => {
+    return rawMaterials.filter(rm => {
+      const cat = (rm.material_category || '').toLowerCase();
+      const name = (rm.name || '').toLowerCase();
+      return (
+        cat === 'bumbu tabur' ||
+        name.includes('bumbu') ||
+        name.includes('seasoning') ||
+        name.includes('balado') ||
+        name.includes('barbeque') ||
+        name.includes('keju') ||
+        name.includes('pedas') ||
+        name.includes('jagung')
+      );
+    });
+  }, [rawMaterials]);
+
+  const nonSeasoningMaterials = useMemo(() => {
+    return rawMaterials.filter(rm => !seasoningMaterials.includes(rm));
+  }, [rawMaterials, seasoningMaterials]);
 
   // ── Seasoning / Packaging Helpers ──
   const updateSeasoningConfig = (index: number, fields: Partial<SeasoningConfig>) => {
@@ -181,6 +338,42 @@ export default function ProductionStandardsPage() {
     }
   };
 
+  const handleAddVariant = () => {
+    if (!newVariantName.trim()) {
+      toast.error('Masukkan nama varian rasa');
+      return;
+    }
+    const exists = (config.seasoning_per_variant || []).some(
+      s => s.variant.toLowerCase() === newVariantName.trim().toLowerCase()
+    );
+    if (exists) {
+      toast.error(`Varian ${newVariantName} sudah terdaftar`);
+      return;
+    }
+    const newSeasoning: SeasoningConfig = {
+      variant: newVariantName.trim() as any,
+      seasoning_name: `Bumbu Tabur ${newVariantName.trim()}`,
+      seasoning_ratio_per_kg: 0.08,
+      seasoning_material_id: '',
+      packaging_material_id: '',
+    };
+    setConfig(prev => ({
+      ...prev,
+      seasoning_per_variant: [...(prev.seasoning_per_variant || []), newSeasoning],
+    }));
+    setNewVariantName('');
+    setIsAddingVariant(false);
+    toast.success(`Varian rasa ${newSeasoning.variant} berhasil ditambahkan. Silakan tentukan bahan bumbu & kemasannya.`);
+  };
+
+  const handleRemoveVariant = (variantName: string) => {
+    setConfig(prev => ({
+      ...prev,
+      seasoning_per_variant: (prev.seasoning_per_variant || []).filter(s => s.variant !== variantName),
+    }));
+    toast.success(`Varian ${variantName} dihapus.`);
+  };
+
   const updatePackagingConfig = (index: number, fields: Partial<PackagingConfig>) => {
     const updated = [...(config.packaging_configs || [])];
     if (updated[index]) {
@@ -189,18 +382,22 @@ export default function ProductionStandardsPage() {
     }
   };
 
-  // Kalkulasi Simulasi Wajan
-  const simMushroomKg = simulatedBatchGram / 1000;
-  const simPremixKg = Math.round(simMushroomKg * (baseFryingRecipe.premix_flour_ratio || 0.25) * 1000) / 1000;
-  const simOilLiter = Math.round(simMushroomKg * (baseFryingRecipe.cooking_oil_ratio || 0.30) * 1000) / 1000;
-  const simOutputMinKg = Math.round(simMushroomKg * ((config.min_yield_percentage || 80) / 100) * 0.35 * 1000) / 1000;
-  const simOutputMaxKg = Math.round(simMushroomKg * 0.35 * 1000) / 1000;
+  // Kalkulasi Simulasi Wajan (Dinamis dari fryingIngredients)
+  const simScale = simulatedBatchGram / 1000;
+  const simOutputMinKg = Math.round(simScale * ((config.min_yield_percentage || 80) / 100) * 0.35 * 1000) / 1000;
+  const simOutputMaxKg = Math.round(simScale * 0.35 * 1000) / 1000;
+
+  // Kalkulasi Simulasi Finishing & Packing
+  const packingSimTotalMushroomKg = Math.round(((packingSimQty * packingSimWeightGram) / 1000) * 100) / 100;
+  const currentVariantSeasoning = (config.seasoning_per_variant || []).find(s => s.variant === packingSimVariant) || (config.seasoning_per_variant || [])[0];
+  const packingSimSeasoningRatio = currentVariantSeasoning?.seasoning_ratio_per_kg || 0.08;
+  const packingSimSeasoningGram = Math.round(packingSimTotalMushroomKg * packingSimSeasoningRatio * 1000);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <PageHeader
         title="Standar Manufaktur & Resep Formula (BOM)"
-        description="Konfigurasi integrasi alur pabrik: Resep dasar penggorengan jamur, bumbu & packaging per varian, formula premix, serta parameter rendemen."
+        description="Konfigurasi integrasi alur pabrik: Resep wajan curah, bumbu & packaging per varian, serta parameter efisiensi rendemen."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Standar Produksi' }]}
         actions={
           !isManagement ? (
@@ -222,17 +419,17 @@ export default function ProductionStandardsPage() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Layers className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
-              <strong style={{ fontSize: 'var(--text-base)' }}>Alur Integrasi Resep Manufaktur KhumKhum</strong>
+              <strong style={{ fontSize: 'var(--text-base)' }}>Standar Manufaktur &amp; Resep Formula (BOM)</strong>
             </div>
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', background: 'var(--bg-subtle)', padding: '4px 10px', borderRadius: '12px' }}>
-              Terintegrasi Otomatis dengan Modul Produksi & Stok Gudang
+              Formula bahan baku ditentukan bebas langsung dari warehouse
             </span>
           </div>
 
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
               gap: 'var(--space-3)',
               background: 'var(--bg-subtle)',
               padding: 'var(--space-3)',
@@ -240,90 +437,110 @@ export default function ProductionStandardsPage() {
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-primary-100)', color: 'var(--color-primary-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>1</div>
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-warning-100)', color: 'var(--color-warning-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>1</div>
               <div>
-                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Penggorengan Wajan</strong>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Jamur Segar + Premix + Minyak</span>
+                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Resep Wajan Curah</strong>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Bahan Baku Gudang Dipilih Bebas (Goreng Polos)</span>
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-warning-100)', color: 'var(--color-warning-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>2</div>
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-info-100)', color: 'var(--color-info-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>2</div>
               <div>
-                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Penirisan Minyak</strong>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Jamur Goreng Curah (Longsong)</span>
+                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Bumbu Tabur &amp; Kemasan</strong>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Formula Bumbu Supplier + Kemasan Gudang</span>
               </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-info-100)', color: 'var(--color-info-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>3</div>
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-success-100)', color: 'var(--color-success-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>3</div>
               <div>
-                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Bumbu & Packaging</strong>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Bumbu Tabur Rasa + Pouch / Toples</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-success-100)', color: 'var(--color-success-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>4</div>
-              <div>
-                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Produk Siap Jual</strong>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Stok Gudang Produk Jadi (FG)</span>
+                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Standar Mesin &amp; Rendemen</strong>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Suhu Penggorengan &amp; Target Rendemen Min 80%</span>
               </div>
             </div>
           </div>
         </div>
       </Card>
 
-      {/* NAVIGATION TABS */}
+      {/* NAVIGATION TABS (3 CORE TABS) */}
       <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', flexWrap: 'wrap' }}>
         <Button
           variant={activeTab === 'FRYING' ? 'primary' : 'ghost'}
           onClick={() => setActiveTab('FRYING')}
           leftIcon={<Flame className="w-4 h-4" aria-hidden="true" />}
         >
-          Resep Penggorengan (Goreng Jamur)
+          Resep Wajan Curah (Goreng Polos)
         </Button>
         <Button
           variant={activeTab === 'PACKAGING' ? 'primary' : 'ghost'}
           onClick={() => setActiveTab('PACKAGING')}
           leftIcon={<Package className="w-4 h-4" aria-hidden="true" />}
         >
-          Standar Bumbu & Packaging
-        </Button>
-        <Button
-          variant={activeTab === 'PREMIX' ? 'primary' : 'ghost'}
-          onClick={() => setActiveTab('PREMIX')}
-          leftIcon={<CookingPot className="w-4 h-4" aria-hidden="true" />}
-        >
-          Formula Tepung Premix
+          Standar Bumbu Tabur &amp; Kemasan
         </Button>
         <Button
           variant={activeTab === 'MACHINERY' ? 'primary' : 'ghost'}
           onClick={() => setActiveTab('MACHINERY')}
           leftIcon={<Sliders className="w-4 h-4" aria-hidden="true" />}
         >
-          Standar Mesin & Rendemen
+          Standar Mesin &amp; Rendemen
         </Button>
       </div>
 
-      {/* ── TAB 1: RESEP PENGGORENGAN (GORENG JAMUR) ── */}
+      {/* ═══════════════════════════════════════════════════════ */}
+      {/* ── TAB 1: RESEP PENGGORENGAN WAJAN (GORENG POLOS) ──    */}
+      {/* ═══════════════════════════════════════════════════════ */}
       {activeTab === 'FRYING' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {/* Main Base Recipe Card */}
           <Card
             header={
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Factory className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                  <strong>Resep BOM Dasar — Penggorengan Jamur Crispy (Tanpa Rasa)</strong>
+                  <Flame className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
+                  <div>
+                    <strong style={{ fontSize: 'var(--text-base)' }}>Resep Bahan Baku Wajan (Penggorengan Polos)</strong>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>
+                      Bahan baku gudang ditentukan mandiri dengan rasio per 1 kg basis wajan
+                    </span>
+                  </div>
                 </div>
-                <span style={{ fontSize: 'var(--text-xs)', background: 'var(--color-success-50)', color: 'var(--color-success-700)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                  Resep Standar Utama
-                </span>
+
+                {!isManagement && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleLoadStandardFryingRecipe}
+                      leftIcon={<RotateCcw size={12} />}
+                      style={{ fontSize: '11px', color: 'var(--color-primary-700)' }}
+                      title="Muat formula acuan standar wajan"
+                    >
+                      Muat Acuan Pabrik
+                    </Button>
+                    {fryingIngredients.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearFryingRecipe}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-tertiary)',
+                          fontSize: '11px',
+                          cursor: 'pointer',
+                          padding: '4px 6px',
+                        }}
+                        title="Kosongkan resep"
+                      >
+                        Kosongkan
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             }
           >
-            {/* Info callout tanpa emoji */}
+            {/* Callout Informasi */}
             <div
               style={{
                 display: 'flex',
@@ -340,161 +557,252 @@ export default function ProductionStandardsPage() {
             >
               <Info className="w-5 h-5 text-[var(--color-info-600)] shrink-0 mt-0.5" aria-hidden="true" />
               <div>
-                <strong>Ketentuan Penggorengan KhumKhum:</strong> Semua varian rasa (Original, Balado, BBQ, Pedas Manis, Super Pedas) menggunakan formula penggorengan dasar yang sama. Penggorengan dilakukan tanpa bumbu tabur. Penambahan bumbu rasa dan bahan kemasan diatur pada tahap <strong>Standar Bumbu & Packaging</strong>.
+                <strong>Ketentuan Penggorengan KhumKhum:</strong> Seluruh varian rasa digoreng dengan formula wajan yang sama secara <strong>POLOS TANPA BUMBU TABUR</strong>. Anda bebas memilih bahan apa saja dari warehouse (Jamur, Tepung Premix, Minyak, atau bahan racikan lain) beserta rasio pemakaiannya.
               </div>
             </div>
 
-            {/* Frying Formula Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
-              {/* 1. Jamur Mentah */}
-              <div className="formula-card">
-                <div className="formula-card-header">
-                  <div className="formula-card-title">
-                    <span className="formula-card-badge-num">1</span>
-                    <strong>Jamur Tiram Bersih</strong>
-                  </div>
-                  <span className="formula-tag formula-tag--primary">Bahan Baku Utama</span>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                      Pilih Material Gudang:
-                    </label>
-                    <select
-                      disabled={isManagement}
-                      value={baseFryingRecipe.raw_mushroom_id || ''}
-                      onChange={(e) => updateBaseRecipe({ raw_mushroom_id: e.target.value })}
-                    >
-                      <option value="" disabled>-- Pilih Bahan Jamur --</option>
-                      {rawMaterials.filter(rm => rm.name.toLowerCase().includes('jamur')).map(rm => (
-                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                      Takaran Basis Rasio:
-                    </label>
-                    <div className="input-group">
-                      <input
-                        disabled={isManagement}
-                        type="number"
-                        step="0.1"
-                        value={baseFryingRecipe.raw_mushroom_ratio}
-                        onChange={(e) => updateBaseRecipe({ raw_mushroom_ratio: Number(e.target.value) })}
-                      />
-                      <span className="input-group-addon">kg (Basis Acuan)</span>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '-2px' }}>
-                    Dasar acuan 1.0 unit rasio bahan penggorengan
+            {/* 1. KONDISI AWAL KOSONG (EMPTY STATE) */}
+            {fryingIngredients.length === 0 ? (
+              <div
+                style={{
+                  padding: '32px 16px',
+                  textAlign: 'center',
+                  background: 'var(--bg-subtle)',
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1.5px dashed var(--border-default)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: 'var(--space-4)',
+                }}
+              >
+                <CookingPot className="w-9 h-9 text-[var(--color-primary-600)]" />
+                <div>
+                  <strong style={{ fontSize: 'var(--text-sm)', display: 'block', color: 'var(--text-primary)' }}>
+                    Daftar Bahan Wajan Masih Kosong
+                  </strong>
+                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block', marginTop: '2px', maxWidth: '360px' }}>
+                    Tentukan sendiri bahan baku penggorengan langsung dari warehouse gudang atau muat formula acuan standar pabrik.
                   </span>
                 </div>
-              </div>
 
-              {/* 2. Tepung Premiks */}
-              <div className="formula-card">
-                <div className="formula-card-header">
-                  <div className="formula-card-title">
-                    <span className="formula-card-badge-num">2</span>
-                    <strong>Tepung Premiks</strong>
-                  </div>
-                  <span className="formula-tag formula-tag--coating">Campuran Pelapis</span>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                      Pilih Material Gudang:
-                    </label>
-                    <select
-                      disabled={isManagement}
-                      value={baseFryingRecipe.premix_flour_id || ''}
-                      onChange={(e) => updateBaseRecipe({ premix_flour_id: e.target.value })}
+                {!isManagement && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center', marginTop: '4px' }}>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleLoadStandardFryingRecipe}
+                      leftIcon={<Sparkles size={14} />}
                     >
-                      <option value="" disabled>-- Pilih Bahan Premiks --</option>
-                      {rawMaterials.filter(rm => rm.name.toLowerCase().includes('premix') || rm.name.toLowerCase().includes('tepung')).map(rm => (
-                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                      ))}
-                    </select>
+                      + Muat Formula Acuan Standar
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setIsAddingFryingCustom(true)}
+                      leftIcon={<Plus size={14} />}
+                    >
+                      + Tambah Bahan Baku Wajan
+                    </Button>
                   </div>
-
-                  <div>
-                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                      Rasio Pemakaian per 1 kg Jamur:
-                    </label>
-                    <div className="input-group">
-                      <input
-                        disabled={isManagement}
-                        type="number"
-                        step="0.01"
-                        value={baseFryingRecipe.premix_flour_ratio}
-                        onChange={(e) => updateBaseRecipe({ premix_flour_ratio: Number(e.target.value) })}
-                      />
-                      <span className="input-group-addon">kg / 1 kg jamur</span>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '-2px' }}>
-                    Tepung pelapis bumbu krispi KhumKhum
+                )}
+              </div>
+            ) : (
+              /* 2. DAFTAR BAHAN DINAMIS BEBAS DARI WAREHOUSE */
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: 'var(--space-4)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Bahan Baku Wajan Terdaftar ({fryingIngredients.length} bahan):
+                  </label>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                    Semua bahan terhubung ke stok gudang real-time
                   </span>
                 </div>
-              </div>
 
-              {/* 3. Minyak Goreng */}
-              <div className="formula-card">
-                <div className="formula-card-header">
-                  <div className="formula-card-title">
-                    <span className="formula-card-badge-num">3</span>
-                    <strong>Minyak Goreng</strong>
-                  </div>
-                  <span className="formula-tag formula-tag--oil">Media Menggoreng</span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 'var(--space-3)' }}>
+                  {fryingIngredients.map((ing, idx) => {
+                    const matchedRaw = rawMaterials.find(r => r.id === ing.raw_material_id);
+                    return (
+                      <div
+                        key={ing.raw_material_id || idx}
+                        style={{
+                          padding: '14px',
+                          borderRadius: 'var(--radius-lg, 10px)',
+                          background: 'linear-gradient(180deg, #FFFDF8 0%, #FAF5EB 100%)',
+                          border: '1.5px solid rgba(139, 94, 60, 0.18)',
+                          boxShadow: '0 1px 3px rgba(42, 24, 16, 0.04)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                        }}
+                      >
+                        {/* Header Kartu Bahan */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                            <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'var(--color-primary-100)', color: 'var(--color-primary-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>
+                              {idx + 1}
+                            </div>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <Lock size={12} style={{ color: 'var(--color-primary-700)', flexShrink: 0 }} />
+                                <strong style={{ fontSize: '13px', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ing.name}>
+                                  {ing.name}
+                                </strong>
+                              </div>
+                              <span style={{ fontSize: '10.5px', color: 'var(--text-tertiary)', display: 'block' }}>
+                                Master: {matchedRaw?.code || 'Gudang'} • {matchedRaw?.material_category || 'Bahan Baku'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {!isManagement && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFryingItem(ing.raw_material_id)}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--color-danger-600)',
+                                cursor: 'pointer',
+                                padding: '2px',
+                              }}
+                              title="Hapus bahan dari resep wajan"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Input Rasio */}
+                        <div>
+                          <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '3px' }}>
+                            Rasio per 1 kg Basis Wajan:
+                          </label>
+                          <div className="input-group">
+                            <input
+                              disabled={isManagement}
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={ing.ratio_per_kg}
+                              onChange={e => handleChangeFryingRatio(ing.raw_material_id, e.target.value)}
+                              style={{ fontSize: '12px', padding: '6px 8px' }}
+                            />
+                            <span className="input-group-addon" style={{ fontSize: '11px' }}>
+                              {ing.uom} / kg basis
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div>
-                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                      Pilih Material Gudang:
-                    </label>
-                    <select
-                      disabled={isManagement}
-                      value={baseFryingRecipe.cooking_oil_id || ''}
-                      onChange={(e) => updateBaseRecipe({ cooking_oil_id: e.target.value })}
+                {/* Tombol Tambah Bahan Lain */}
+                {!isManagement && (
+                  <div style={{ marginTop: '4px' }}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setIsAddingFryingCustom(true)}
+                      leftIcon={<Plus size={13} />}
+                      style={{ fontSize: '12px' }}
                     >
-                      <option value="" disabled>-- Pilih Minyak Goreng --</option>
-                      {rawMaterials.filter(rm => rm.name.toLowerCase().includes('minyak')).map(rm => (
-                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                      ))}
-                    </select>
+                      + Tambah Bahan Baku Wajan
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* MODAL / POPOVER PILIH BAHAN BARU */}
+            {isAddingFryingCustom && (
+              <div
+                style={{
+                  marginBottom: 'var(--space-4)',
+                  padding: '14px',
+                  background: 'var(--bg-default)',
+                  border: '1.5px solid var(--color-primary-300)',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '10px',
+                }}
+              >
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Pilih Bahan Baku Dari Gudang untuk Dimasukkan ke Resep Wajan:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr auto auto', gap: '8px', alignItems: 'center' }}>
+                  <select
+                    value={selectedFryingRawId}
+                    onChange={e => setSelectedFryingRawId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border-default)',
+                      background: 'var(--bg-default)',
+                      fontSize: 'var(--text-xs)',
+                      minHeight: '36px',
+                    }}
+                  >
+                    <option value="">
+                      {rawMaterials.length === 0
+                        ? '-- Belum ada bahan baku di warehouse --'
+                        : `-- Pilih Bahan Baku Gudang (${rawMaterials.length} bahan tersedia) --`}
+                    </option>
+                    {rawMaterials.map(rm => {
+                      const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
+                      return (
+                        <option key={rm.id} value={rm.id}>
+                          {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="Rasio"
+                      value={newFryingRatio}
+                      onChange={e => setNewFryingRatio(e.target.value)}
+                      style={{ fontSize: '12px', padding: '6px 8px', minHeight: '36px' }}
+                    />
+                    <span className="input-group-addon" style={{ fontSize: '11px' }}>
+                      per kg
+                    </span>
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                      Rasio Pemakaian per 1 kg Jamur:
-                    </label>
-                    <div className="input-group">
-                      <input
-                        disabled={isManagement}
-                        type="number"
-                        step="0.01"
-                        value={baseFryingRecipe.cooking_oil_ratio}
-                        onChange={(e) => updateBaseRecipe({ cooking_oil_ratio: Number(e.target.value) })}
-                      />
-                      <span className="input-group-addon">liter / 1 kg jamur</span>
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '-2px' }}>
-                    Estimasi pemakaian minyak per kilogram jamur
-                  </span>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleAddFryingItem}
+                    style={{ fontSize: '12px', minHeight: '36px' }}
+                  >
+                    Kunci &amp; Masukkan
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setIsAddingFryingCustom(false);
+                      setSelectedFryingRawId('');
+                    }}
+                    style={{ fontSize: '12px', minHeight: '36px' }}
+                  >
+                    Batal
+                  </Button>
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* LIVE SIMULATOR CARD */}
+            {/* LIVE SIMULATOR WAJAN (DINAMIS DARI SEMUA BAHAN AKTIF) */}
             <div
               style={{
-                marginTop: 'var(--space-4)',
                 padding: 'var(--space-3)',
                 borderRadius: 'var(--radius-md)',
                 background: 'var(--bg-subtle)',
@@ -504,11 +812,11 @@ export default function ProductionStandardsPage() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Calculator className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                  <strong>Simulasi Kebutuhan Wajan Otomatis (Live Preview)</strong>
+                  <strong>Simulasi Kebutuhan Wajan Penggorengan (Live Preview)</strong>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Kapasitas Wajan:</span>
-                  <div style={{ width: '100px' }}>
+                  <div style={{ width: '110px' }}>
                     <Input
                       type="number"
                       step="50"
@@ -521,119 +829,82 @@ export default function ProductionStandardsPage() {
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-2)' }}>
-                <div style={{ padding: '8px', borderRadius: '6px', background: 'var(--bg-default)' }}>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>Jamur Tiram:</span>
-                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>{simMushroomKg} kg ({simulatedBatchGram} gr)</strong>
-                </div>
-                <div style={{ padding: '8px', borderRadius: '6px', background: 'var(--bg-default)' }}>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>Tepung Premiks:</span>
-                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-700)' }}>{simPremixKg} kg ({Math.round(simPremixKg * 1000)} gr)</strong>
-                </div>
-                <div style={{ padding: '8px', borderRadius: '6px', background: 'var(--bg-default)' }}>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>Minyak Goreng:</span>
-                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-warning-700)' }}>{simOilLiter} L ({Math.round(simOilLiter * 1000)} ml)</strong>
-                </div>
-                <div style={{ padding: '8px', borderRadius: '6px', background: 'var(--bg-default)' }}>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>Estimasi Jamur Matang:</span>
-                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-success-700)' }}>~{Math.round(simOutputMinKg * 1000)} - {Math.round(simOutputMaxKg * 1000)} gr</strong>
+                {fryingIngredients.map((ing) => {
+                  const neededAmount = Math.round(simScale * Number(ing.ratio_per_kg || 0) * 1000) / 1000;
+                  return (
+                    <div key={ing.raw_material_id} style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {ing.name}:
+                      </span>
+                      <strong style={{ fontSize: '13.5px', color: 'var(--color-primary-700)' }}>
+                        {neededAmount} {ing.uom} ({Math.round(neededAmount * 1000)} {ing.uom === 'liter' ? 'ml' : 'gr'})
+                      </strong>
+                    </div>
+                  );
+                })}
+
+                <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Estimasi Jamur Curah (Longsong):</span>
+                  <strong style={{ fontSize: '13.5px', color: 'var(--color-success-700)' }}>
+                    ~{Math.round(simOutputMinKg * 1000)} - {Math.round(simOutputMaxKg * 1000)} gr
+                  </strong>
                 </div>
               </div>
             </div>
           </Card>
-
-          {/* Optional Additional Frying Recipes */}
-          {(config.bom_recipes || []).length > 1 && (
-            <Card header={<strong>Resep Penggorengan Khusus Tambahan</strong>}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                {(config.bom_recipes || []).slice(1).map((recipe, idx) => {
-                  const actualIdx = idx + 1;
-                  return (
-                    <div
-                      key={actualIdx}
-                      style={{
-                        padding: 'var(--space-3)',
-                        borderRadius: 'var(--radius-md)',
-                        background: 'var(--bg-subtle)',
-                        border: '1px solid var(--border-default)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Input
-                          style={{ maxWidth: '300px' }}
-                          value={recipe.product_name}
-                          onChange={(e) => {
-                            const updated = [...(config.bom_recipes || [])];
-                            updated[actualIdx].product_name = e.target.value;
-                            setConfig({ ...config, bom_recipes: updated });
-                          }}
-                        />
-                        {!isManagement && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRemoveRecipe(actualIdx)}
-                            aria-label={`Hapus resep ${recipe.product_name}`}
-                          >
-                            <Trash2 className="w-4 h-4 text-[var(--color-danger-600)]" aria-hidden="true" />
-                          </Button>
-                        )}
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px' }}>
-                        <div>
-                          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Rasio Premiks (kg/kg):</span>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={recipe.premix_flour_ratio}
-                            onChange={(e) => {
-                              const updated = [...(config.bom_recipes || [])];
-                              updated[actualIdx].premix_flour_ratio = Number(e.target.value);
-                              setConfig({ ...config, bom_recipes: updated });
-                            }}
-                          />
-                        </div>
-                        <div>
-                          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Rasio Minyak (L/kg):</span>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={recipe.cooking_oil_ratio}
-                            onChange={(e) => {
-                              const updated = [...(config.bom_recipes || [])];
-                              updated[actualIdx].cooking_oil_ratio = Number(e.target.value);
-                              setConfig({ ...config, bom_recipes: updated });
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          )}
-
-          {!isManagement && (
-            <div>
-              <Button variant="secondary" size="sm" onClick={handleAddAdditionalRecipe} leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />}>
-                Tambah Resep Penggorengan Khusus
-              </Button>
-            </div>
-          )}
         </div>
       )}
 
-      {/* ── TAB 2: STANDAR BUMBU & PACKAGING (PACKING) ── */}
+      {/* ═══════════════════════════════════════════════════════ */}
+      {/* ── TAB 2: STANDAR BUMBU TABUR & KEMASAN (PACKING) ──    */}
+      {/* ═══════════════════════════════════════════════════════ */}
       {activeTab === 'PACKAGING' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <Card
             header={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Package className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                <strong>Standar Bumbu Tabur & Bahan Kemasan per Varian Rasa (Tahap Packing)</strong>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Package className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
+                  <div>
+                    <strong style={{ fontSize: 'var(--text-base)' }}>Standar Bumbu Tabur &amp; Bahan Kemasan (Tahap Packing)</strong>
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>
+                      Pilih bebas bahan bumbu supplier &amp; kemasan gudang untuk setiap varian rasa
+                    </span>
+                  </div>
+                </div>
+
+                {!isManagement && (
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <Link
+                      href="/master/raw-materials?tab=PACKAGING"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: 'var(--color-primary-800, #5C3D2E)',
+                        background: 'var(--color-primary-50, #FDF8F0)',
+                        border: '1px solid var(--color-primary-300, #E0C9A6)',
+                        borderRadius: 'var(--radius-md, 6px)',
+                        padding: '6px 10px',
+                        textDecoration: 'none',
+                      }}
+                    >
+                      <Package size={13} />
+                      Tambah Kemasan
+                    </Link>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setIsAddingVariant(true)}
+                      leftIcon={<Plus size={13} />}
+                      style={{ fontSize: '12px' }}
+                    >
+                      + Tambah Varian Rasa
+                    </Button>
+                  </div>
+                )}
               </div>
             }
           >
@@ -653,7 +924,158 @@ export default function ProductionStandardsPage() {
             >
               <Info className="w-5 h-5 text-[var(--color-info-600)] shrink-0 mt-0.5" aria-hidden="true" />
               <div>
-                <strong>Alur Tahap Packing:</strong> Jamur goreng curah (longsong) ditimbang, dicampur bumbu tabur sesuai varian rasa, lalu dikemas ke dalam Standing Pouch / Toples. Saat operator mencatat packing di modul Produksi, stok bumbu tabur dan bahan kemasan akan otomatis terpotong sesuai standar rasio di bawah ini.
+                <strong>Alur Tahap Packing:</strong> Bumbu tabur adalah barang jadi yang dibeli dari supplier. Anda bebas memilih bahan bumbu apa saja dan bahan kemasan apa saja langsung dari warehouse tanpa batasan kata kunci.
+              </div>
+            </div>
+
+            {/* FORM TAMBAH VARIAN BARU */}
+            {isAddingVariant && (
+              <div
+                style={{
+                  marginBottom: 'var(--space-4)',
+                  padding: '14px',
+                  background: 'var(--bg-default)',
+                  border: '1.5px solid var(--color-primary-300)',
+                  borderRadius: 'var(--radius-md)',
+                  display: 'flex',
+                  gap: '8px',
+                  alignItems: 'center',
+                }}
+              >
+                <div style={{ flex: 1 }}>
+                  <Input
+                    placeholder="Nama varian baru (misal: Rumput Laut, Truffle, Salted Egg)..."
+                    value={newVariantName}
+                    onChange={e => setNewVariantName(e.target.value)}
+                    style={{ fontSize: '12px', minHeight: '36px' }}
+                  />
+                </div>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleAddVariant}
+                  style={{ fontSize: '12px', minHeight: '36px' }}
+                >
+                  Tambahkan Varian
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setIsAddingVariant(false);
+                    setNewVariantName('');
+                  }}
+                  style={{ fontSize: '12px', minHeight: '36px' }}
+                >
+                  Batal
+                </Button>
+              </div>
+            )}
+
+            {/* LIVE FINISHING PACKING SIMULATOR */}
+            <div
+              style={{
+                padding: 'var(--space-4)',
+                borderRadius: 'var(--radius-lg, 12px)',
+                background: 'var(--bg-subtle)',
+                border: '1px solid var(--border-default)',
+                marginBottom: 'var(--space-4)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 'var(--space-3)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Calculator className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
+                  <strong>Simulasi Kebutuhan Bumbu Tabur &amp; Kemasan (Live Preview)</strong>
+                </div>
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', background: 'var(--bg-default)', padding: '2px 8px', borderRadius: '4px' }}>
+                  Kalkulator Estimasi Kebutuhan Finishing
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-3)' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                    Varian Rasa Target:
+                  </label>
+                  <select
+                    value={packingSimVariant}
+                    onChange={(e) => setPackingSimVariant(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px solid var(--border-default)',
+                      fontSize: '12px',
+                    }}
+                  >
+                    {(config.seasoning_per_variant || []).map(s => (
+                      <option key={s.variant} value={s.variant}>{s.variant}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                    Ukuran Kemasan (Netto):
+                  </label>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {[30, 50, 60, 75, 100, 250, 500].map(w => (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setPackingSimWeightGram(w)}
+                        style={{
+                          padding: '3px 8px',
+                          fontSize: '11px',
+                          borderRadius: 'var(--radius-sm)',
+                          border: packingSimWeightGram === w ? '1px solid var(--color-primary-600)' : '1px solid var(--border-default)',
+                          background: packingSimWeightGram === w ? 'var(--color-primary-50)' : 'var(--bg-default)',
+                          color: packingSimWeightGram === w ? 'var(--color-primary-700)' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          fontWeight: packingSimWeightGram === w ? 700 : 400,
+                        }}
+                      >
+                        {w}g
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
+                    Target Kemasan Jadi:
+                  </label>
+                  <div className="input-group">
+                    <input
+                      type="number"
+                      step="10"
+                      value={packingSimQty}
+                      onChange={(e) => setPackingSimQty(Number(e.target.value) || 0)}
+                    />
+                    <span className="input-group-addon">pcs</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Simulation Result Metric Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-2)', marginTop: '4px' }}>
+                <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Jamur Curah (Longsong) Butuh:</span>
+                  <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{packingSimTotalMushroomKg} kg</strong>
+                </div>
+
+                <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Bumbu Tabur {packingSimVariant}:</span>
+                  <strong style={{ fontSize: '14px', color: 'var(--color-warning-700)' }}>{packingSimSeasoningGram} gram ({Math.round(packingSimSeasoningRatio * 100)}%)</strong>
+                </div>
+
+                <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Bahan Kemasan ({packingSimWeightGram}g):</span>
+                  <strong style={{ fontSize: '14px', color: 'var(--color-primary-700)' }}>{packingSimQty} pcs</strong>
+                </div>
               </div>
             </div>
 
@@ -666,8 +1088,8 @@ export default function ProductionStandardsPage() {
                     key={seasoning.variant}
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '170px 1.2fr 1.1fr 1.2fr',
-                      gap: 'var(--space-4)',
+                      gridTemplateColumns: '170px 1.2fr 1.1fr 1.2fr auto',
+                      gap: 'var(--space-3)',
                       alignItems: 'center',
                       padding: '16px',
                       borderRadius: 'var(--radius-lg, 12px)',
@@ -685,22 +1107,64 @@ export default function ProductionStandardsPage() {
                       </span>
                     </div>
 
+                    {/* PILIH BEBAS DARI BAHAN BAKU BUMBU */}
                     <div>
                       <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                        Bahan Bumbu Tabur:
+                        Bahan Bumbu Tabur (Gudang):
                       </label>
                       <select
                         disabled={isManagement}
                         value={seasoning.seasoning_material_id || ''}
                         onChange={(e) => updateSeasoningConfig(sIdx, { seasoning_material_id: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-default)',
+                          fontSize: 'var(--text-xs)',
+                          background: 'var(--bg-default)',
+                        }}
                       >
-                        <option value="" disabled>-- Pilih Bahan Bumbu --</option>
-                        {rawMaterials.filter(rm => rm.name.toLowerCase().includes('bumbu') || rm.material_category?.toLowerCase().includes('bumbu')).map(rm => (
-                          <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                        ))}
+                        <option value="">
+                          {rawMaterials.length === 0
+                            ? '-- Belum ada bahan baku di warehouse --'
+                            : `-- Pilih Bahan Baku Bumbu (${rawMaterials.length} bahan) --`}
+                        </option>
+                        {seasoningMaterials.length > 0 && (
+                          <optgroup label="🧂 Bumbu Tabur & Seasoning Gudang">
+                            {seasoningMaterials.map(rm => {
+                              const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
+                              return (
+                                <option key={rm.id} value={rm.id}>
+                                  {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        )}
+                        {nonSeasoningMaterials.length > 0 && (
+                          <optgroup label="Bahan Baku Lainnya">
+                            {nonSeasoningMaterials.map(rm => {
+                              const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
+                              return (
+                                <option key={rm.id} value={rm.id}>
+                                  {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        )}
                       </select>
+
+                      {seasoning.seasoning_material_id && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', fontSize: '10.5px', color: 'var(--color-primary-700)' }}>
+                          <Lock size={10} />
+                          <span>Terkunci: <strong>{rawMaterials.find(r => r.id === seasoning.seasoning_material_id)?.name}</strong></span>
+                        </div>
+                      )}
                     </div>
 
+                    {/* INPUT RASIO BUMBU */}
                     <div>
                       <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                         Rasio Bumbu per kg Jamur:
@@ -717,6 +1181,7 @@ export default function ProductionStandardsPage() {
                       </div>
                     </div>
 
+                    {/* PILIH BEBAS DARI BAHAN KEMASAN */}
                     <div>
                       <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
                         Bahan Kemasan Standar:
@@ -725,13 +1190,70 @@ export default function ProductionStandardsPage() {
                         disabled={isManagement}
                         value={seasoning.packaging_material_id || ''}
                         onChange={(e) => updateSeasoningConfig(sIdx, { packaging_material_id: e.target.value })}
+                        style={{
+                          width: '100%',
+                          padding: '6px 10px',
+                          borderRadius: 'var(--radius-md)',
+                          border: '1px solid var(--border-default)',
+                          fontSize: 'var(--text-xs)',
+                          background: 'var(--bg-default)',
+                        }}
                       >
-                        <option value="" disabled>-- Pilih Bahan Kemasan --</option>
-                        {rawMaterials.filter(rm => rm.name.toLowerCase().includes('kemasan') || rm.name.toLowerCase().includes('pack') || rm.name.toLowerCase().includes('toples') || rm.name.toLowerCase().includes('pouch')).map(rm => (
-                          <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                        ))}
+                        <option value="">
+                          {packagingMaterials.length === 0 && rawMaterials.length === 0
+                            ? '-- Belum ada kemasan di warehouse --'
+                            : `-- Pilih Bahan Baku Kemasan (${packagingMaterials.length || rawMaterials.length} bahan) --`}
+                        </option>
+                        {packagingMaterials.length > 0 && (
+                          <optgroup label="📦 Bahan Kemasan / Packaging Gudang">
+                            {packagingMaterials.map(rm => {
+                              const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
+                              return (
+                                <option key={rm.id} value={rm.id}>
+                                  {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        )}
+                        {nonPackagingMaterials.length > 0 && (
+                          <optgroup label="Bahan Gudang Lainnya">
+                            {nonPackagingMaterials.map(rm => {
+                              const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
+                              return (
+                                <option key={rm.id} value={rm.id}>
+                                  {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        )}
                       </select>
+
+                      {seasoning.packaging_material_id && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', fontSize: '10.5px', color: 'var(--color-primary-700)' }}>
+                          <Lock size={10} />
+                          <span>Terkunci: <strong>{rawMaterials.find(r => r.id === seasoning.packaging_material_id)?.name}</strong></span>
+                        </div>
+                      )}
                     </div>
+
+                    {!isManagement && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveVariant(seasoning.variant)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--color-danger-600)',
+                          cursor: 'pointer',
+                          padding: '4px',
+                        }}
+                        title={`Hapus varian ${seasoning.variant}`}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -743,11 +1265,11 @@ export default function ProductionStandardsPage() {
             header={
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Package className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                <strong>Spesifikasi Tipe Kemasan & Master Material</strong>
+                <strong>Spesifikasi Tipe Kemasan &amp; Master Material Gudang</strong>
               </div>
             }
           >
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-3)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 'var(--space-3)' }}>
               {(config.packaging_configs || []).map((pkg, pIdx) => (
                 <div
                   key={pkg.packaging_type}
@@ -767,10 +1289,25 @@ export default function ProductionStandardsPage() {
                       value={pkg.packaging_material_id || ''}
                       onChange={(e) => updatePackagingConfig(pIdx, { packaging_material_id: e.target.value })}
                     >
-                      <option value="" disabled>-- Pilih Bahan Kemasan --</option>
-                      {rawMaterials.map(rm => (
-                        <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                      ))}
+                      <option value="">-- Pilih Bahan Kemasan Gudang --</option>
+                      {packagingMaterials.length > 0 && (
+                        <optgroup label="📦 Bahan Kemasan / Packaging Gudang">
+                          {packagingMaterials.map(rm => (
+                            <option key={rm.id} value={rm.id}>
+                              {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {nonPackagingMaterials.length > 0 && (
+                        <optgroup label="Bahan Gudang Lainnya">
+                          {nonPackagingMaterials.map(rm => (
+                            <option key={rm.id} value={rm.id}>
+                              {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom})
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
                 </div>
@@ -780,162 +1317,9 @@ export default function ProductionStandardsPage() {
         </div>
       )}
 
-      {/* ── TAB 3: FORMULA TEPUNG PREMIX ── */}
-      {activeTab === 'PREMIX' && (
-        <Card
-          header={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CookingPot className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                <strong>Resep Formula Dasar — Pembuatan Tepung Premix KhumKhum</strong>
-              </div>
-              {!isManagement && (config.premix_recipes?.length || 0) === 0 && (
-                <Button variant="secondary" size="sm" onClick={handleAddPremixRecipe} leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />}>
-                  Tambah Resep Premix
-                </Button>
-              )}
-            </div>
-          }
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: '10px',
-              padding: 'var(--space-3)',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--color-info-50)',
-              border: '1px solid var(--color-info-200)',
-              fontSize: 'var(--text-sm)',
-              color: 'var(--color-info-800)',
-              marginBottom: 'var(--space-4)',
-            }}
-          >
-            <Info className="w-5 h-5 text-[var(--color-info-600)] shrink-0 mt-0.5" aria-hidden="true" />
-            <div>
-              Standar komposisi bahan baku (Tepung Terigu, Tepung Tapioka, Bawang Putih Bubuk, dll) untuk menghasilkan 1 batch Tepung Premix. Data ini terintegrasi dengan formulir <strong>Laporan Produksi Premix</strong> di modul Produksi.
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-            {(config.premix_recipes || []).map((recipe, index) => (
-              <div
-                key={`premix-${index}`}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 120px 2fr auto',
-                  gap: 'var(--space-3)',
-                  alignItems: 'start',
-                  padding: 'var(--space-3)',
-                  background: 'var(--bg-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px solid var(--border-default)',
-                }}
-              >
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Nama Output Premix:</span>
-                  <Input
-                    disabled={isManagement}
-                    value={recipe.premix_name}
-                    onChange={(e) => {
-                      const updated = [...(config.premix_recipes || [])];
-                      updated[index].premix_name = e.target.value;
-                      setConfig({ ...config, premix_recipes: updated });
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Target Hasil (kg):</span>
-                  <Input
-                    disabled={isManagement}
-                    type="number"
-                    step="0.1"
-                    value={recipe.output_qty}
-                    onChange={(e) => {
-                      const updated = [...(config.premix_recipes || [])];
-                      updated[index].output_qty = Number(e.target.value);
-                      setConfig({ ...config, premix_recipes: updated });
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Komposisi Bahan Mentah (kg):</span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {recipe.ingredients.map((ing, iIdx) => (
-                      <div key={iIdx} style={{ display: 'flex', gap: '8px' }}>
-                        <select
-                          disabled={isManagement}
-                          className="input"
-                          style={{ flex: 1, minWidth: 0 }}
-                          value={ing.raw_material_id || ''}
-                          onChange={(e) => {
-                            const updated = [...(config.premix_recipes || [])];
-                            const selectedId = e.target.value;
-                            const selectedRm = rawMaterials.find(rm => rm.id === selectedId);
-                            updated[index].ingredients[iIdx].raw_material_id = selectedId;
-                            updated[index].ingredients[iIdx].name = selectedRm ? selectedRm.name : '';
-                            setConfig({ ...config, premix_recipes: updated });
-                          }}
-                        >
-                          <option value="" disabled>-- Pilih Bahan --</option>
-                          {rawMaterials.map(rm => (
-                            <option key={rm.id} value={rm.id}>{rm.name} ({rm.uom})</option>
-                          ))}
-                        </select>
-                        <div style={{ width: '90px', flexShrink: 0 }}>
-                          <Input
-                            disabled={isManagement}
-                            type="number"
-                            step="0.1"
-                            placeholder="Qty"
-                            value={ing.qty}
-                            onChange={(e) => {
-                              const updated = [...(config.premix_recipes || [])];
-                              updated[index].ingredients[iIdx].qty = Number(e.target.value);
-                              setConfig({ ...config, premix_recipes: updated });
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                    {!isManagement && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          const updated = [...(config.premix_recipes || [])];
-                          updated[index].ingredients.push({ name: '', qty: 0 });
-                          setConfig({ ...config, premix_recipes: updated });
-                        }}
-                        style={{ alignSelf: 'flex-start', marginTop: '4px' }}
-                      >
-                        + Tambah Bahan Komposisi
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ paddingTop: '20px' }}>
-                  {!isManagement && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemovePremixRecipe(index)}
-                      aria-label="Hapus resep premix"
-                    >
-                      <Trash2 className="w-4 h-4 text-[var(--color-danger-600)]" aria-hidden="true" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-
-      {/* ── TAB 4: STANDAR MESIN & RENDEMEN ── */}
+      {/* ═══════════════════════════════════════════════════════ */}
+      {/* ── TAB 3: STANDAR MESIN & RENDEMEN ──                   */}
+      {/* ═══════════════════════════════════════════════════════ */}
       {activeTab === 'MACHINERY' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: 'var(--space-4)' }}>
           {/* 1. Rendemen Thresholds */}
@@ -983,7 +1367,7 @@ export default function ProductionStandardsPage() {
           </Card>
 
           {/* 2. Frying Parameters */}
-          <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Flame className="w-4 h-4 text-[var(--color-warning-600)]" aria-hidden="true" /> <strong>Parameter Penggorengan & Penirisan</strong></div>}>
+          <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Flame className="w-4 h-4 text-[var(--color-warning-600)]" aria-hidden="true" /> <strong>Parameter Penggorengan &amp; Penirisan</strong></div>}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
               <FormField label="Suhu Minyak Min (°C)">
                 <Input

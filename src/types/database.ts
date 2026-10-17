@@ -58,6 +58,10 @@ export interface DbProduct {
   uom?: string | null;
   unit_price?: number | null;
   stock_quantity?: number | null;
+  rop?: number | null;
+  packaging_type?: string | null;
+  flavor_variant?: string | null;
+  package_weight?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -329,21 +333,44 @@ export interface DbTimeStudySample {
   deleted_at?: string | null;
 }
 
-export type FlavorVariant = 'Original' | 'Balado' | 'BBQ' | 'Pedas Manis' | 'Super Pedas';
+export type FlavorVariant = 'Original' | 'Balado' | 'BBQ' | 'Pedas Manis' | 'Super Pedas' | 'Jagung Bakar' | 'Keju';
 
-export const FLAVOR_VARIANTS: FlavorVariant[] = ['Original', 'Balado', 'BBQ', 'Pedas Manis', 'Super Pedas'];
+export const FLAVOR_VARIANTS: FlavorVariant[] = ['Original', 'Balado', 'BBQ', 'Pedas Manis', 'Super Pedas', 'Jagung Bakar', 'Keju'];
 
 export const PACKAGING_TYPES = ['Standing Pouch', 'Toples', 'Pouch', 'Plastik Bantal', 'Box / Dus'] as const;
 export type PackagingType = (typeof PACKAGING_TYPES)[number];
 
 export const PACKAGING_WEIGHTS = [
+  { value: '30g', label: '30 gram (Ekonomis)' },
   { value: '50g', label: '50 gram' },
+  { value: '60g', label: '60 gram' },
   { value: '75g', label: '75 gram' },
   { value: '100g', label: '100 gram' },
   { value: '150g', label: '150 gram' },
   { value: '250g', label: '250 gram' },
+  { value: '500g', label: '500 gram' },
 ] as const;
 export type PackagingWeightOption = (typeof PACKAGING_WEIGHTS)[number];
+
+export function isFryingSpk(order: { product_id?: string | null; product_variant?: string | null; notes?: string | null }): boolean {
+  if (order.notes?.includes('[Tipe: GORENG_CURAH]')) return true;
+  if (order.notes?.includes('[Tipe: PACKING_RASA]')) return false;
+  if (order.product_id) return false;
+  const variant = (order.product_variant || '').toLowerCase();
+  if (variant.includes('curah') || variant.includes('polos')) return true;
+  const isRetail = 
+    variant.includes('balado') ||
+    variant.includes('barbeque') ||
+    variant.includes('pedas') ||
+    variant.includes('bbq') ||
+    variant.includes('honeysia') ||
+    variant.includes('pouch') ||
+    variant.includes('toples') ||
+    variant.includes('60g') ||
+    variant.includes('75g') ||
+    variant.includes('100g');
+  return !isRetail;
+}
 
 // ─────────────────────────────────────────────
 // QC MODULE TYPES
@@ -394,16 +421,25 @@ export interface PremixRecipe {
   ingredients: { name: string; qty: number; raw_material_id?: string }[];
 }
 
+export interface BomIngredientItem {
+  raw_material_id: string;
+  name: string;
+  ratio_per_kg: number;
+  uom: string;
+}
+
 export interface BomRecipe {
   product_id?: string;
   product_name: string;
+  ingredients?: BomIngredientItem[];
   raw_mushroom_id?: string;
-  raw_mushroom_ratio: number;
+  raw_mushroom_ratio?: number;
   premix_flour_id?: string;
-  premix_flour_ratio: number;
+  premix_flour_ratio?: number;
   cooking_oil_id?: string;
-  cooking_oil_ratio: number;
-  seasoning_ratio: number;
+  cooking_oil_ratio?: number;
+  seasoning_ratio?: number;
+  additional_ingredients?: { raw_material_id: string; material_name: string; ratio_per_kg: number; uom?: string }[];
 }
 
 export interface PackagingConfig {
@@ -514,6 +550,9 @@ export interface DbInventory {
   last_updated_at: string;
   warehouse?: Pick<DbWarehouse, 'id' | 'name'> | null;
   item_name?: string | null;
+  material_category?: string | null;
+  uom?: string | null;
+  master_rop?: number | null;
   deleted_at?: string | null;
 }
 

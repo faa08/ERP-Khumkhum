@@ -17,6 +17,7 @@ interface DataTableToolbarProps<TData> {
   selectedCount: number;
   bulkActions?: BulkAction[];
   rowSelection: RowSelectionState;
+  toolbarActions?: React.ReactNode;
 }
 
 export function DataTableToolbar<TData>({
@@ -28,6 +29,7 @@ export function DataTableToolbar<TData>({
   selectedCount,
   bulkActions,
   rowSelection,
+  toolbarActions,
 }: DataTableToolbarProps<TData>) {
   const showBulkActions = selectedCount > 0 && bulkActions && bulkActions.length > 0;
 
@@ -77,6 +79,7 @@ export function DataTableToolbar<TData>({
       </div>
 
       <div className={styles.toolbarRight}>
+        {toolbarActions}
         {enableColumnVisibility && (
           <div className={styles.columnToggle}>
             <button

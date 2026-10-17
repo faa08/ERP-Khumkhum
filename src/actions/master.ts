@@ -14,6 +14,18 @@ import type {
   DbWarehousePic,
 } from '@/types/database';
 
+async function getMainWarehouseId(): Promise<string | null> {
+  const { data: whList } = await supabaseAdmin
+    .from('warehouses')
+    .select('id, name')
+    .is('deleted_at', null);
+
+  if (!whList || whList.length === 0) return null;
+  const main = whList.find(w => w.name.toLowerCase().includes('utama') || w.name.toLowerCase().includes('pabrik'))
+    || whList[0];
+  return main?.id || null;
+}
+
 // ─────────────────────────────────────────────
 // FARMERS
 // ─────────────────────────────────────────────
@@ -183,17 +195,56 @@ export async function createProduct(input: Partial<DbProduct> & { rop?: number }
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
     const { rop, ...productInput } = input;
     
-    const { data, error } = await supabaseAdmin
+    let { data, error } = await supabaseAdmin
       .from('products')
       .insert([productInput])
       .select()
       .single();
-    if (error) throw error;
+
+    if (error && (error.message?.includes('column') || error.code === '42703')) {
+      const standardInput = {
+        sku: productInput.sku,
+        name: productInput.name,
+        description: productInput.description || null,
+        category: productInput.category || 'Barang Jadi',
+        uom: productInput.uom || 'pcs',
+        unit_price: productInput.unit_price || null,
+      };
+      const retry = await supabaseAdmin
+        .from('products')
+        .insert([standardInput])
+        .select()
+        .single();
+      if (retry.error) throw retry.error;
+      data = retry.data;
+    } else if (error) {
+      throw error;
+    }
     
-    if (rop !== undefined) {
+    if (rop !== undefined && data?.id) {
       const { data: settingsData } = await supabaseAdmin.from('settings').select('value').eq('key', 'product_rops').single();
       const currentRops = settingsData?.value || {};
       await supabaseAdmin.from('settings').upsert({ key: 'product_rops', value: { ...currentRops, [data.id]: rop }, updated_by: user.userId, updated_at: new Date().toISOString() });
+    }
+
+    // Auto-create kartu stok di inventory untuk produk jadi baru
+    if (data?.id) {
+      try {
+        const whId = await getMainWarehouseId();
+        if (whId) {
+          await supabaseAdmin.from('inventory').insert({
+            warehouse_id: whId,
+            item_type: 'PRODUCT',
+            item_id: data.id,
+            quantity: 0,
+            reorder_point: rop || 0,
+            lead_time_days: 3,
+            last_updated_at: new Date().toISOString(),
+          });
+        }
+      } catch (invErr) {
+        console.warn('Auto create inventory product warning:', invErr);
+      }
     }
     
     await logAuditEvent({
@@ -206,6 +257,7 @@ export async function createProduct(input: Partial<DbProduct> & { rop?: number }
     
     revalidatePath('/master/products');
     revalidatePath('/inventory');
+    revalidatePath('/warehouse');
     revalidatePath('/sales');
     
     return { success: true, data: data as DbProduct };
@@ -219,13 +271,34 @@ export async function updateProduct(id: string, input: Partial<DbProduct> & { ro
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
     const { rop, ...productInput } = input;
 
-    const { data, error } = await supabaseAdmin
+    let { data, error } = await supabaseAdmin
       .from('products')
       .update({ ...productInput, updated_at: new Date().toISOString() })
       .eq('id', id)
       .select()
       .single();
-    if (error) throw error;
+
+    if (error && (error.message?.includes('column') || error.code === '42703')) {
+      const standardInput = {
+        sku: productInput.sku,
+        name: productInput.name,
+        description: productInput.description || null,
+        category: productInput.category || 'Barang Jadi',
+        uom: productInput.uom || 'pcs',
+        unit_price: productInput.unit_price || null,
+        updated_at: new Date().toISOString(),
+      };
+      const retry = await supabaseAdmin
+        .from('products')
+        .update(standardInput)
+        .eq('id', id)
+        .select()
+        .single();
+      if (retry.error) throw retry.error;
+      data = retry.data;
+    } else if (error) {
+      throw error;
+    }
 
     if (rop !== undefined) {
       const { data: settingsData } = await supabaseAdmin.from('settings').select('value').eq('key', 'product_rops').single();
@@ -250,9 +323,127 @@ export async function updateProduct(id: string, input: Partial<DbProduct> & { ro
   }
 }
 
+export async function createBatchProducts(
+  inputs: (Partial<DbProduct> & { rop?: number })[]
+): Promise<{ success: boolean; count?: number; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PRODUCTION']);
+    if (!inputs || inputs.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    // Ambil SKU yang sudah ada untuk mencegah bentrok unique constraint
+    const { data: existingRows } = await supabaseAdmin
+      .from('products')
+      .select('sku');
+    const existingSkus = new Set((existingRows || []).map((r: any) => (r.sku || '').toLowerCase().trim()));
+
+    const newItems = inputs.filter(item => {
+      const s = (item.sku || '').toLowerCase().trim();
+      return s && !existingSkus.has(s);
+    });
+
+    if (newItems.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    const payload = newItems.map(({ rop, ...p }) => ({
+      ...p,
+      category: p.category || 'Barang Jadi',
+      uom: p.uom || 'pcs',
+    }));
+
+    let { data, error } = await supabaseAdmin
+      .from('products')
+      .insert(payload)
+      .select();
+
+    if (error && (error.message?.includes('column') || error.code === '42703')) {
+      const standardPayload = payload.map(item => ({
+        sku: item.sku,
+        name: item.name,
+        description: item.description || null,
+        category: item.category || 'Barang Jadi',
+        uom: item.uom || 'pcs',
+        unit_price: item.unit_price || null,
+      }));
+      const retry = await supabaseAdmin
+        .from('products')
+        .insert(standardPayload)
+        .select();
+      if (retry.error) throw retry.error;
+      data = retry.data;
+    } else if (error) {
+      throw error;
+    }
+
+    // Simpan ROP jika ada
+    const itemsWithRop = newItems.filter(item => item.rop !== undefined && item.rop > 0);
+    if (itemsWithRop.length > 0 && data) {
+      const { data: settingsData } = await supabaseAdmin.from('settings').select('value').eq('key', 'product_rops').single();
+      const currentRops = settingsData?.value || {};
+      const newRops = { ...currentRops };
+      data.forEach((p: any) => {
+        const matchingInput = newItems.find(inp => inp.sku?.toLowerCase().trim() === p.sku?.toLowerCase().trim());
+        if (matchingInput?.rop) {
+          newRops[p.id] = matchingInput.rop;
+        }
+      });
+      await supabaseAdmin.from('settings').upsert({
+        key: 'product_rops',
+        value: newRops,
+        updated_by: user.userId,
+        updated_at: new Date().toISOString()
+      });
+    }
+
+    // Auto-create kartu stok di inventory untuk seluruh batch produk jadi baru
+    if (data && data.length > 0) {
+      try {
+        const whId = await getMainWarehouseId();
+        if (whId) {
+          const invRows = data.map((item: any) => {
+            const matchingInput = newItems.find(inp => inp.sku?.toLowerCase().trim() === item.sku?.toLowerCase().trim());
+            return {
+              warehouse_id: whId,
+              item_type: 'PRODUCT',
+              item_id: item.id,
+              quantity: 0,
+              reorder_point: matchingInput?.rop || 0,
+              lead_time_days: 3,
+              last_updated_at: new Date().toISOString(),
+            };
+          });
+          await supabaseAdmin.from('inventory').insert(invRows);
+        }
+      } catch (invErr) {
+        console.warn('Auto create batch inventory products warning:', invErr);
+      }
+    }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'product_batch',
+      entityId: user.userId,
+      details: { count: data?.length || 0 },
+    });
+
+    revalidatePath('/master/products');
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+    revalidatePath('/sales');
+    revalidatePath('/production');
+
+    return { success: true, count: data?.length || 0 };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 export async function deleteProduct(id: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const { user } = await requireAuth(['SUPER_ADMIN']);
+    const { user } = await requireAuth(['SUPER_ADMIN', 'WAREHOUSE']);
     const { error } = await supabaseAdmin
       .from('products')
       .update({ deleted_at: new Date().toISOString() })
@@ -265,9 +456,16 @@ export async function deleteProduct(id: string): Promise<{ success: boolean; err
       entityType: 'product',
       entityId: id,
     });
+
+    try {
+      await supabaseAdmin.from('inventory').delete().eq('item_id', id).eq('item_type', 'PRODUCT');
+    } catch (e) {
+      console.warn('Delete product inventory warning:', e);
+    }
     
     revalidatePath('/master/products');
     revalidatePath('/inventory');
+    revalidatePath('/warehouse');
     revalidatePath('/sales');
 
     return { success: true };
@@ -280,16 +478,34 @@ export async function deleteProduct(id: string): Promise<{ success: boolean; err
 // RAW MATERIALS
 // ─────────────────────────────────────────────
 
-export async function getRawMaterials(): Promise<{ success: boolean; data?: DbRawMaterial[]; error?: string }> {
+export async function getRawMaterials(): Promise<{ success: boolean; data?: (DbRawMaterial & { available_stock?: number })[]; error?: string }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'QC', 'MANAGEMENT']);
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'QC', 'MANAGEMENT', 'PRODUCTION', 'PREMIX', 'SALES']);
     const { data, error } = await supabaseAdmin
       .from('raw_materials')
       .select('*')
       .is('deleted_at', null)
       .order('name');
     if (error) throw error;
-    return { success: true, data: data as DbRawMaterial[] };
+
+    // Ambil stok aktual real-time dari tabel inventory warehouse
+    const { data: invData } = await supabaseAdmin
+      .from('inventory')
+      .select('item_id, quantity')
+      .eq('item_type', 'RAW_MATERIAL');
+
+    const stockMap = new Map<string, number>();
+    (invData || []).forEach(inv => {
+      const cur = stockMap.get(inv.item_id) || 0;
+      stockMap.set(inv.item_id, cur + (Number(inv.quantity) || 0));
+    });
+
+    const enriched = (data || []).map(rm => ({
+      ...rm,
+      available_stock: stockMap.has(rm.id) ? stockMap.get(rm.id) : (rm.stock_quantity || 0),
+    }));
+
+    return { success: true, data: enriched as (DbRawMaterial & { available_stock?: number })[] };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
@@ -317,6 +533,26 @@ export async function createRawMaterial(input: Partial<DbRawMaterial>): Promise<
       throw error;
     }
     
+    // Auto-create kartu stok di inventory untuk bahan baku baru
+    if (data?.id) {
+      try {
+        const whId = await getMainWarehouseId();
+        if (whId) {
+          await supabaseAdmin.from('inventory').insert({
+            warehouse_id: whId,
+            item_type: 'RAW_MATERIAL',
+            item_id: data.id,
+            quantity: 0,
+            reorder_point: input.rop || 0,
+            lead_time_days: 3,
+            last_updated_at: new Date().toISOString(),
+          });
+        }
+      } catch (invErr) {
+        console.warn('Auto create inventory raw material warning:', invErr);
+      }
+    }
+
     await logAuditEvent({
       userId: user.userId,
       action: 'CREATE',
@@ -327,8 +563,88 @@ export async function createRawMaterial(input: Partial<DbRawMaterial>): Promise<
     
     revalidatePath('/master/raw-materials');
     revalidatePath('/inventory');
+    revalidatePath('/warehouse');
 
     return { success: true, data: data as DbRawMaterial };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function createBatchRawMaterials(inputs: Partial<DbRawMaterial>[]): Promise<{ success: boolean; count?: number; error?: string }> {
+  try {
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'PREMIX', 'PRODUCTION']);
+    if (!inputs || inputs.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    // Ambil kode yang sudah ada untuk mencegah bentrok unique constraint
+    const { data: existingRows } = await supabaseAdmin
+      .from('raw_materials')
+      .select('code');
+    const existingCodes = new Set((existingRows || []).map((r: any) => (r.code || '').toLowerCase().trim()));
+
+    const newItems = inputs.filter(item => {
+      const c = (item.code || '').toLowerCase().trim();
+      return c && !existingCodes.has(c);
+    });
+
+    if (newItems.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    let { data, error } = await supabaseAdmin
+      .from('raw_materials')
+      .insert(newItems)
+      .select();
+
+    if (error && (error.message?.includes('column') || error.code === '42703')) {
+      const cleanInputs = newItems.map(({ packaging_type, flavor_variant, package_weight, ...clean }) => clean);
+      const retry = await supabaseAdmin
+        .from('raw_materials')
+        .insert(cleanInputs)
+        .select();
+      if (retry.error) throw retry.error;
+      data = retry.data;
+    } else if (error) {
+      throw error;
+    }
+
+    // Auto-create kartu stok di inventory untuk seluruh batch kemasan baru secara instan
+    if (data && data.length > 0) {
+      try {
+        const whId = await getMainWarehouseId();
+        if (whId) {
+          const invRows = data.map((item: any) => ({
+            warehouse_id: whId,
+            item_type: 'RAW_MATERIAL',
+            item_id: item.id,
+            quantity: 0,
+            reorder_point: item.rop || 0,
+            lead_time_days: 3,
+            last_updated_at: new Date().toISOString(),
+          }));
+          await supabaseAdmin.from('inventory').insert(invRows);
+        }
+      } catch (invErr) {
+        console.warn('Auto create batch inventory raw materials warning:', invErr);
+      }
+    }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'raw_material',
+      entityId: 'BATCH_PACKAGING',
+      details: { count: data?.length || 0, sample: newItems[0]?.name },
+    });
+
+    revalidatePath('/master/raw-materials');
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+    revalidatePath('/master/production-standards');
+
+    return { success: true, count: data?.length || 0 };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
@@ -358,6 +674,15 @@ export async function updateRawMaterial(id: string, input: Partial<DbRawMaterial
       throw error;
     }
 
+    // Sinkronkan ROP ke tabel inventory jika ROP diubah di Master Data
+    if (input.rop !== undefined) {
+      await supabaseAdmin
+        .from('inventory')
+        .update({ reorder_point: input.rop, last_updated_at: new Date().toISOString() })
+        .eq('item_id', id)
+        .eq('item_type', 'RAW_MATERIAL');
+    }
+
     await logAuditEvent({
       userId: user.userId,
       action: 'UPDATE',
@@ -367,6 +692,7 @@ export async function updateRawMaterial(id: string, input: Partial<DbRawMaterial
     
     revalidatePath('/master/raw-materials');
     revalidatePath('/inventory');
+    revalidatePath('/warehouse');
 
     return { success: true, data: data as DbRawMaterial };
   } catch (err: any) {
@@ -383,6 +709,18 @@ export async function deleteRawMaterial(id: string): Promise<{ success: boolean;
       .eq('id', id);
     if (error) throw error;
 
+    // Bersihkan juga baris inventory agar tidak menjadi data sampah / ghost item
+    try {
+      const { data: invs } = await supabaseAdmin.from('inventory').select('id').eq('item_id', id).eq('item_type', 'RAW_MATERIAL');
+      if (invs && invs.length > 0) {
+        const invIds = invs.map(i => i.id);
+        await supabaseAdmin.from('stock_movements').delete().in('inventory_id', invIds);
+        await supabaseAdmin.from('inventory').delete().in('id', invIds);
+      }
+    } catch (e) {
+      console.warn('Delete raw material inventory warning:', e);
+    }
+
     await logAuditEvent({
       userId: user.userId,
       action: 'DELETE',
@@ -392,6 +730,7 @@ export async function deleteRawMaterial(id: string): Promise<{ success: boolean;
     
     revalidatePath('/master/raw-materials');
     revalidatePath('/inventory');
+    revalidatePath('/warehouse');
 
     return { success: true };
   } catch (err: any) {
@@ -557,7 +896,7 @@ export async function updateWarehouse(id: string, input: Partial<DbWarehouse>): 
 
 export async function deleteWarehouse(id: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const { user } = await requireAuth(['SUPER_ADMIN']);
+    const { user } = await requireAuth(['SUPER_ADMIN', 'WAREHOUSE']);
     const { error } = await supabaseAdmin
       .from('warehouses')
       .update({ deleted_at: new Date().toISOString() })

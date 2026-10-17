@@ -13,7 +13,7 @@ import { Select } from '@/components/ui/Select';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info } from 'lucide-react';
+import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info, Filter, Layers, Tag } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment, updateInventoryItem, deleteInventoryItem, syncInventoryWithMaster } from '@/actions/inventory';
@@ -21,6 +21,60 @@ import { getRawMaterials, getWarehouses, getProducts } from '@/actions/master';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import type { DbInventory, DbStockMovement, DbRawMaterial, DbProduct } from '@/types/database';
+
+const WAREHOUSE_CATEGORIES = [
+  { id: 'ALL', label: 'Semua Bahan' },
+  { id: 'UTAMA', label: 'Bahan Baku Utama' },
+  { id: 'BUMBU', label: 'Bumbu Tabur' },
+  { id: 'PACKAGING', label: 'Bahan Kemasan' },
+  { id: 'LAINNYA', label: 'Lainnya' },
+] as const;
+
+function getItemCategory(inv: DbInventory): string {
+  const cat = (inv.material_category || '').toLowerCase();
+  const name = (inv.item_name || '').toLowerCase();
+  
+  if (
+    cat === 'packaging' || 
+    cat === 'kemasan' || 
+    name.includes('packaging') || 
+    name.includes('kemasan') || 
+    name.includes('standing pouch') || 
+    name.includes('pouch') || 
+    name.includes('toples') || 
+    name.includes('segel') || 
+    name.includes('bantal')
+  ) {
+    return 'PACKAGING';
+  }
+  if (
+    cat === 'bumbu' ||
+    cat.includes('bumbu') || 
+    name.includes('bumbu') || 
+    name.includes('seasoning') || 
+    name.includes('balado') || 
+    name.includes('barbeque') || 
+    name.includes('pedas') ||
+    name.includes('gurih') ||
+    name.includes('honeysia')
+  ) {
+    return 'BUMBU';
+  }
+  if (
+    cat === 'bahan utama' ||
+    cat === 'utama' ||
+    cat === 'tepung' ||
+    name.includes('jamur tiram') ||
+    name.includes('minyak') ||
+    name.includes('tepung') || 
+    name.includes('premix') ||
+    name.includes('tapioka') ||
+    name.includes('terigu')
+  ) {
+    return 'UTAMA';
+  }
+  return 'LAINNYA';
+}
 
 const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string; rop: number }> = {
   RAW_MATERIAL: { label: 'Bahan Baku Jamur', icon: <Sprout className="w-6 h-6 text-currentColor" aria-hidden="true" />, color: 'var(--color-success-600)', rop: 50 },
@@ -30,10 +84,13 @@ const CATEGORY_CONFIG: Record<string, { label: string; icon: React.ReactNode; co
 export default function InventoryPage() {
   const { user } = useAuth();
   const isManagement = user?.role === 'MANAGEMENT';
+  const isProduction = user?.role === 'PRODUCTION';
+  const isReadOnly = isManagement || isProduction;
   const pathname = usePathname();
   const isWarehouseMode = pathname.includes('/warehouse');
 
   const [inventoryData, setInventoryData] = useState<DbInventory[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
   const [movements, setMovements] = useState<DbStockMovement[]>([]);
   const [lossData, setLossData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -69,39 +126,35 @@ export default function InventoryPage() {
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
-    const [invRes, mvRes, lossRes, rmRes, prodRes, whRes] = await Promise.all([
-      getInventorySummary(),
+    const targetType = isWarehouseMode ? 'RAW_MATERIAL' : 'PRODUCT';
+    
+    // 1. Fetch data inventori utama secara spesifik agar langsung tampil instan!
+    const invRes = await getInventorySummary(targetType);
+    if (invRes.success && invRes.data) {
+      setInventoryData(invRes.data);
+      setIsLoading(false); // Tabel langsung terbuka tanpa menunggu query sekunder!
+    }
+
+    // 2. Muat data pendukung (pergerakan stok, opname, data master) secara paralel di latar belakang
+    const [mvRes, lossRes, rmRes, prodRes, whRes] = await Promise.all([
       getStockMovements(),
       getLossReport(),
-      getRawMaterials(),
-      getProducts(),
+      isWarehouseMode ? getRawMaterials() : Promise.resolve({ success: true, data: [] }),
+      !isWarehouseMode ? getProducts() : Promise.resolve({ success: true, data: [] }),
       getWarehouses(),
     ]);
-    
-    let filteredInv: DbInventory[] = [];
-    if (invRes.success && invRes.data) {
-      filteredInv = invRes.data.filter(i => isWarehouseMode ? i.item_type === 'RAW_MATERIAL' : i.item_type === 'PRODUCT');
-      setInventoryData(filteredInv);
-    }
-    
-    if (mvRes.success && mvRes.data) {
-      const invIds = new Set(filteredInv.map(i => i.id));
+
+    if (mvRes.success && mvRes.data && invRes.data) {
+      const invIds = new Set(invRes.data.map(i => i.id));
       const filteredMv = mvRes.data.filter(m => invIds.has(m.inventory_id));
       setMovements(filteredMv);
     }
-    
     if (lossRes.success && lossRes.data) setLossData(lossRes.data);
-    if (rmRes.success && rmRes.data) setMasterRawMaterials(rmRes.data);
-    if (prodRes.success && prodRes.data) setMasterProducts(prodRes.data);
+    if (rmRes.success && rmRes.data) setMasterRawMaterials(rmRes.data as DbRawMaterial[]);
+    if (prodRes.success && prodRes.data) setMasterProducts(prodRes.data as DbProduct[]);
     if (whRes.success && whRes.data) setWarehouses(whRes.data);
-    
     setIsLoading(false);
   }, [isWarehouseMode]);
-
-  // Sync missing master data to inventory when the page is loaded once
-  useEffect(() => {
-    syncInventoryWithMaster();
-  }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -201,13 +254,105 @@ export default function InventoryPage() {
     const res = await deleteInventoryItem(deleteInv.id);
     setIsDeleting(false);
     if (res.success) {
-      toast.success('Item berhasil dihapus');
+      toast.success('Item berhasil dihapus dan dinonaktifkan di Data Induk');
       setDeleteOpen(false);
       loadData();
     } else {
       toast.error(res.error || 'Gagal menghapus item');
     }
   };
+
+  const { categoryCounts, categoryMap } = useMemo(() => {
+    const counts: Record<string, number> = { ALL: inventoryData.length };
+    const map: Record<string, DbInventory[]> = {
+      PACKAGING: [],
+      BUMBU: [],
+      TEPUNG: [],
+      LAINNYA: [],
+    };
+    for (const item of inventoryData) {
+      const cat = getItemCategory(item);
+      counts[cat] = (counts[cat] || 0) + 1;
+      if (!map[cat]) map[cat] = [];
+      map[cat].push(item);
+    }
+    return { categoryCounts: counts, categoryMap: map };
+  }, [inventoryData]);
+
+  const displayedInventory = useMemo(() => {
+    if (!isWarehouseMode || selectedCategory === 'ALL') {
+      return inventoryData;
+    }
+    return categoryMap[selectedCategory] || [];
+  }, [inventoryData, selectedCategory, isWarehouseMode, categoryMap]);
+
+  const warehouseCategoryCards = useMemo(() => {
+    if (!isWarehouseMode) return [];
+
+    const configs = [
+      {
+        id: 'UTAMA',
+        label: 'Bahan Baku Utama',
+        icon: <Sprout className="w-6 h-6 text-currentColor" aria-hidden="true" />,
+        color: 'var(--color-success-600)',
+        defaultUom: 'kg'
+      },
+      {
+        id: 'BUMBU',
+        label: 'Bumbu Tabur',
+        icon: <Tag className="w-6 h-6 text-currentColor" aria-hidden="true" />,
+        color: 'var(--color-warning-600)',
+        defaultUom: 'gram'
+      },
+      {
+        id: 'PACKAGING',
+        label: 'Bahan Kemasan (Packaging)',
+        icon: <Package className="w-6 h-6 text-currentColor" aria-hidden="true" />,
+        color: 'var(--color-primary-600)',
+        defaultUom: 'pcs'
+      },
+      {
+        id: 'LAINNYA',
+        label: 'Lainnya (Bahan Penolong)',
+        icon: <Layers className="w-6 h-6 text-currentColor" aria-hidden="true" />,
+        color: '#64748b',
+        defaultUom: 'item'
+      },
+    ];
+
+    return configs.map(cfg => {
+      const items = categoryMap[cfg.id] || [];
+      const total = items.reduce((s, i) => s + (i.quantity || 0), 0);
+      const belowRop = items.filter(i => {
+        const rop = i.reorder_point || (i as any).master_rop || 0;
+        return (i.quantity || 0) < rop;
+      }).length;
+
+      let totalDisplay = `${total.toLocaleString('id-ID')} ${cfg.defaultUom}`;
+      let subDetail: string | undefined = undefined;
+
+      if (cfg.id === 'UTAMA') {
+        const kgItems = items.filter(i => (i.uom || '').toLowerCase() !== 'liter');
+        const literItems = items.filter(i => (i.uom || '').toLowerCase() === 'liter');
+        const kgTotal = kgItems.reduce((s, i) => s + (i.quantity || 0), 0);
+        const literTotal = literItems.reduce((s, i) => s + (i.quantity || 0), 0);
+        totalDisplay = `${kgTotal.toLocaleString('id-ID')} kg`;
+        if (literTotal > 0) {
+          subDetail = `+ ${literTotal.toLocaleString('id-ID')} liter minyak`;
+        }
+      }
+
+      return {
+        ...cfg,
+        items,
+        total,
+        totalDisplay,
+        subDetail,
+        belowRop,
+        itemCount: items.length
+      };
+    });
+  }, [categoryMap, isWarehouseMode]);
 
   const categoryTotals = useMemo(() => {
     const map = new Map<string, { total: number; items: DbInventory[]; belowRop: number }>();
@@ -273,26 +418,59 @@ export default function InventoryPage() {
     {
       accessorKey: 'item_name',
       header: 'Item',
-      cell: ({ row }) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>{row.original.item_name || 'Item'}</div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            {row.original.item_type}
+      cell: ({ row }) => {
+        const itemCat = isWarehouseMode ? getItemCategory(row.original) : 'PRODUCT';
+        const catBadgeStyle: Record<string, { bg: string; color: string; border: string; label: string }> = {
+          UTAMA: { bg: 'rgba(16, 185, 129, 0.12)', color: '#047857', border: 'rgba(16, 185, 129, 0.3)', label: 'Bahan Utama' },
+          BUMBU: { bg: 'rgba(245, 158, 11, 0.12)', color: '#b45309', border: 'rgba(245, 158, 11, 0.3)', label: 'Bumbu Tabur' },
+          PACKAGING: { bg: 'rgba(59, 130, 246, 0.1)', color: '#1d4ed8', border: 'rgba(59, 130, 246, 0.25)', label: 'Bahan Kemasan' },
+          LAINNYA: { bg: 'rgba(100, 116, 139, 0.12)', color: '#475569', border: 'rgba(100, 116, 139, 0.3)', label: 'Lainnya' },
+        };
+        const badge = catBadgeStyle[itemCat] || { 
+          bg: 'var(--bg-subtle)', 
+          color: 'var(--text-secondary)', 
+          border: 'var(--border-default)', 
+          label: row.original.material_category || 'Bahan Baku' 
+        };
+
+        return (
+          <div>
+            <div style={{ fontWeight: 600 }}>{row.original.item_name || 'Item'}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '3px' }}>
+              {isWarehouseMode ? (
+                <span style={{
+                  padding: '1px 6px',
+                  borderRadius: '4px',
+                  background: badge.bg,
+                  color: badge.color,
+                  border: `1px solid ${badge.border}`,
+                  fontSize: '11px',
+                  fontWeight: 600,
+                }}>
+                  {badge.label}
+                </span>
+              ) : (
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                  Produk Jadi
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-      ),
+        );
+      },
     },
     { id: 'warehouse', accessorFn: (row) => row.warehouse?.name || '-', header: 'Gudang', cell: ({ row }) => row.original.warehouse?.name || '-' },
     {
       accessorKey: 'quantity',
-      header: 'Stok (kg)',
+      header: isWarehouseMode ? 'Stok' : 'Stok (pcs)',
       cell: ({ row }) => {
+        const uom = row.original.uom || (isWarehouseMode ? 'kg' : 'pcs');
         const rop = row.original.reorder_point || (row.original as any).master_rop || 0;
         const low = row.original.quantity < rop;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 600, color: low ? 'var(--color-danger-600)' : 'var(--text-primary)' }}>
-              {row.original.quantity.toLocaleString('id-ID')} kg
+              {row.original.quantity.toLocaleString('id-ID')} {uom}
             </span>
             {low && (
               <div style={{ 
@@ -331,10 +509,11 @@ export default function InventoryPage() {
       accessorFn: (row) => row.reorder_point || (row as any).master_rop || 0,
       header: 'ROP',
       cell: ({ row }) => {
+        const uom = row.original.uom || (isWarehouseMode ? 'kg' : 'pcs');
         const rop = row.original.reorder_point || (row.original as any).master_rop || 0;
         return (
           <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
-            {rop.toLocaleString('id-ID')} kg
+            {rop.toLocaleString('id-ID')} {uom}
           </span>
         );
       },
@@ -344,7 +523,7 @@ export default function InventoryPage() {
       header: 'Update Terakhir',
       cell: ({ row }) => format(new Date(row.original.last_updated_at), 'dd/MM/yyyy HH:mm'),
     },
-    ...(isManagement ? [] : [{
+    ...(isReadOnly ? [] : [{
       id: 'actions',
       cell: ({ row }: { row: any }) => {
         return (
@@ -372,7 +551,7 @@ export default function InventoryPage() {
         );
       },
     }]),
-  ], [isManagement, isWarehouseMode, toast]);
+  ], [isReadOnly, isWarehouseMode]);
 
   const mvColumns = useMemo<ColumnDef<any>[]>(() => [
     { id: 'date', header: 'Tanggal', cell: ({ row }) => format(new Date(row.original.movement_date), 'dd/MM/yyyy HH:mm') },
@@ -403,40 +582,163 @@ export default function InventoryPage() {
 
   const tabContent = (
     <>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
-        {Array.from(categoryTotals.entries()).map(([type, stat]) => {
-          const cfg = CATEGORY_CONFIG[type] || { label: type, icon: <Package className="w-6 h-6 text-currentColor" aria-hidden="true" />, color: 'var(--text-primary)', rop: 0 };
-          return (
-            <Card key={type}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-6)' }}>
+        {isWarehouseMode ? (
+          warehouseCategoryCards.map(card => (
+            <Card key={card.id}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
                 <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {cfg.icon}
+                  {card.icon}
                 </div>
                 <div>
-                  <div style={{ fontWeight: 600 }}>{cfg.label}</div>
-                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{stat.items.length} item(s)</div>
+                  <div style={{ fontWeight: 600 }}>{card.label}</div>
+                  <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{card.itemCount} item(s)</div>
                 </div>
               </div>
-              <div style={{ fontSize: '2rem', fontWeight: 700, color: cfg.color }}>
-                {stat.total.toLocaleString('id-ID')} <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>kg</span>
+              <div style={{ fontSize: '1.75rem', fontWeight: 700, color: card.color }}>
+                {card.totalDisplay}
+                {card.subDetail && (
+                  <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-secondary)', marginLeft: '6px' }}>
+                    ({card.subDetail})
+                  </span>
+                )}
               </div>
-              {stat.belowRop > 0 && (
-                <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-1)', color: 'var(--color-warning-600)', fontSize: 'var(--text-sm)' }}>
+              {card.belowRop > 0 ? (
+                <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-1)', color: 'var(--color-danger-600)', fontSize: 'var(--text-sm)' }}>
                   <AlertTriangle size={14} />
-                  {stat.belowRop} item di bawah Reorder Point
+                  {card.belowRop} item di bawah ROP
+                </div>
+              ) : (
+                <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-1)', color: 'var(--color-success-600)', fontSize: 'var(--text-sm)' }}>
+                  <CheckCircle2 size={14} />
+                  Stok Aman
                 </div>
               )}
             </Card>
-          );
-        })}
+          ))
+        ) : (
+          Array.from(categoryTotals.entries()).map(([type, stat]) => {
+            const cfg = CATEGORY_CONFIG[type] || { label: type, icon: <Package className="w-6 h-6 text-currentColor" aria-hidden="true" />, color: 'var(--text-primary)', rop: 0 };
+            return (
+              <Card key={type}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
+                  <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--bg-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {cfg.icon}
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{cfg.label}</div>
+                    <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{stat.items.length} item(s)</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: '2rem', fontWeight: 700, color: cfg.color }}>
+                  {stat.total.toLocaleString('id-ID')} <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>pcs</span>
+                </div>
+                {stat.belowRop > 0 && (
+                  <div style={{ marginTop: 'var(--space-2)', display: 'flex', alignItems: 'center', gap: 'var(--space-1)', color: 'var(--color-warning-600)', fontSize: 'var(--text-sm)' }}>
+                    <AlertTriangle size={14} />
+                    {stat.belowRop} item di bawah Reorder Point
+                  </div>
+                )}
+              </Card>
+            );
+          })
+        )}
       </div>
 
-      <DataTable columns={invColumns} data={inventoryData} />
+      {isWarehouseMode && (
+        <div style={{
+          display: 'flex',
+          gap: 'var(--space-2)',
+          marginBottom: 'var(--space-3)',
+          overflowX: 'auto',
+          paddingBottom: '4px',
+          alignItems: 'center'
+        }}>
+          {WAREHOUSE_CATEGORIES.map(cat => {
+            const count = categoryCounts[cat.id] || 0;
+            const isActive = selectedCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setSelectedCategory(cat.id)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '6px 14px',
+                  borderRadius: 'var(--radius-full)',
+                  border: isActive ? '1px solid var(--color-primary-600)' : '1px solid var(--border-default)',
+                  background: isActive ? 'var(--color-primary-600)' : 'var(--bg-surface)',
+                  color: isActive ? '#fff' : 'var(--text-secondary)',
+                  fontWeight: isActive ? 600 : 500,
+                  fontSize: 'var(--text-xs)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>{cat.label}</span>
+                <span
+                  style={{
+                    padding: '1px 6px',
+                    borderRadius: 'var(--radius-full)',
+                    background: isActive ? 'rgba(255, 255, 255, 0.25)' : 'var(--bg-subtle)',
+                    color: isActive ? '#fff' : 'var(--text-tertiary)',
+                    fontSize: '10px',
+                    fontWeight: 700,
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <DataTable 
+        columns={invColumns} 
+        data={displayedInventory} 
+        enableColumnVisibility={false}
+        toolbarActions={
+          isWarehouseMode ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Filter size={14} style={{ color: 'var(--text-secondary)' }} />
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                Kategori:
+              </span>
+              <select
+                value={selectedCategory}
+                onChange={(e) => setSelectedCategory(e.target.value)}
+                style={{
+                  height: '30px',
+                  padding: '0 10px',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--bg-surface)',
+                  color: 'var(--text-primary)',
+                  fontSize: 'var(--text-xs)',
+                  cursor: 'pointer',
+                  fontWeight: 500,
+                  outline: 'none',
+                }}
+              >
+                {WAREHOUSE_CATEGORIES.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.label} ({categoryCounts[cat.id] || 0})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : undefined
+        }
+      />
 
       <Modal
         isOpen={inboundDrawerOpen}
         onClose={() => setInboundDrawerOpen(false)}
-        title={`Input Pemasukan ${isWarehouseMode ? 'Barang (Non-Jamur)' : 'Produk Jadi'}`}
+        title={`Input Pemasukan ${isWarehouseMode ? 'Bahan Baku' : 'Produk Jadi'}`}
         size="md"
         footer={
           <>
@@ -585,7 +887,7 @@ export default function InventoryPage() {
           </>
         }
       >
-        <p>Apakah Anda yakin ingin menghapus <strong>{deleteInv?.item_name}</strong> dari data inventori? Tindakan ini tidak dapat dibatalkan.</p>
+        <p>Apakah Anda yakin ingin menghapus <strong>{deleteInv?.item_name}</strong> dari inventaris gudang dan menonaktifkannya dari Data Induk?</p>
       </Modal>
 
       <Modal
@@ -640,16 +942,18 @@ export default function InventoryPage() {
       <Card header={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <strong>Stock Opname — Input Stok Fisik</strong>
-          {!isManagement && (
+          {!isReadOnly && (
             <Button variant="primary" onClick={handleSaveOpname} loading={isSavingOpname} leftIcon={<Save size={16} />}>
               Simpan Hasil Opname
             </Button>
           )}
         </div>
       }>
-        {isManagement && (
+        {isReadOnly && (
           <div style={{ padding: '8px 12px', background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', marginBottom: 'var(--space-3)', border: '1px solid var(--color-primary-200)' }}>
-            Mode Peninjauan (Investor): Penginputan dan pembaruan hasil stock opname hanya dapat dilakukan oleh Kepala Gudang dan Super Administrator.
+            {isProduction 
+              ? 'Mode Peninjauan Ketersediaan Bahan Baku Produksi (Hanya Lihat) — Mutasi stok dilakukan otomatis oleh sistem saat produksi selesai.'
+              : 'Mode Peninjauan (Investor): Penginputan dan pembaruan hasil stock opname hanya dapat dilakukan oleh Kepala Gudang dan Super Administrator.'}
           </div>
         )}
         <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>
@@ -672,7 +976,7 @@ export default function InventoryPage() {
                     type="number" step="0.01" min="0"
                     placeholder="Fisik (kg)"
                     value={physicalInputs[inv.id] || ''}
-                    disabled={isManagement}
+                    disabled={isReadOnly}
                     onChange={e => setPhysicalInputs(prev => ({ ...prev, [inv.id]: e.target.value }))}
                   />
                 </div>
@@ -744,19 +1048,21 @@ export default function InventoryPage() {
         breadcrumbs={[{ label: 'Operasional' }, { label: isWarehouseMode ? 'Warehouse' : 'Inventaris' }]}
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-            {isManagement && (
+            {isReadOnly && (
               <span style={{ 
                 display: 'inline-flex', alignItems: 'center', gap: '6px',
                 padding: '4px 12px', borderRadius: 'var(--radius-full)', 
-                background: 'var(--color-primary-50)', color: 'var(--color-primary-700)', 
-                fontSize: 'var(--text-xs)', fontWeight: 600, border: '1px solid var(--color-primary-200)' 
+                background: isProduction ? 'var(--color-warning-50)' : 'var(--color-primary-50)', 
+                color: isProduction ? 'var(--color-warning-700)' : 'var(--color-primary-700)', 
+                fontSize: 'var(--text-xs)', fontWeight: 600, 
+                border: `1px solid ${isProduction ? 'var(--color-warning-200)' : 'var(--color-primary-200)'}` 
               }}>
-                Investor / Read-Only Mode
+                {isProduction ? '🔒 Produksi / Hanya Lihat' : 'Investor / Read-Only Mode'}
               </span>
             )}
-            {!isManagement && (
+            {!isReadOnly && (
               <Button leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />} onClick={() => setInboundDrawerOpen(true)}>
-                {isWarehouseMode ? "Penerimaan Barang Non-Jamur" : "Penerimaan Produk Jadi"}
+                {isWarehouseMode ? "Penerimaan Bahan Baku" : "Penerimaan Produk Jadi"}
               </Button>
             )}
             <Button variant="secondary" onClick={loadData}>Refresh Data</Button>

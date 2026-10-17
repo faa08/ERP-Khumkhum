@@ -19,7 +19,7 @@ const MASTER_DATA_GROUPS = [
     title: 'Gudang & Item',
     description: 'Kelola fisik barang dan tempat penyimpanannya.',
     items: [
-      { id: 'raw-materials', label: 'Bahan Baku', icon: <Box size={24} />, href: '/master/raw-materials', color: 'var(--color-warning-600)', desc: 'Material dasar produksi' },
+      { id: 'raw-materials', label: 'Bahan Baku', icon: <Box size={24} />, href: '/master/raw-materials', color: 'var(--color-warning-600)', desc: 'Material mentah, bumbu, & kemasan' },
       { id: 'products', label: 'Produk Jadi', icon: <Package size={24} />, href: '/master/products', color: 'var(--color-danger-600)', desc: 'Barang siap jual' },
       { id: 'warehouses', label: 'Gudang', icon: <Warehouse size={24} />, href: '/master/warehouses', color: 'var(--color-neutral-600)', desc: 'Lokasi penyimpanan' },
       { id: 'warehouse-pics', label: 'PIC Gudang', icon: <Contact size={24} />, href: '/master/warehouse-pics', color: 'var(--color-neutral-500)', desc: 'Penanggung jawab' },

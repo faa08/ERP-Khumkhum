@@ -19,6 +19,7 @@
   display: flex;
   flex-direction: column;
   max-height: calc(100vh - var(--space-8));
+  overflow: hidden;
   animation: slideUp var(--transition-normal) ease;
   width: 100%;
 }
@@ -70,7 +71,9 @@
 .body {
   padding: var(--space-5);
   overflow-y: auto;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
+  overscroll-behavior: contain;
 }
 
 .footer {

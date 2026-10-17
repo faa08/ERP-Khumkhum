@@ -70,10 +70,10 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
         children: [
           { id: 'receiving',  label: 'Inbound (Penerimaan)',  href: '/receiving',  icon: 'ClipboardList', requiredPermission: 'receiving' },
           { id: 'sorting',    label: 'Sortasi & Grading',    href: '/sorting',    icon: 'Scale',         requiredPermission: 'sorting' },
-          { id: 'ppic',       label: 'PPIC & Jadwal',       href: '/ppic',       icon: 'CalendarDays',  requiredPermission: 'ppic' },
+          { id: 'premix',     label: 'Peracikan Tepung Premix', href: '/production/premix', icon: 'Sparkles', requiredPermission: 'premix' },
           { id: 'warehouse',  label: 'Warehouse (Bahan Baku)', href: '/warehouse', icon: 'Database', requiredPermission: 'warehouse' },
+          { id: 'ppic',       label: 'PPIC & Jadwal',       href: '/ppic',       icon: 'CalendarDays',  requiredPermission: 'ppic' },
           { id: 'production', label: 'Produksi & Rendemen', href: '/production', icon: 'Factory',       requiredPermission: 'production' },
-          { id: 'premix',     label: 'Peracikan Premix & Bumbu', href: '/production/premix', icon: 'Sparkles', requiredPermission: 'premix' },
           { id: 'qc',         label: 'Quality Control (QC)', href: '/quality-control', icon: 'ShieldCheck', requiredPermission: 'qc' },
           { id: 'inventory',  label: 'Inventaris (Produk Jadi)',  href: '/inventory',  icon: 'Package',       requiredPermission: 'inventory' },
           { id: 'sales',      label: 'Sales Order & Pengiriman', href: '/sales',  icon: 'ShoppingCart',  requiredPermission: 'sales' },
@@ -91,10 +91,19 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
         icon: 'Database',
         requiredPermission: 'master',
         children: [
-          { id: 'setup-wizard', label: 'Setup Wizard (Mulai Sini)', href: '/master/setup-wizard', disallowedRoles: ['MANAGEMENT'] },
-          { id: 'hub', label: 'Pusat Master Data', href: '/master' },
-          { id: 'production-standards', label: 'Standar Produksi & Resep', href: '/master/production-standards' },
-          { id: 'historical-import', label: 'Impor Data Historis', href: '/master/historical-import', disallowedRoles: ['MANAGEMENT'] },
+          // Khusus Super Admin & Management (3 Menu Inti)
+          { id: 'setup-wizard', label: 'Setup Wizard (Mulai Sini)', href: '/master/setup-wizard', allowedRoles: ['SUPER_ADMIN'] },
+          { id: 'hub', label: 'Pusat Master Data', href: '/master', allowedRoles: ['SUPER_ADMIN', 'MANAGEMENT'] },
+          { id: 'historical-import', label: 'Impor Data Historis', href: '/master/historical-import', allowedRoles: ['SUPER_ADMIN'] },
+
+          // Khusus Warehouse
+          { id: 'master-raw-materials', label: 'Bahan Baku', href: '/master/raw-materials', allowedRoles: ['WAREHOUSE', 'PREMIX'] },
+          { id: 'master-products', label: 'Bahan Jadi (Produk)', href: '/master/products', allowedRoles: ['WAREHOUSE', 'SALES'] },
+          { id: 'master-warehouses', label: 'Lokasi Gudang', href: '/master/warehouses', allowedRoles: ['WAREHOUSE'] },
+
+          // Khusus Produksi
+          { id: 'production-standards', label: 'Resep & Standar BOM', href: '/master/production-standards', allowedRoles: ['PRODUCTION', 'QC'] },
+          { id: 'master-waktu-baku', label: 'Waktu Baku', href: '/master/waktu-baku', allowedRoles: ['PRODUCTION', 'QC'] },
         ],
       },
     ],
@@ -289,6 +298,9 @@ export function Sidebar() {
 
     return NAV_GROUPS.map((group) => {
       const filterItem = (item: typeof group.items[0]): typeof item | null => {
+        if (item.allowedRoles && !item.allowedRoles.includes(user.role)) {
+          return null;
+        }
         if (item.disallowedRoles && item.disallowedRoles.includes(user.role)) {
           return null;
         }

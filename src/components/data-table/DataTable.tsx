@@ -43,6 +43,7 @@ export function DataTable<TData extends { id?: string | number }>({
   emptyStateTitle = 'Tidak ada data ditemukan',
   emptyStateDescription = 'Tidak ada rekam jejak yang cocok dengan kriteria pencarian Anda.',
   stickyHeader = true,
+  toolbarActions,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
@@ -140,6 +141,7 @@ export function DataTable<TData extends { id?: string | number }>({
         selectedCount={selectedCount}
         bulkActions={bulkActions}
         rowSelection={rowSelection}
+        toolbarActions={toolbarActions}
       />
 
       <div className={styles.tableContainer}>

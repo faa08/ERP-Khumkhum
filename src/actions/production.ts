@@ -6,6 +6,7 @@ import { logAuditEvent } from '@/actions/audit';
 import { getProductionStandards } from '@/actions/standards';
 import { format } from 'date-fns';
 import { revalidatePath } from 'next/cache';
+import { randomUUID } from 'crypto';
 import type {
   DbProductionOrder,
   DbProductionMaterial,
@@ -15,6 +16,7 @@ import type {
   DbFryingBatch,
   DbPackingEntry,
   DbTimeStudySample,
+  isFryingSpk,
 } from '@/types/database';
 
 // ─────────────────────────────────────────────
@@ -204,6 +206,7 @@ export interface CreateProductionOrderInput {
   target_quantity: number;
   notes?: string;
   start_date?: string;
+  spk_type?: 'FRYING' | 'PACKING';
 }
 
 export async function createProductionOrder(input: CreateProductionOrderInput): Promise<{
@@ -237,6 +240,10 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
       }
     }
 
+    const spkType = input.spk_type || (input.product_id ? 'PACKING' : 'FRYING');
+    const spkTag = spkType === 'FRYING' ? '[Tipe: GORENG_CURAH]' : '[Tipe: PACKING_RASA]';
+    const notesWithTag = input.notes ? `${input.notes} ${spkTag}` : spkTag;
+
     const payload = {
       batch_number,
       status: 'DRAFT',
@@ -244,7 +251,7 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
       product_id: input.product_id || null,
       product_variant: variantName,
       target_quantity: input.target_quantity,
-      notes: input.notes || null,
+      notes: notesWithTag,
       created_by: user.userId,
       created_at: issueDate,
       updated_at: now,
@@ -322,6 +329,312 @@ export async function createProductionOrder(input: CreateProductionOrderInput): 
   } catch (err: any) {
     console.error('createProductionOrder error:', err);
     return { success: false, error: err.message || 'Gagal membuat perintah produksi (SPK)' };
+  }
+}
+
+export async function completeProductionOrder(orderId: string, notes?: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT']);
+
+    const now = new Date().toISOString();
+    let updated = false;
+
+    if (isValidUuid(orderId)) {
+      const { data: curr } = await supabaseAdmin
+        .from('production_orders')
+        .select('id, notes, status')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (curr) {
+        const appendedNotes = notes ? (curr.notes ? `${curr.notes} | ${notes}` : notes) : curr.notes;
+        const { error } = await supabaseAdmin
+          .from('production_orders')
+          .update({
+            status: 'COMPLETED',
+            end_date: now,
+            notes: appendedNotes,
+            updated_at: now,
+          })
+          .eq('id', orderId);
+
+        if (!error) updated = true;
+      }
+    }
+
+    const memIdx = memoryProductionOrders.findIndex(o => o.id === orderId);
+    if (memIdx !== -1) {
+      memoryProductionOrders[memIdx] = {
+        ...memoryProductionOrders[memIdx],
+        status: 'COMPLETED',
+        end_date: now,
+        notes: notes ? (memoryProductionOrders[memIdx].notes ? `${memoryProductionOrders[memIdx].notes} | ${notes}` : notes) : memoryProductionOrders[memIdx].notes,
+        updated_at: now,
+      };
+      updated = true;
+    }
+
+    if (!updated) {
+      return { success: false, error: 'Perintah produksi tidak ditemukan' };
+    }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'UPDATE',
+      entityType: 'production_order',
+      entityId: orderId,
+      details: { status: 'COMPLETED', action: 'manual_or_auto_completion', notes },
+    });
+
+    revalidatePath('/production');
+    return { success: true };
+  } catch (err: any) {
+    console.error('completeProductionOrder error:', err);
+    return { success: false, error: err.message || 'Gagal menyelesaikan SPK' };
+  }
+}
+
+// ─────────────────────────────────────────────
+// RECORD FRYING RUN COMPLETION (REKAP SELESAI MASAK SPK)
+// ─────────────────────────────────────────────
+
+export interface RecordFryingRunCompletionInput {
+  production_order_id: string;
+  actual_mushroom_kg: number;
+  actual_premix_kg: number;
+  actual_cooking_oil_liter: number;
+  output_finished_kg: number;
+  output_longsong_count: number;
+  notes?: string;
+}
+
+export async function recordFryingRunCompletion(input: RecordFryingRunCompletionInput): Promise<{
+  success: boolean;
+  data?: any;
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT']);
+    const nowIso = new Date().toISOString();
+
+    const orderId = input.production_order_id;
+    if (!orderId) {
+      return { success: false, error: 'ID Perintah Produksi (SPK) wajib diisi' };
+    }
+
+    if (input.actual_mushroom_kg <= 0 || input.output_finished_kg <= 0 || input.output_longsong_count <= 0) {
+      return { success: false, error: 'Jamur aktual, output matang, dan jumlah longsong harus lebih dari 0' };
+    }
+
+    const yieldPct = Number(((input.output_finished_kg / input.actual_mushroom_kg) * 100).toFixed(1));
+    const isCompliant = yieldPct >= 65;
+
+    let orderBatchNumber = 'SPK';
+
+    // 1. Update status SPK di Database / Memory
+    if (isValidUuid(orderId)) {
+      const { data: ord } = await supabaseAdmin
+        .from('production_orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+
+      if (ord) {
+        orderBatchNumber = ord.batch_number || orderBatchNumber;
+        const appendedNotes = input.notes 
+          ? (ord.notes ? `${ord.notes} | ${input.notes}` : input.notes) 
+          : ord.notes;
+
+        await supabaseAdmin
+          .from('production_orders')
+          .update({
+            status: 'COMPLETED',
+            input_weight: input.actual_mushroom_kg,
+            output_weight: input.output_finished_kg,
+            yield_percentage: yieldPct,
+            is_yield_compliant: isCompliant,
+            total_longsong_count: input.output_longsong_count,
+            unpacked_longsong_count: input.output_longsong_count,
+            end_date: nowIso,
+            notes: appendedNotes,
+            updated_at: nowIso,
+          })
+          .eq('id', orderId);
+      }
+    }
+
+    const memIdx = memoryProductionOrders.findIndex(o => o.id === orderId);
+    if (memIdx !== -1) {
+      orderBatchNumber = memoryProductionOrders[memIdx].batch_number || orderBatchNumber;
+      memoryProductionOrders[memIdx] = {
+        ...memoryProductionOrders[memIdx],
+        status: 'COMPLETED',
+        input_weight: input.actual_mushroom_kg,
+        output_weight: input.output_finished_kg,
+        yield_percentage: yieldPct,
+        is_yield_compliant: isCompliant,
+        total_longsong_count: input.output_longsong_count,
+        unpacked_longsong_count: input.output_longsong_count,
+        end_date: nowIso,
+        notes: input.notes 
+          ? (memoryProductionOrders[memIdx].notes ? `${memoryProductionOrders[memIdx].notes} | ${input.notes}` : input.notes) 
+          : memoryProductionOrders[memIdx].notes,
+        updated_at: nowIso,
+      };
+    }
+
+    // 2. Potong Stok Gudang untuk 3 Bahan Baku Penggorengan (Jamur Tiram, Premix, Minyak)
+    const materialsToDeduct = [
+      { name: 'Jamur Tiram Segar', qty: input.actual_mushroom_kg, uom: 'kg', keywords: ['jamur tiram segar', 'jamur tiram', 'jmr-trm'] },
+      { name: 'Tepung Premix KhumKhum', qty: input.actual_premix_kg, uom: 'kg', keywords: ['tepung premix', 'premix', 'rm-prx'] },
+      { name: 'Minyak Goreng', qty: input.actual_cooking_oil_liter, uom: 'liter', keywords: ['minyak goreng', 'minyak', 'rm-miny'] },
+    ];
+
+    for (const mat of materialsToDeduct) {
+      if (mat.qty <= 0) continue;
+
+      const { data: found } = await supabaseAdmin
+        .from('raw_materials')
+        .select('id')
+        .is('deleted_at', null)
+        .or(mat.keywords.map(k => `name.ilike.%${k}%`).join(','))
+        .limit(1)
+        .maybeSingle();
+
+      const matId = found?.id;
+      if (!matId) continue;
+
+      const { data: invList } = await supabaseAdmin
+        .from('inventory')
+        .select('id, quantity')
+        .eq('item_type', 'RAW_MATERIAL')
+        .eq('item_id', matId)
+        .limit(1);
+
+      let invId = '';
+      if (invList && invList.length > 0) {
+        invId = invList[0].id;
+        const currentQty = Number(invList[0].quantity) || 0;
+        const newQty = Math.max(0, currentQty - mat.qty);
+        await supabaseAdmin
+          .from('inventory')
+          .update({ quantity: newQty, last_updated_at: nowIso })
+          .eq('id', invId);
+      } else {
+        const { data: wh } = await supabaseAdmin.from('warehouses').select('id').limit(1).maybeSingle();
+        if (wh?.id) {
+          const { data: newInv } = await supabaseAdmin
+            .from('inventory')
+            .insert({
+              warehouse_id: wh.id,
+              item_type: 'RAW_MATERIAL',
+              item_id: matId,
+              quantity: 0,
+              last_updated_at: nowIso,
+            })
+            .select('id')
+            .single();
+          invId = newInv?.id || '';
+        }
+      }
+
+      if (invId) {
+        await supabaseAdmin.from('stock_movements').insert({
+          inventory_id: invId,
+          movement_type: 'OUT',
+          quantity: mat.qty,
+          movement_date: nowIso,
+          reference_id: isValidUuid(orderId) ? orderId : null,
+          reference_type: 'PRODUCTION_FRYING',
+          notes: `Konsumsi masak SPK ${orderBatchNumber}: ${mat.qty} ${mat.uom} ${mat.name} (Aktual)`,
+          created_by: session.user.id,
+        });
+
+        if (isValidUuid(orderId)) {
+          await supabaseAdmin.from('production_materials').insert({
+            production_order_id: orderId,
+            raw_material_id: matId,
+            consumption_quantity: mat.qty,
+            created_at: nowIso,
+          });
+        }
+      }
+    }
+
+    // 3. Catat Batch Konsolidasi ke Memory / DB agar KPI Card & Longsong Pool Sinkron
+    const runBatchItem: DbFryingBatch = {
+      id: randomUUID(),
+      production_order_id: orderId,
+      wajan_number: Math.round(input.actual_mushroom_kg / 0.8),
+      batch_weight_gram: Math.round(input.actual_mushroom_kg * 1000),
+      output_weight_gram: Math.round(input.output_finished_kg * 1000),
+      longsong_count: input.output_longsong_count,
+      kremesan_weight_gram: 0,
+      notes: input.notes || `Rekap Selesai Masak SPK ${orderBatchNumber}`,
+      operator_id: session.user.id,
+      started_at: nowIso,
+      finished_at: nowIso,
+      timer_started_at: null,
+      created_at: nowIso,
+      operator: { id: session.user.id, name: session.user.name || 'Operator Produksi' },
+    };
+
+    try {
+      await supabaseAdmin.from('production_frying_batches').insert({
+        id: runBatchItem.id,
+        production_order_id: isValidUuid(orderId) ? orderId : null,
+        wajan_number: runBatchItem.wajan_number,
+        batch_weight_gram: runBatchItem.batch_weight_gram,
+        output_weight_gram: runBatchItem.output_weight_gram,
+        longsong_count: runBatchItem.longsong_count,
+        kremesan_weight_gram: 0,
+        notes: runBatchItem.notes,
+        operator_id: session.user.id,
+        started_at: nowIso,
+        finished_at: nowIso,
+        created_at: nowIso,
+      });
+    } catch (_) {}
+
+    memoryFryingBatches.unshift(runBatchItem);
+
+    // 4. Log Audit Event
+    await logAuditEvent({
+      userId: session.user.id,
+      action: 'UPDATE',
+      entityType: 'production_order',
+      entityId: orderId,
+      details: {
+        action: 'RECORD_FRYING_RUN_COMPLETION',
+        batch_number: orderBatchNumber,
+        actual_mushroom_kg: input.actual_mushroom_kg,
+        actual_premix_kg: input.actual_premix_kg,
+        actual_cooking_oil_liter: input.actual_cooking_oil_liter,
+        output_finished_kg: input.output_finished_kg,
+        output_longsong_count: input.output_longsong_count,
+        yield_percentage: yieldPct,
+      },
+    });
+
+    revalidatePath('/production');
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+
+    return {
+      success: true,
+      data: {
+        orderId,
+        batchNumber: orderBatchNumber,
+        yieldPercentage: yieldPct,
+        isCompliant,
+      },
+    };
+  } catch (err: any) {
+    console.error('recordFryingRunCompletion error:', err);
+    return { success: false, error: err.message || 'Gagal mencatat penyelesaian masak SPK' };
   }
 }
 
@@ -1005,18 +1318,23 @@ async function deductFryingRawMaterials(
   batchId: string,
   productionOrderId: string,
   batchWeightGram: number,
-  userId?: string
+  userId?: string,
+  wajanNumber?: number
 ): Promise<void> {
   try {
-    // 1. Cek apakah sudah pernah dipotong stok untuk batch ini agar tidak double count
-    const { data: existingMov } = await supabaseAdmin
-      .from('stock_movements')
-      .select('id')
-      .eq('reference_id', batchId)
-      .eq('reference_type', 'PRODUCTION_FRYING')
-      .limit(1);
+    const isBatchUuid = isValidUuid(batchId);
 
-    if (existingMov && existingMov.length > 0) return;
+    // 1. Cek apakah sudah pernah dipotong stok untuk batch ini agar tidak double count
+    if (isBatchUuid) {
+      const { data: existingMov } = await supabaseAdmin
+        .from('stock_movements')
+        .select('id')
+        .eq('reference_id', batchId)
+        .eq('reference_type', 'PRODUCTION_FRYING')
+        .limit(1);
+
+      if (existingMov && existingMov.length > 0) return;
+    }
 
     // 2. Ambil standar resep BOM
     const stdRes = await getProductionStandards();
@@ -1027,28 +1345,41 @@ async function deductFryingRawMaterials(
       cooking_oil_ratio: 0.30,
     };
 
-    const mushroomRatio = Number(baseRecipe.raw_mushroom_ratio) || 1.0;
-    const premixRatio = Number(baseRecipe.premix_flour_ratio) || 0.25;
-    const oilRatio = Number(baseRecipe.cooking_oil_ratio) || 0.30;
+    let materialsToDeduct: { id?: string; name: string; qty: number; uom: string; keywords: string[] }[] = [];
 
-    const mushroomKg = Math.round(((batchWeightGram / 1000) * mushroomRatio) * 1000) / 1000;
-    const premixKg = Math.round(((batchWeightGram / 1000) * premixRatio) * 1000) / 1000;
-    const oilLiter = Math.round(((batchWeightGram / 1000) * oilRatio) * 1000) / 1000;
+    if (baseRecipe.ingredients && baseRecipe.ingredients.length > 0) {
+      materialsToDeduct = baseRecipe.ingredients.map(ing => ({
+        id: ing.raw_material_id,
+        name: ing.name,
+        qty: Math.round(((batchWeightGram / 1000) * Number(ing.ratio_per_kg || 0)) * 1000) / 1000,
+        uom: ing.uom || 'kg',
+        keywords: [ing.name.toLowerCase()],
+      }));
+    } else {
+      const mushroomRatio = Number(baseRecipe.raw_mushroom_ratio) || 1.0;
+      const premixRatio = Number(baseRecipe.premix_flour_ratio) || 0.25;
+      const oilRatio = Number(baseRecipe.cooking_oil_ratio) || 0.30;
 
-    const materialsToDeduct: { id?: string; name: string; qty: number; uom: string; keywords: string[] }[] = [
-      { id: baseRecipe.raw_mushroom_id, name: 'Jamur Tiram Segar', qty: mushroomKg, uom: 'kg', keywords: ['jamur tiram segar', 'jamur tiram', 'jmr-trm'] },
-      { id: baseRecipe.premix_flour_id, name: 'Tepung Premix KhumKhum', qty: premixKg, uom: 'kg', keywords: ['tepung premix', 'premix', 'rm-prx'] },
-      { id: baseRecipe.cooking_oil_id, name: 'Minyak Goreng', qty: oilLiter, uom: 'liter', keywords: ['minyak goreng', 'minyak', 'rm-miny'] },
-    ];
+      const mushroomKg = Math.round(((batchWeightGram / 1000) * mushroomRatio) * 1000) / 1000;
+      const premixKg = Math.round(((batchWeightGram / 1000) * premixRatio) * 1000) / 1000;
+      const oilLiter = Math.round(((batchWeightGram / 1000) * oilRatio) * 1000) / 1000;
+
+      materialsToDeduct = [
+        { id: baseRecipe.raw_mushroom_id, name: 'Jamur Tiram Segar', qty: mushroomKg, uom: 'kg', keywords: ['jamur tiram segar', 'jamur tiram', 'jmr-trm'] },
+        { id: baseRecipe.premix_flour_id, name: 'Tepung Premix KhumKhum', qty: premixKg, uom: 'kg', keywords: ['tepung premix', 'premix', 'rm-prx'] },
+        { id: baseRecipe.cooking_oil_id, name: 'Minyak Goreng', qty: oilLiter, uom: 'liter', keywords: ['minyak goreng', 'minyak', 'rm-miny'] },
+      ];
+    }
 
     for (const mat of materialsToDeduct) {
       if (mat.qty <= 0) continue;
 
       let matId = mat.id;
-      if (!matId) {
+      if (!matId || !isValidUuid(matId)) {
         const { data: found } = await supabaseAdmin
           .from('raw_materials')
           .select('id')
+          .is('deleted_at', null)
           .or(mat.keywords.map(k => `name.ilike.%${k}%`).join(','))
           .limit(1)
           .maybeSingle();
@@ -1067,7 +1398,8 @@ async function deductFryingRawMaterials(
       let invId = '';
       if (invList && invList.length > 0) {
         invId = invList[0].id;
-        const newQty = Math.max(0, Number(invList[0].quantity) - mat.qty);
+        const currentQty = Number(invList[0].quantity) || 0;
+        const newQty = Math.max(0, currentQty - mat.qty);
         await supabaseAdmin
           .from('inventory')
           .update({ quantity: newQty, last_updated_at: new Date().toISOString() })
@@ -1091,18 +1423,22 @@ async function deductFryingRawMaterials(
       }
 
       if (invId) {
+        const refId = isBatchUuid ? batchId : (isValidUuid(productionOrderId) ? productionOrderId : null);
+        const wajanLabel = wajanNumber ? `Wajan #${wajanNumber}` : `Wajan ${batchWeightGram}g`;
+
         await supabaseAdmin.from('stock_movements').insert({
           inventory_id: invId,
           movement_type: 'OUT',
           quantity: mat.qty,
-          reference_id: batchId,
+          movement_date: new Date().toISOString(),
+          reference_id: refId,
           reference_type: 'PRODUCTION_FRYING',
-          notes: `Konsumsi penggorengan ${mat.name} (${mat.qty} ${mat.uom}) untuk batch wajan ${batchWeightGram}g`,
+          notes: `Konsumsi penggorengan ${mat.name} (${mat.qty} ${mat.uom}) untuk ${wajanLabel}`,
           created_by: userId || null,
         });
 
         // Rekam ke production_materials jika terhubung dengan SPK spesifik
-        if (productionOrderId) {
+        if (isValidUuid(productionOrderId)) {
           await supabaseAdmin.from('production_materials').insert({
             production_order_id: productionOrderId,
             raw_material_id: matId,
@@ -1113,7 +1449,7 @@ async function deductFryingRawMaterials(
       }
     }
   } catch (err) {
-    console.warn('deductFryingRawMaterials warning:', err);
+    console.error('deductFryingRawMaterials error:', err);
   }
 }
 
@@ -1205,6 +1541,41 @@ async function deductPackingMaterials(
     // 2. Potong Stok Bahan Kemasan (Standing Pouch / Toples)
     if (packCount > 0) {
       let pkgMatId = seasoningConfig?.packaging_material_id;
+
+      // Cek spesifik di raw_materials berdasarkan type, weight, dan flavor
+      if (!pkgMatId) {
+        const targetWeight = input.packaging_weight_gram || '60g';
+        // 1. Coba cari kemasan cetak sablon rasa spesifik
+        const { data: specificPkg } = await supabaseAdmin
+          .from('raw_materials')
+          .select('id')
+          .is('deleted_at', null)
+          .eq('material_category', 'Packaging')
+          .ilike('packaging_type', `%${pkgType}%`)
+          .eq('package_weight', targetWeight)
+          .ilike('flavor_variant', `%${flavor}%`)
+          .limit(1)
+          .maybeSingle();
+
+        if (specificPkg) {
+          pkgMatId = specificPkg.id;
+        } else {
+          // 2. Coba cari kemasan universal/polos dengan gramasi sama
+          const { data: universalPkg } = await supabaseAdmin
+            .from('raw_materials')
+            .select('id')
+            .is('deleted_at', null)
+            .eq('material_category', 'Packaging')
+            .ilike('packaging_type', `%${pkgType}%`)
+            .eq('package_weight', targetWeight)
+            .limit(1)
+            .maybeSingle();
+          if (universalPkg) {
+            pkgMatId = universalPkg.id;
+          }
+        }
+      }
+
       if (!pkgMatId && standards?.packaging_configs) {
         const pkgMatch = standards.packaging_configs.find(p => p.packaging_type.toLowerCase().includes(pkgType.toLowerCase()));
         pkgMatId = pkgMatch?.packaging_material_id;
@@ -1215,6 +1586,7 @@ async function deductPackingMaterials(
         const { data: foundPkg } = await supabaseAdmin
           .from('raw_materials')
           .select('id')
+          .is('deleted_at', null)
           .ilike('name', `%${kw}%`)
           .limit(1)
           .maybeSingle();
@@ -1277,20 +1649,10 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
 
     let createdBatch: DbFryingBatch | undefined;
 
-    // Resolve order ID: jika tidak dipilih, cari SPK aktif sebagai relasi DB (foreign key constraint) atau gunakan null jika diizinkan
-    let resolvedOrderId = input.production_order_id || null;
-    if (!resolvedOrderId) {
-      const { data: latestActive } = await supabaseAdmin
-        .from('production_orders')
-        .select('id')
-        .in('status', ['DRAFT', 'IN_PROGRESS', 'REWORK'])
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (latestActive) {
-        resolvedOrderId = latestActive.id;
-      }
-    }
+    // Resolve order ID: jika dipilih, gunakan ID tersebut. Jika tidak dipilih (Curah/Pool), gunakan null (kolom nullable).
+    const resolvedOrderId = input.production_order_id && input.production_order_id.trim() !== ''
+      ? input.production_order_id
+      : null;
 
     const nowIso = new Date().toISOString();
     const startedAt = input.started_at !== undefined ? input.started_at : null;
@@ -1322,7 +1684,7 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
     if (error) {
       console.warn('Fallback memory for createFryingBatch:', error.message);
       const fallbackItem: DbFryingBatch = {
-        id: 'fb-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+        id: randomUUID(),
         production_order_id: resolvedOrderId || 'pool-selongsong',
         wajan_number: input.wajan_number,
         batch_weight_gram: input.batch_weight_gram || 800,
@@ -1345,15 +1707,41 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
       createdBatch = data;
     }
 
-    // Update production order status to IN_PROGRESS if still DRAFT
+    // Update production order status & progress if linked to an order
     if (resolvedOrderId) {
       try {
-        await supabaseAdmin
-          .from('production_orders')
-          .update({ status: 'IN_PROGRESS' })
-          .eq('id', resolvedOrderId)
-          .eq('status', 'DRAFT');
-      } catch (_) {}
+        let totalInputGram = input.batch_weight_gram || 800;
+        if (isValidUuid(resolvedOrderId)) {
+          const { data: siblingBatches } = await supabaseAdmin
+            .from('production_frying_batches')
+            .select('batch_weight_gram')
+            .eq('production_order_id', resolvedOrderId);
+          if (siblingBatches && siblingBatches.length > 0) {
+            totalInputGram = siblingBatches.reduce((s: number, b: any) => s + (Number(b.batch_weight_gram) || 800), 0);
+          }
+          const { data: ord } = await supabaseAdmin
+            .from('production_orders')
+            .select('target_quantity, status')
+            .eq('id', resolvedOrderId)
+            .maybeSingle();
+          if (ord) {
+            const targetKg = Number(ord.target_quantity) || 50;
+            const inputKg = totalInputGram / 1000;
+            const isCompleted = inputKg >= targetKg;
+            const newStatus = isCompleted ? 'COMPLETED' : (ord.status === 'DRAFT' ? 'IN_PROGRESS' : ord.status);
+            await supabaseAdmin
+              .from('production_orders')
+              .update({
+                status: newStatus,
+                input_weight: inputKg,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', resolvedOrderId);
+          }
+        }
+      } catch (err) {
+        console.warn('SPK frying status auto-update warning:', err);
+      }
     }
 
     await logAuditEvent({
@@ -1369,7 +1757,8 @@ export async function createFryingBatch(input: CreateFryingBatchInput): Promise<
         createdBatch.id,
         resolvedOrderId || '',
         input.batch_weight_gram || 800,
-        session.user.id
+        session.user.id,
+        input.wajan_number
       );
     }
 
@@ -1536,6 +1925,71 @@ export async function completeFryingBatch(input: CompleteFryingBatchInput): Prom
 
 export const updateFryingBatchOutput = completeFryingBatch;
 
+export async function deleteFryingBatch(batchId: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+
+    // Kembalikan (revert) mutasi stok bahan baku yang terlanjur dipotong
+    try {
+      const isBatchUuid = isValidUuid(batchId);
+      if (isBatchUuid) {
+        const { data: movements } = await supabaseAdmin
+          .from('stock_movements')
+          .select('*')
+          .eq('reference_id', batchId)
+          .eq('reference_type', 'PRODUCTION_FRYING');
+
+        if (movements && movements.length > 0) {
+          for (const mov of movements) {
+            if (mov.inventory_id && mov.quantity > 0) {
+              const { data: inv } = await supabaseAdmin
+                .from('inventory')
+                .select('id, quantity')
+                .eq('id', mov.inventory_id)
+                .maybeSingle();
+              if (inv) {
+                await supabaseAdmin
+                  .from('inventory')
+                  .update({ quantity: Number(inv.quantity) + Number(mov.quantity), last_updated_at: new Date().toISOString() })
+                  .eq('id', inv.id);
+              }
+            }
+          }
+          await supabaseAdmin
+            .from('stock_movements')
+            .delete()
+            .eq('reference_id', batchId)
+            .eq('reference_type', 'PRODUCTION_FRYING');
+        }
+      }
+
+      await supabaseAdmin.from('production_frying_batches').delete().eq('id', batchId);
+    } catch (err) {
+      console.warn('deleteFryingBatch db error:', err);
+    }
+
+    memoryFryingBatches = memoryFryingBatches.filter(b => b.id !== batchId);
+
+    await logAuditEvent({
+      action: 'DELETE',
+      entityType: 'production_frying_batch',
+      entityId: batchId,
+      userId: session.user.id,
+      details: { note: 'Batch wajan dibatalkan dan stok bahan dikembalikan' },
+    });
+
+    revalidatePath('/production');
+    revalidatePath('/inventory');
+    return { success: true };
+  } catch (err: any) {
+    console.error('deleteFryingBatch error:', err);
+    return { success: false, error: err.message || 'Gagal menghapus batch goreng' };
+  }
+}
+
 export async function getFryingBatchesByOrder(orderId: string): Promise<{
   success: boolean;
   data?: DbFryingBatch[];
@@ -1599,6 +2053,8 @@ export interface CreatePackingEntryInput {
   packaging_type?: string;
   packaging_weight_gram?: string;
   seasoning_used_gram: number;
+  longsongs_used_count?: number;
+  defect_packaging_count?: number;
   notes?: string;
   is_packed?: boolean;
 }
@@ -1940,9 +2396,11 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
       console.warn('Could not update order status/progress on packing:', orderUpdateErr);
     }
 
-    // ── Sinkronisasi Otomatis ke Stok Produk Jadi & Sales & Deduct Bahan Kemasan/Bumbu ──
+    // ── Potong Bahan Kemasan & Bumbu Tabur (Stok Produk Jadi menunggu Uji Mutu QC) ──
     if (isPacked && createdPacking) {
-      await syncPackedGoodsToSalesInventory(createdPacking, user.userId);
+      // NOTE: Produk jadi TIDAK langsung masuk ke stok Siap Jual toko di sini!
+      // Status kemasan adalah Karantina Produksi & BARU DISINKRONKAN ke Stok Siap Jual
+      // saat tim Quality Control (QC) memutuskan RELEASED (Lolos Mutu) di src/actions/qc.ts.
       await deductPackingMaterials(createdPacking.id, input, user.userId);
     }
 
@@ -2407,6 +2865,7 @@ export async function getFryingPackingMetrics(): Promise<{
   data?: {
     activeFryingBatchesToday: number;
     avgYieldToday: number;
+    totalOutputGramToday: number;
     totalKremesanGramToday: number;
     unpackedLongsongCount: number;
     packedToplesToday: number;
@@ -2422,6 +2881,7 @@ export async function getFryingPackingMetrics(): Promise<{
     const todayISO = todayStart.toISOString();
 
     let activeFrying = 0;
+    let totalOutputGram = 0;
     let totalKremesan = 0;
     let avgYield = 0;
     let unpackedCount = 0;
@@ -2438,6 +2898,7 @@ export async function getFryingPackingMetrics(): Promise<{
       if (!fryingErr && fryingToday) {
         activeFrying = fryingToday.length;
         totalKremesan = fryingToday.reduce((s, b) => s + (b.kremesan_weight_gram || 0), 0);
+        totalOutputGram = fryingToday.reduce((s, b) => s + (b.output_weight_gram || 0), 0);
         const yieldsToday = fryingToday
           .filter(b => b.output_weight_gram && b.batch_weight_gram)
           .map(b => ((b.output_weight_gram || 0) / b.batch_weight_gram) * 100);
@@ -2447,6 +2908,7 @@ export async function getFryingPackingMetrics(): Promise<{
       } else {
         activeFrying = memoryFryingBatches.length;
         totalKremesan = memoryFryingBatches.reduce((s, b) => s + (b.kremesan_weight_gram || 0), 0);
+        totalOutputGram = memoryFryingBatches.reduce((s, b) => s + (b.output_weight_gram || 0), 0);
         const yieldsToday = memoryFryingBatches
           .filter(b => b.output_weight_gram && b.batch_weight_gram)
           .map(b => ((b.output_weight_gram || 0) / b.batch_weight_gram) * 100);
@@ -2511,6 +2973,7 @@ export async function getFryingPackingMetrics(): Promise<{
       data: {
         activeFryingBatchesToday: activeFrying,
         avgYieldToday: avgYield,
+        totalOutputGramToday: totalOutputGram,
         totalKremesanGramToday: totalKremesan,
         unpackedLongsongCount: unpackedCount,
         packedToplesToday: packedToples,
@@ -2575,6 +3038,7 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
           movement_type: 'OUT',
           quantity: ing.qty,
           reference_type: 'MIXING_PREMIX',
+          movement_date: new Date().toISOString(),
           notes: `Dipakai untuk pembuatan premix ${input.output_qty}kg`,
           created_by: user.userId
         });
@@ -2621,6 +3085,7 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
       movement_type: 'IN',
       quantity: input.output_qty,
       reference_type: 'MIXING_PREMIX',
+      movement_date: new Date().toISOString(),
       notes: input.notes || 'Hasil Produksi Premix',
       created_by: user.userId
     });
@@ -2654,11 +3119,13 @@ export async function getPremixData(): Promise<{
 
     const allMaterials = rawMats || [];
 
-    // Filter premix / bumbu target items
+    // Filter premix target items (Khusus Tepung Premix racikan internal, bukan bumbu tabur beli jadi)
     const premixItems = allMaterials.filter(m => {
       const cat = (m.material_category || '').toLowerCase();
       const n = (m.name || '').toLowerCase();
-      return cat === 'tepung' || cat === 'bumbu' || n.includes('premix') || n.includes('tepung') || n.includes('bumbu');
+      const isBumbuTabur = n.includes('balado') || n.includes('barbeque') || n.includes('bbq') || n.includes('pedas') || n.includes('keju') || n.includes('jagung');
+      if (isBumbuTabur) return false;
+      return n.includes('premix') || (cat === 'tepung' && (n.includes('adonan') || n.includes('khumkhum') || n.includes('crispy')));
     });
 
     // 2. Ambil inventory stok bahan mentah
@@ -2681,9 +3148,9 @@ export async function getPremixData(): Promise<{
     // 3. Ambil riwayat peracikan premix dari stock_movements
     const { data: movements } = await supabaseAdmin
       .from('stock_movements')
-      .select('id, inventory_id, movement_type, quantity, reference_type, notes, created_at, created_by')
+      .select('id, inventory_id, movement_type, quantity, reference_type, notes, movement_date, created_by')
       .eq('reference_type', 'MIXING_PREMIX')
-      .order('created_at', { ascending: false })
+      .order('movement_date', { ascending: false })
       .limit(50);
 
     const history = (movements || []).map(mov => {
@@ -2694,7 +3161,7 @@ export async function getPremixData(): Promise<{
         movement_type: mov.movement_type,
         quantity: mov.quantity,
         notes: mov.notes,
-        created_at: mov.created_at,
+        created_at: mov.movement_date,
         created_by: mov.created_by,
         itemName: inv?.name || 'Premix / Bahan Baku',
         uom: inv?.uom || 'kg',

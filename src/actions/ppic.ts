@@ -112,13 +112,14 @@ export async function addManualHistoricalSorting(date: string, weight: number, f
       return { success: false, error: 'Petani harus dipilih.' };
     }
 
-    // Cari bahan baku jamur
+    // Cari bahan baku jamur (Jamur Tiram Segar)
     const { data: rawJamur } = await supabaseAdmin
       .from('raw_materials')
       .select('id')
-      .ilike('name', '%jamur%')
+      .is('deleted_at', null)
+      .or('code.eq.JMR-TRM,name.ilike.%jamur tiram%')
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (!rawJamur) {
       return { success: false, error: 'Data master bahan baku (jamur) tidak ditemukan.' };

@@ -88,7 +88,65 @@ export default function SortingPage() {
 
   const toast = useToast();
 
-  // ΓöÇΓöÇ Live kalkulasi ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Auto-Balance & Incoming Weight (Create) ──
+  const selectedReceiving = useMemo(() => {
+    return unsortedReceivings.find(r => r.id === form.receiving_id) || null;
+  }, [unsortedReceivings, form.receiving_id]);
+  const incomingWeight = selectedReceiving ? Number(selectedReceiving.weight) || 0 : 0;
+
+  const handleLeafChange = (valStr: string) => {
+    if (valStr === '') {
+      setForm(f => ({ ...f, leaf_weight: '', stem_weight: '' }));
+      return;
+    }
+    const val = parseFloat(valStr);
+    if (isNaN(val)) {
+      setForm(f => ({ ...f, leaf_weight: valStr }));
+      return;
+    }
+    if (incomingWeight > 0) {
+      if (val < 0) {
+        setForm(f => ({ ...f, leaf_weight: '0', stem_weight: incomingWeight.toString() }));
+        return;
+      }
+      if (val > incomingWeight) {
+        setForm(f => ({ ...f, leaf_weight: incomingWeight.toString(), stem_weight: '0' }));
+        return;
+      }
+      const autoStem = Math.max(0, Math.round((incomingWeight - val) * 100) / 100);
+      setForm(f => ({ ...f, leaf_weight: valStr, stem_weight: autoStem.toString() }));
+    } else {
+      setForm(f => ({ ...f, leaf_weight: valStr }));
+    }
+  };
+
+  const handleStemChange = (valStr: string) => {
+    if (valStr === '') {
+      setForm(f => ({ ...f, stem_weight: '', leaf_weight: '' }));
+      return;
+    }
+    const val = parseFloat(valStr);
+    if (isNaN(val)) {
+      setForm(f => ({ ...f, stem_weight: valStr }));
+      return;
+    }
+    if (incomingWeight > 0) {
+      if (val < 0) {
+        setForm(f => ({ ...f, stem_weight: '0', leaf_weight: incomingWeight.toString() }));
+        return;
+      }
+      if (val > incomingWeight) {
+        setForm(f => ({ ...f, stem_weight: incomingWeight.toString(), leaf_weight: '0' }));
+        return;
+      }
+      const autoLeaf = Math.max(0, Math.round((incomingWeight - val) * 100) / 100);
+      setForm(f => ({ ...f, stem_weight: valStr, leaf_weight: autoLeaf.toString() }));
+    } else {
+      setForm(f => ({ ...f, stem_weight: valStr }));
+    }
+  };
+
+  // Live kalkulasi
   const leafW = parseFloat(form.leaf_weight) || 0;
   const stemW = parseFloat(form.stem_weight) || 0;
   const total = leafW + stemW;
@@ -116,11 +174,17 @@ export default function SortingPage() {
       toast.error('Lengkapi semua field wajib');
       return;
     }
+    const leaf = parseFloat(form.leaf_weight);
+    const stem = parseFloat(form.stem_weight);
+    if (incomingWeight > 0 && Math.abs((leaf + stem) - incomingWeight) > 0.05) {
+      toast.error(`Total berat daun (${leaf} kg) + batang (${stem} kg) harus pas ${incomingWeight} kg sesuai penerimaan`);
+      return;
+    }
     setIsSaving(true);
     const res = await createSorting({
       receiving_id: form.receiving_id,
-      leaf_weight: parseFloat(form.leaf_weight),
-      stem_weight: parseFloat(form.stem_weight),
+      leaf_weight: leaf,
+      stem_weight: stem,
       sorting_date: form.sorting_date || undefined,
     });
     setIsSaving(false);
@@ -134,7 +198,65 @@ export default function SortingPage() {
     }
   };
 
-  // ΓöÇΓöÇ Live kalkulasi Edit ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+  // ── Auto-Balance & Incoming Weight (Edit) ──
+  const editIncomingWeight = useMemo(() => {
+    if (!editItem) return 0;
+    return (editItem as any)?.receiving?.weight ? Number((editItem as any).receiving.weight) || 0 : 0;
+  }, [editItem]);
+
+  const handleEditLeafChange = (valStr: string) => {
+    if (valStr === '') {
+      setEditForm(f => ({ ...f, leaf_weight: '', stem_weight: '' }));
+      return;
+    }
+    const val = parseFloat(valStr);
+    if (isNaN(val)) {
+      setEditForm(f => ({ ...f, leaf_weight: valStr }));
+      return;
+    }
+    if (editIncomingWeight > 0) {
+      if (val < 0) {
+        setEditForm(f => ({ ...f, leaf_weight: '0', stem_weight: editIncomingWeight.toString() }));
+        return;
+      }
+      if (val > editIncomingWeight) {
+        setEditForm(f => ({ ...f, leaf_weight: editIncomingWeight.toString(), stem_weight: '0' }));
+        return;
+      }
+      const autoStem = Math.max(0, Math.round((editIncomingWeight - val) * 100) / 100);
+      setEditForm(f => ({ ...f, leaf_weight: valStr, stem_weight: autoStem.toString() }));
+    } else {
+      setEditForm(f => ({ ...f, leaf_weight: valStr }));
+    }
+  };
+
+  const handleEditStemChange = (valStr: string) => {
+    if (valStr === '') {
+      setEditForm(f => ({ ...f, stem_weight: '', leaf_weight: '' }));
+      return;
+    }
+    const val = parseFloat(valStr);
+    if (isNaN(val)) {
+      setEditForm(f => ({ ...f, stem_weight: valStr }));
+      return;
+    }
+    if (editIncomingWeight > 0) {
+      if (val < 0) {
+        setEditForm(f => ({ ...f, stem_weight: '0', leaf_weight: editIncomingWeight.toString() }));
+        return;
+      }
+      if (val > editIncomingWeight) {
+        setEditForm(f => ({ ...f, stem_weight: editIncomingWeight.toString(), leaf_weight: '0' }));
+        return;
+      }
+      const autoLeaf = Math.max(0, Math.round((editIncomingWeight - val) * 100) / 100);
+      setEditForm(f => ({ ...f, stem_weight: valStr, leaf_weight: autoLeaf.toString() }));
+    } else {
+      setEditForm(f => ({ ...f, stem_weight: valStr }));
+    }
+  };
+
+  // Live kalkulasi Edit
   const editLeafW = parseFloat(editForm.leaf_weight) || 0;
   const editStemW = parseFloat(editForm.stem_weight) || 0;
   const editTotal = editLeafW + editStemW;
@@ -158,11 +280,17 @@ export default function SortingPage() {
       toast.error('Lengkapi berat daun dan batang');
       return;
     }
+    const leaf = parseFloat(editForm.leaf_weight);
+    const stem = parseFloat(editForm.stem_weight);
+    if (editIncomingWeight > 0 && Math.abs((leaf + stem) - editIncomingWeight) > 0.05) {
+      toast.error(`Total berat daun (${leaf} kg) + batang (${stem} kg) harus pas ${editIncomingWeight} kg sesuai penerimaan`);
+      return;
+    }
     setIsUpdating(true);
     const res = await updateSorting({
       id: editItem.id,
-      leaf_weight: parseFloat(editForm.leaf_weight),
-      stem_weight: parseFloat(editForm.stem_weight),
+      leaf_weight: leaf,
+      stem_weight: stem,
       sorting_date: editForm.sorting_date || undefined,
     });
     setIsUpdating(false);
@@ -414,20 +542,67 @@ export default function SortingPage() {
             </span>
           </FormField>
 
+          {incomingWeight > 0 && (
+            <div style={{
+              padding: '10px 14px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-primary-50)',
+              border: '1px solid var(--color-primary-200)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
+              <div>
+                <div style={{ fontSize: '11px', color: 'var(--color-primary-700)', fontWeight: 600 }}>Timbangan Penerimaan (Patokan)</div>
+                <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-900)' }}>
+                  {incomingWeight} kg
+                </strong>
+                <div style={{ fontSize: '11px', color: 'var(--color-primary-800)', marginTop: '2px' }}>
+                  Auto-Balance aktif: Input daun atau batang otomatis mengunci total pas {incomingWeight} kg.
+                </div>
+              </div>
+              <span style={{
+                padding: '3px 10px',
+                borderRadius: 'var(--radius-full)',
+                background: 'white',
+                color: 'var(--color-primary-700)',
+                fontSize: '11px',
+                fontWeight: 600,
+                border: '1px solid var(--color-primary-300)',
+                whiteSpace: 'nowrap',
+                marginLeft: '8px',
+              }}>
+                Terkunci {incomingWeight} kg
+              </span>
+            </div>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
             <FormField label="Berat Daun / W_daun (kg)" required>
               <Input
-                type="number" step="0.01" min="0" placeholder="0.00"
+                type="number" step="0.01" min="0" max={incomingWeight || undefined} placeholder="0.00"
                 value={form.leaf_weight}
-                onChange={e => setForm(f => ({ ...f, leaf_weight: e.target.value }))}
+                onChange={e => handleLeafChange(e.target.value)}
+                disabled={!form.receiving_id}
               />
+              {incomingWeight > 0 && (
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                  Maksimal: {incomingWeight} kg
+                </span>
+              )}
             </FormField>
             <FormField label="Berat Batang / W_batang (kg)" required>
               <Input
-                type="number" step="0.01" min="0" placeholder="0.00"
+                type="number" step="0.01" min="0" max={incomingWeight || undefined} placeholder="0.00"
                 value={form.stem_weight}
-                onChange={e => setForm(f => ({ ...f, stem_weight: e.target.value }))}
+                onChange={e => handleStemChange(e.target.value)}
+                disabled={!form.receiving_id}
               />
+              {incomingWeight > 0 && (
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                  Maksimal: {incomingWeight} kg
+                </span>
+              )}
             </FormField>
           </div>
 
@@ -525,20 +700,65 @@ export default function SortingPage() {
               </div>
             </div>
 
+            {editIncomingWeight > 0 && (
+              <div style={{
+                padding: '10px 14px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--color-primary-50)',
+                border: '1px solid var(--color-primary-200)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--color-primary-700)', fontWeight: 600 }}>Timbangan Penerimaan (Patokan)</div>
+                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-900)' }}>
+                    {editIncomingWeight} kg
+                  </strong>
+                  <div style={{ fontSize: '11px', color: 'var(--color-primary-800)', marginTop: '2px' }}>
+                    Auto-Balance aktif: Input daun atau batang otomatis mengunci total pas {editIncomingWeight} kg.
+                  </div>
+                </div>
+                <span style={{
+                  padding: '3px 10px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'white',
+                  color: 'var(--color-primary-700)',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  border: '1px solid var(--color-primary-300)',
+                  whiteSpace: 'nowrap',
+                  marginLeft: '8px',
+                }}>
+                  Terkunci {editIncomingWeight} kg
+                </span>
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
               <FormField label="Berat Daun Baru (kg)" required>
                 <Input
-                  type="number" step="0.01" min="0" placeholder="0.00"
+                  type="number" step="0.01" min="0" max={editIncomingWeight || undefined} placeholder="0.00"
                   value={editForm.leaf_weight}
-                  onChange={e => setEditForm(f => ({ ...f, leaf_weight: e.target.value }))}
+                  onChange={e => handleEditLeafChange(e.target.value)}
                 />
+                {editIncomingWeight > 0 && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                    Maksimal: {editIncomingWeight} kg
+                  </span>
+                )}
               </FormField>
               <FormField label="Berat Batang Baru (kg)" required>
                 <Input
-                  type="number" step="0.01" min="0" placeholder="0.00"
+                  type="number" step="0.01" min="0" max={editIncomingWeight || undefined} placeholder="0.00"
                   value={editForm.stem_weight}
-                  onChange={e => setEditForm(f => ({ ...f, stem_weight: e.target.value }))}
+                  onChange={e => handleEditStemChange(e.target.value)}
                 />
+                {editIncomingWeight > 0 && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                    Maksimal: {editIncomingWeight} kg
+                  </span>
+                )}
               </FormField>
             </div>
 

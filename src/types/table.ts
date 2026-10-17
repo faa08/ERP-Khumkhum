@@ -26,6 +26,7 @@ export interface DataTableProps<TData, TValue = unknown> {
   emptyStateTitle?: string;
   emptyStateDescription?: string;
   stickyHeader?: boolean;
+  toolbarActions?: React.ReactNode;
 }
 
 export interface BulkAction {

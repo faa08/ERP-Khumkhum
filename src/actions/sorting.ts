@@ -123,13 +123,14 @@ export async function createSorting(input: CreateSortingInput): Promise<{
       .update({ status: 'SORTED' })
       .eq('id', input.receiving_id);
 
-    // Tambahkan stok jamur bersih (leaf_weight) ke inventory Bahan Baku Siap Produksi
+    // Tambahkan stok jamur bersih (leaf_weight) ke inventory Bahan Baku Siap Produksi (Jamur Tiram Segar)
     const { data: rawJamur } = await supabaseAdmin
       .from('raw_materials')
       .select('id')
-      .ilike('name', '%jamur%')
+      .is('deleted_at', null)
+      .or('code.eq.JMR-TRM,name.ilike.%jamur tiram%')
       .limit(1)
-      .single();
+      .maybeSingle();
 
     if (rawJamur?.id && input.leaf_weight > 0) {
       const { data: wh } = await supabaseAdmin
@@ -281,9 +282,10 @@ export async function updateSorting(input: UpdateSortingInput): Promise<{
       const { data: rawJamur } = await supabaseAdmin
         .from('raw_materials')
         .select('id')
-        .ilike('name', '%jamur%')
+        .is('deleted_at', null)
+        .or('code.eq.JMR-TRM,name.ilike.%jamur tiram%')
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (rawJamur?.id) {
         const { data: invList } = await supabaseAdmin
@@ -422,9 +424,10 @@ export async function deleteSorting(id: string): Promise<{
       const { data: rawJamur } = await supabaseAdmin
         .from('raw_materials')
         .select('id')
-        .ilike('name', '%jamur%')
+        .is('deleted_at', null)
+        .or('code.eq.JMR-TRM,name.ilike.%jamur tiram%')
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (rawJamur?.id) {
         const { data: invList } = await supabaseAdmin

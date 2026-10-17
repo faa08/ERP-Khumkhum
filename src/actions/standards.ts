@@ -18,11 +18,11 @@ const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
   default_allowance_factor: 0.15,
   bom_recipes: [
     {
-      product_name: 'Jamur Crispy (Resep Dasar Penggorengan)',
+      product_name: 'Jamur Crispy Polos (Resep Dasar Penggorengan Curah)',
       raw_mushroom_ratio: 1.0,
       premix_flour_ratio: 0.25,
       cooking_oil_ratio: 0.30,
-      seasoning_ratio: 0.05,
+      seasoning_ratio: 0.0,
     },
   ],
   premix_recipes: [
@@ -30,23 +30,27 @@ const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
       premix_name: 'Tepung Premix KhumKhum',
       output_qty: 10,
       ingredients: [
-        { name: 'Tepung Terigu', qty: 8 },
-        { name: 'Tepung Tapioka', qty: 1 },
-        { name: 'Bawang Putih Bubuk', qty: 1 },
+        { name: 'Tepung Terigu', qty: 6.5 },
+        { name: 'Tepung Tapioka', qty: 2.5 },
+        { name: 'Bawang Putih Bubuk', qty: 0.5 },
+        { name: 'Garam Halus', qty: 0.5 },
       ],
     },
   ],
   seasoning_per_variant: [
     { variant: 'Original', seasoning_ratio_per_kg: 0.05, seasoning_name: 'Bumbu Gurih Original' },
     { variant: 'Balado', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Balado Pedas' },
-    { variant: 'BBQ', seasoning_ratio_per_kg: 0.07, seasoning_name: 'Bumbu Tabur BBQ Smoked' },
-    { variant: 'Pedas Manis', seasoning_ratio_per_kg: 0.07, seasoning_name: 'Bumbu Tabur Pedas Manis' },
-    { variant: 'Super Pedas', seasoning_ratio_per_kg: 0.10, seasoning_name: 'Bumbu Tabur Super Pedas Lv.5' },
+    { variant: 'BBQ', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur BBQ Smoked' },
+    { variant: 'Pedas Manis', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Pedas Manis' },
+    { variant: 'Super Pedas', seasoning_ratio_per_kg: 0.10, seasoning_name: 'Bumbu Tabur Super Pedas' },
+    { variant: 'Jagung Bakar', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Jagung Bakar' },
+    { variant: 'Keju', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Keju' },
   ],
   packaging_configs: [
-    { packaging_type: 'Standing Pouch', packaging_name: 'Standing Pouch KhumKhum 60g/75g', pieces_per_unit: 1 },
-    { packaging_type: 'Toples', packaging_name: 'Toples 500 Gram', pieces_per_unit: 1 },
-    { packaging_type: 'Kemasan Bantal Alumunium', packaging_name: 'Kemasan Bantal Alumunium', pieces_per_unit: 1 },
+    { packaging_type: 'Standing Pouch 60g', packaging_name: 'Standing Pouch KhumKhum 60g', pieces_per_unit: 1 },
+    { packaging_type: 'Standing Pouch 75g', packaging_name: 'Standing Pouch KhumKhum 75g', pieces_per_unit: 1 },
+    { packaging_type: 'Toples 500g', packaging_name: 'Toples KhumKhum 500g', pieces_per_unit: 1 },
+    { packaging_type: 'Pouch Bantal 100g', packaging_name: 'Pouch Bantal KhumKhum 100g', pieces_per_unit: 1 },
   ],
 };
 
@@ -148,6 +152,30 @@ export async function getProductionStandards(): Promise<{
           };
         });
 
+        // Auto-link premix recipes
+        if (!mergedConfig.premix_recipes || mergedConfig.premix_recipes.length === 0) {
+          mergedConfig.premix_recipes = [...(DEFAULT_PRODUCTION_STANDARDS.premix_recipes || [])];
+        }
+        const teriguId = findRm(['tepung terigu', 'tpg-trg', 'terigu']);
+        const tapiokaId = findRm(['tapioka', 'tepung tapioka']);
+        const bawangId = findRm(['bawang putih', 'bawang']);
+        const garamId = findRm(['garam', 'garam halus']);
+
+        mergedConfig.premix_recipes = mergedConfig.premix_recipes.map((pr: any) => ({
+          ...pr,
+          ingredients: (pr.ingredients || []).map((ing: any) => {
+            let rmId = ing.raw_material_id;
+            if (!rmId) {
+              const n = (ing.name || '').toLowerCase();
+              if (n.includes('terigu')) rmId = teriguId;
+              else if (n.includes('tapioka')) rmId = tapiokaId;
+              else if (n.includes('bawang')) rmId = bawangId;
+              else if (n.includes('garam')) rmId = garamId;
+            }
+            return { ...ing, raw_material_id: rmId };
+          }),
+        }));
+
         // Auto-link packaging configs
         if (!mergedConfig.packaging_configs || mergedConfig.packaging_configs.length === 0) {
           mergedConfig.packaging_configs = [...(DEFAULT_PRODUCTION_STANDARDS.packaging_configs || [])];
@@ -174,7 +202,7 @@ export async function saveProductionStandards(
   config: ProductionStandardConfig
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { user } = await requireAuth(['SUPER_ADMIN', 'PRODUCTION', 'QC']);
+    const { user } = await requireAuth(['SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
 
     const { error } = await supabaseAdmin.from('settings').upsert(
       {

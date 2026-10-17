@@ -6,7 +6,7 @@ import { DataTable } from '@/components/data-table/DataTable';
 import { Button } from '@/components/ui/Button';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { Drawer } from '@/components/ui/Drawer';
+import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
@@ -18,22 +18,20 @@ import {
   Trash2,
   Box,
   Layers,
-  Sparkles,
   Tag,
   Wand2,
-  PackageCheck,
-  Filter,
+  Sparkles,
+  Sprout,
 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { getRawMaterials, createRawMaterial, updateRawMaterial, deleteRawMaterial } from '@/actions/master';
 import type { DbRawMaterial } from '@/types/database';
+import { BatchPackagingGeneratorModal } from '@/components/master/BatchPackagingGeneratorModal';
 
 const PACKAGING_TYPE_OPTIONS = [
   'Standing Pouch',
   'Toples',
   'Pouch Bantal',
-  'Sachet',
-  'Kardus / Box',
   'Lainnya',
 ];
 
@@ -48,7 +46,8 @@ const FLAVOR_OPTIONS = [
   'Keju',
 ];
 
-const WEIGHT_OPTIONS = [
+const QUICK_WEIGHT_SUGGESTIONS = [
+  '30g',
   '50g',
   '60g',
   '75g',
@@ -56,9 +55,6 @@ const WEIGHT_OPTIONS = [
   '150g',
   '250g',
   '500g',
-  '800ml',
-  '1000g / 1kg',
-  'Custom',
 ];
 
 export default function RawmaterialsPage() {
@@ -67,9 +63,20 @@ export default function RawmaterialsPage() {
 
   const [data, setData] = useState<DbRawMaterial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'ALL' | 'RAW' | 'PACKAGING'>('ALL');
+  const [activeTab, setActiveTab] = useState<'ALL' | 'UTAMA' | 'BUMBU' | 'PACKAGING' | 'LAINNYA'>('ALL');
 
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab');
+      if (tab === 'UTAMA' || tab === 'BUMBU' || tab === 'PACKAGING' || tab === 'LAINNYA') {
+        setActiveTab(tab as any);
+      }
+    }
+  }, []);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<DbRawMaterial | null>(null);
 
   const [form, setForm] = useState({
@@ -81,7 +88,7 @@ export default function RawmaterialsPage() {
     material_category: '',
     packaging_type: 'Standing Pouch',
     flavor_variant: 'Original',
-    package_weight: '100g',
+    package_weight: '',
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -110,29 +117,59 @@ export default function RawmaterialsPage() {
     loadData();
   }, [loadData]);
 
-  // Helper untuk mendeteksi apakah material termasuk kategori packaging
-  const isPackagingMaterial = useCallback((item: DbRawMaterial): boolean => {
+  // Helper untuk mendeteksi kategori bahan baku standar (4 Kategori)
+  const getMaterialCategory = useCallback((item: DbRawMaterial): 'UTAMA' | 'BUMBU' | 'PACKAGING' | 'LAINNYA' => {
     const cat = (item.material_category || '').toLowerCase();
     const name = (item.name || '').toLowerCase();
-    return (
+
+    if (
       cat === 'packaging' ||
+      cat === 'kemasan' ||
       name.includes('packaging') ||
-      name.includes('kemasan') ||
+      name.includes('standing pouch') ||
+      name.includes('pouch') ||
       name.includes('toples') ||
-      name.includes('pouch')
-    );
+      name.includes('segel')
+    ) {
+      return 'PACKAGING';
+    }
+    if (
+      cat === 'bumbu' ||
+      cat.includes('bumbu') ||
+      name.includes('bumbu') ||
+      name.includes('balado') ||
+      name.includes('pedas') ||
+      name.includes('barbeque') ||
+      name.includes('seasoning') ||
+      name.includes('honeysia')
+    ) {
+      return 'BUMBU';
+    }
+    if (
+      cat === 'bahan utama' ||
+      cat === 'utama' ||
+      cat === 'tepung' ||
+      name.includes('jamur tiram') ||
+      name.includes('minyak') ||
+      name.includes('tepung') ||
+      name.includes('premix') ||
+      name.includes('tapioka') ||
+      name.includes('terigu')
+    ) {
+      return 'UTAMA';
+    }
+    return 'LAINNYA';
   }, []);
+
+  const isPackagingMaterial = useCallback((item: DbRawMaterial): boolean => {
+    return getMaterialCategory(item) === 'PACKAGING';
+  }, [getMaterialCategory]);
 
   // Filter data berdasarkan tab
   const filteredData = useMemo(() => {
-    if (activeTab === 'PACKAGING') {
-      return data.filter(isPackagingMaterial);
-    }
-    if (activeTab === 'RAW') {
-      return data.filter(item => !isPackagingMaterial(item));
-    }
-    return data;
-  }, [data, activeTab, isPackagingMaterial]);
+    if (activeTab === 'ALL') return data;
+    return data.filter(item => getMaterialCategory(item) === activeTab);
+  }, [data, activeTab, getMaterialCategory]);
 
   const handleCreate = (isPackagingDefault = false) => {
     setSelectedItem(null);
@@ -145,9 +182,9 @@ export default function RawmaterialsPage() {
       material_category: isPackagingDefault ? 'Packaging' : '',
       packaging_type: 'Standing Pouch',
       flavor_variant: 'Original',
-      package_weight: '100g',
+      package_weight: '',
     });
-    setDrawerOpen(true);
+    setIsModalOpen(true);
   };
 
   const handleEdit = (item: DbRawMaterial) => {
@@ -162,16 +199,16 @@ export default function RawmaterialsPage() {
       material_category: item.material_category || (isPkg ? 'Packaging' : ''),
       packaging_type: item.packaging_type || 'Standing Pouch',
       flavor_variant: item.flavor_variant || 'Original',
-      package_weight: item.package_weight || '100g',
+      package_weight: item.package_weight || '',
     });
-    setDrawerOpen(true);
+    setIsModalOpen(true);
   };
 
   // Generator otomatis untuk nama dan kode kemasan
   const handleAutoGeneratePackaging = () => {
     const type = form.packaging_type || 'Pouch';
     const flavor = form.flavor_variant || 'Original';
-    const weight = form.package_weight || '100g';
+    const weight = form.package_weight?.trim() || '';
 
     const shortType = type.toLowerCase().includes('toples')
       ? 'TPL'
@@ -183,8 +220,8 @@ export default function RawmaterialsPage() {
       : flavor.substring(0, 3).toUpperCase();
     const cleanWeight = weight.replace(/\s+/g, '').toUpperCase();
 
-    const generatedCode = `PKG-${shortType}-${shortFlavor}-${cleanWeight}`;
-    const generatedName = `Packaging ${type} ${flavor} ${weight}`;
+    const generatedCode = `PKG-${shortType}-${shortFlavor}${cleanWeight ? `-${cleanWeight}` : ''}`;
+    const generatedName = `Packaging ${type} ${flavor}${weight ? ` ${weight}` : ''}`;
 
     setForm(prev => ({
       ...prev,
@@ -219,7 +256,7 @@ export default function RawmaterialsPage() {
       const res = await updateRawMaterial(selectedItem.id, payload);
       if (res.success) {
         toast.success('Bahan baku/kemasan berhasil diperbarui');
-        setDrawerOpen(false);
+        setIsModalOpen(false);
         loadData();
       } else {
         toast.error(res.error || 'Gagal memperbarui bahan');
@@ -228,7 +265,7 @@ export default function RawmaterialsPage() {
       const res = await createRawMaterial(payload);
       if (res.success) {
         toast.success('Bahan baku/kemasan berhasil ditambahkan');
-        setDrawerOpen(false);
+        setIsModalOpen(false);
         loadData();
       } else {
         toast.error(res.error || 'Gagal menambahkan bahan');
@@ -324,18 +361,23 @@ export default function RawmaterialsPage() {
       accessorKey: 'material_category',
       header: 'Kategori',
       cell: ({ row }) => {
-        const cat = row.original.material_category || 'Bahan Baku';
-        const isPkg = isPackagingMaterial(row.original);
+        const cat = getMaterialCategory(row.original);
+        const catConfig = {
+          UTAMA: { label: 'Bahan Utama', bg: '#DCFCE7', color: '#166534' },
+          BUMBU: { label: 'Bumbu Tabur', bg: '#FEF3C7', color: '#92400E' },
+          PACKAGING: { label: 'Bahan Kemasan', bg: '#E0E7FF', color: '#3730A3' },
+          LAINNYA: { label: 'Lainnya', bg: '#F1F5F9', color: '#475569' },
+        }[cat];
         return (
           <span style={{
             fontSize: 'var(--text-xs)',
             fontWeight: 600,
             padding: '2px 8px',
             borderRadius: 'var(--radius-sm)',
-            background: isPkg ? 'var(--color-primary-100)' : 'var(--bg-subtle)',
-            color: isPkg ? 'var(--color-primary-800)' : 'var(--text-secondary)',
+            background: catConfig.bg,
+            color: catConfig.color,
           }}>
-            {cat}
+            {catConfig.label}
           </span>
         );
       },
@@ -405,164 +447,160 @@ export default function RawmaterialsPage() {
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Bahan Baku & Kemasan' }]}
         actions={
           !isManagement ? (
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <Button
-                variant="secondary"
-                onClick={() => handleCreate(true)}
-                leftIcon={<Box className="w-4 h-4" aria-hidden="true" />}
-              >
-                Tambah Kemasan (Packaging)
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => handleCreate(false)}
-                leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />}
-              >
-                Tambah Bahan Baku
-              </Button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {activeTab === 'PACKAGING' ? (
+                <Button
+                  variant="primary"
+                  onClick={() => setIsBatchModalOpen(true)}
+                  leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />}
+                >
+                  Tambah Kemasan
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={() => handleCreate(false)}
+                  leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />}
+                >
+                  Tambah Bahan Baku
+                </Button>
+              )}
             </div>
           ) : undefined
         }
       />
 
-      {/* ── TAB FILTER BAHAN BAKU VS PACKAGING ── */}
+      {/* ── FILTER TAB PER KATEGORI BAHAN BAKU ── */}
       <div style={{
         display: 'flex',
+        alignItems: 'center',
         gap: '8px',
         borderBottom: '2px solid var(--border-default)',
         marginBottom: 'var(--space-4)',
         marginTop: 'var(--space-2)',
+        overflowX: 'auto',
       }}>
-        <button
-          onClick={() => setActiveTab('ALL')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: 'var(--space-2) var(--space-4)',
-            fontSize: 'var(--text-sm)',
-            fontWeight: activeTab === 'ALL' ? 700 : 500,
-            color: activeTab === 'ALL' ? 'var(--color-primary-700)' : 'var(--text-secondary)',
-            background: activeTab === 'ALL' ? 'var(--color-primary-50)' : 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'ALL' ? '3px solid var(--color-primary-600)' : '3px solid transparent',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <Layers className="w-4 h-4" aria-hidden="true" />
-          Semua Bahan ({data.length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab('RAW')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: 'var(--space-2) var(--space-4)',
-            fontSize: 'var(--text-sm)',
-            fontWeight: activeTab === 'RAW' ? 700 : 500,
-            color: activeTab === 'RAW' ? 'var(--color-primary-700)' : 'var(--text-secondary)',
-            background: activeTab === 'RAW' ? 'var(--color-primary-50)' : 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'RAW' ? '3px solid var(--color-primary-600)' : '3px solid transparent',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <Tag className="w-4 h-4" aria-hidden="true" />
-          Bahan Mentah &amp; Bumbu ({data.filter(i => !isPackagingMaterial(i)).length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab('PACKAGING')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            padding: 'var(--space-2) var(--space-4)',
-            fontSize: 'var(--text-sm)',
-            fontWeight: activeTab === 'PACKAGING' ? 700 : 500,
-            color: activeTab === 'PACKAGING' ? 'var(--color-primary-700)' : 'var(--text-secondary)',
-            background: activeTab === 'PACKAGING' ? 'var(--color-primary-50)' : 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'PACKAGING' ? '3px solid var(--color-primary-600)' : '3px solid transparent',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <Box className="w-4 h-4" aria-hidden="true" />
-          Bahan Kemasan / Packaging ({data.filter(isPackagingMaterial).length})
-        </button>
+        {[
+          { id: 'ALL', label: 'Semua Bahan', icon: Layers },
+          { id: 'UTAMA', label: 'Bahan Baku Utama', icon: Sprout },
+          { id: 'BUMBU', label: 'Bumbu Tabur', icon: Tag },
+          { id: 'PACKAGING', label: 'Bahan Kemasan', icon: Box },
+          { id: 'LAINNYA', label: 'Lainnya', icon: Sparkles },
+        ].map(tab => {
+          const count = tab.id === 'ALL' ? data.length : data.filter(i => getMaterialCategory(i) === tab.id).length;
+          const isActive = activeTab === tab.id;
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: 'var(--space-2) var(--space-4)',
+                fontSize: 'var(--text-sm)',
+                fontWeight: isActive ? 700 : 500,
+                color: isActive ? 'var(--color-primary-700)' : 'var(--text-secondary)',
+                background: isActive ? 'var(--color-primary-50)' : 'transparent',
+                border: 'none',
+                borderBottom: isActive ? '3px solid var(--color-primary-600)' : '3px solid transparent',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Icon className="w-4 h-4" aria-hidden="true" />
+              {tab.label} ({count})
+            </button>
+          );
+        })}
       </div>
 
       <DataTable columns={columns} data={filteredData} isLoading={isLoading} />
 
-      {/* ── DRAWER FORM EDIT / TAMBAH BAHAN & PACKAGING ── */}
-      <Drawer
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+      {/* ── MODAL POPUP EDIT / TAMBAH BAHAN BAKU & KEMASAN ── */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
         title={
           selectedItem
             ? `Edit ${form.material_category === 'Packaging' ? 'Bahan Kemasan' : 'Bahan Baku'}`
-            : `Tambah ${form.material_category === 'Packaging' ? 'Kemasan (Packaging)' : 'Bahan Baku Baru'}`
+            : `Tambah ${form.material_category === 'Packaging' ? 'Bahan Kemasan (Packaging)' : 'Bahan Baku Baru'}`
         }
-        size="md"
+        description="Kelola spesifikasi detail bahan baku mentah atau bahan kemasan siap pakai."
+        size="lg"
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Batal</Button>
-            <Button variant="primary" onClick={handleSave} loading={isSaving}>Simpan Data</Button>
-          </>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', width: '100%' }}>
+            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
+              Batal
+            </Button>
+            <Button variant="primary" onClick={handleSave} loading={isSaving}>
+              Simpan Data
+            </Button>
+          </div>
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <FormField label="Kategori Bahan" required>
-            <select
-              value={form.material_category}
-              onChange={e => {
-                const newCat = e.target.value;
-                setForm(f => ({
-                  ...f,
-                  material_category: newCat,
-                  uom: newCat === 'Packaging' && !f.uom ? 'pcs' : f.uom,
-                }));
-              }}
-              style={{
-                width: '100%',
-                padding: 'var(--space-2) var(--space-3)',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--bg-default)',
-                color: 'var(--text-primary)',
-                fontSize: 'var(--text-sm)',
-              }}
-            >
-              <option value="">-- Pilih Kategori --</option>
-              <option value="Packaging">Packaging (Bahan Kemasan Jadi)</option>
-              <option value="Jamur">Jamur (Bahan Utama)</option>
-              <option value="Bumbu">Bumbu Tabur / Seasoning</option>
-              <option value="Tepung">Tepung &amp; Premix</option>
-              <option value="Minyak">Minyak Goreng</option>
-              <option value="Lainnya">Lainnya</option>
-            </select>
-          </FormField>
+          {/* Baris 1: Kategori & Satuan */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 'var(--space-3)' }}>
+            <FormField label="Kategori Bahan" required>
+              <select
+                value={form.material_category}
+                onChange={e => {
+                  const newCat = e.target.value;
+                  let defaultUom = form.uom;
+                  if (newCat === 'Packaging' && !form.uom) defaultUom = 'pcs';
+                  else if (newCat === 'Bumbu' && !form.uom) defaultUom = 'gram';
+                  else if (newCat === 'Bahan Utama' && !form.uom) defaultUom = 'kg';
+                  setForm(f => ({
+                    ...f,
+                    material_category: newCat,
+                    uom: defaultUom,
+                  }));
+                }}
+                style={{
+                  width: '100%',
+                  padding: 'var(--space-2) var(--space-3)',
+                  border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-default)',
+                  color: 'var(--text-primary)',
+                  fontSize: 'var(--text-sm)',
+                }}
+              >
+                <option value="">-- Pilih Kategori --</option>
+                <option value="Bahan Utama">Bahan Baku Utama (Jamur, Tepung, Minyak)</option>
+                <option value="Bumbu">Bumbu Tabur</option>
+                <option value="Packaging">Bahan Kemasan (Packaging)</option>
+                <option value="Lainnya">Lainnya</option>
+              </select>
+            </FormField>
 
-          {/* ── FITUR SPESIFIK PACKAGING (VARIASI & UKURAN/BERAT) ── */}
+            <FormField label="Satuan / Unit of Measure (UOM)" required>
+              <Input
+                value={form.uom}
+                onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}
+                placeholder={form.material_category === 'Packaging' ? 'pcs' : form.material_category === 'Bumbu' ? 'gram' : 'kg, liter'}
+              />
+            </FormField>
+          </div>
+
+          {/* ── KONFIGURASI PACKAGING (HANYA KETIKA KATEGORI PACKAGING) ── */}
           {form.material_category === 'Packaging' && (
             <div style={{
-              padding: 'var(--space-3)',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--color-primary-50)',
-              border: '1px solid var(--color-primary-200)',
+              padding: 'var(--space-4)',
+              borderRadius: 'var(--radius-lg)',
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-default)',
               display: 'flex',
               flexDirection: 'column',
               gap: 'var(--space-3)',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--color-primary-900)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Box className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                  Konfigurasi Variasi &amp; Ukuran Kemasan
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-2)' }}>
+                <span style={{ fontSize: 'var(--text-sm)', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Box className="w-4 h-4 text-primary" aria-hidden="true" />
+                  Spesifikasi &amp; Variasi Kemasan
                 </span>
                 <Button
                   type="button"
@@ -570,24 +608,24 @@ export default function RawmaterialsPage() {
                   size="sm"
                   onClick={handleAutoGeneratePackaging}
                   leftIcon={<Wand2 className="w-3.5 h-3.5" aria-hidden="true" />}
-                  style={{ fontSize: '11px', padding: '2px 8px' }}
+                  style={{ fontSize: '12px' }}
                 >
                   Generate Nama &amp; Kode
                 </Button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                 <FormField label="Tipe Kemasan">
                   <select
                     value={form.packaging_type}
                     onChange={e => setForm(f => ({ ...f, packaging_type: e.target.value }))}
                     style={{
                       width: '100%',
-                      padding: 'var(--space-2)',
+                      padding: 'var(--space-2) var(--space-3)',
                       border: '1px solid var(--border-default)',
                       borderRadius: 'var(--radius-md)',
                       background: 'var(--bg-default)',
-                      fontSize: 'var(--text-xs)',
+                      fontSize: 'var(--text-sm)',
                     }}
                   >
                     {PACKAGING_TYPE_OPTIONS.map(opt => (
@@ -602,11 +640,11 @@ export default function RawmaterialsPage() {
                     onChange={e => setForm(f => ({ ...f, flavor_variant: e.target.value }))}
                     style={{
                       width: '100%',
-                      padding: 'var(--space-2)',
+                      padding: 'var(--space-2) var(--space-3)',
                       border: '1px solid var(--border-default)',
                       borderRadius: 'var(--radius-md)',
                       background: 'var(--bg-default)',
-                      fontSize: 'var(--text-xs)',
+                      fontSize: 'var(--text-sm)',
                     }}
                   >
                     {FLAVOR_OPTIONS.map(opt => (
@@ -616,51 +654,60 @@ export default function RawmaterialsPage() {
                 </FormField>
               </div>
 
-              <FormField label="Ukuran / Berat Kemasan">
-                <select
-                  value={form.package_weight}
-                  onChange={e => setForm(f => ({ ...f, package_weight: e.target.value }))}
-                  style={{
-                    width: '100%',
-                    padding: 'var(--space-2)',
-                    border: '1px solid var(--border-default)',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--bg-default)',
-                    fontSize: 'var(--text-xs)',
-                  }}
-                >
-                  {WEIGHT_OPTIONS.map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
+              <FormField label="Ukuran / Berat Kemasan (Manual / Custom)">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <Input
+                    value={form.package_weight}
+                    onChange={e => setForm(f => ({ ...f, package_weight: e.target.value }))}
+                    placeholder="Contoh: 60g, 100g, 75g, 500g, atau 1kg"
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>Pilihan cepat:</span>
+                    {QUICK_WEIGHT_SUGGESTIONS.map(w => (
+                      <button
+                        key={w}
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, package_weight: w }))}
+                        style={{
+                          padding: '2px 8px',
+                          fontSize: '11px',
+                          borderRadius: 'var(--radius-sm)',
+                          border: form.package_weight === w ? '1px solid var(--color-primary-600)' : '1px solid var(--border-default)',
+                          background: form.package_weight === w ? 'var(--color-primary-50)' : 'var(--bg-default)',
+                          color: form.package_weight === w ? 'var(--color-primary-700)' : 'var(--text-secondary)',
+                          cursor: 'pointer',
+                          fontWeight: form.package_weight === w ? 600 : 400,
+                        }}
+                      >
+                        {w}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </FormField>
             </div>
           )}
 
-          <FormField label="Kode Bahan (Code)" required>
-            <Input
-              value={form.code}
-              onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
-              placeholder={form.material_category === 'Packaging' ? 'e.g. PKG-PCH-BAL-75G' : 'e.g. RM-JAMUR-BASAH'}
-            />
-          </FormField>
+          {/* Baris 2: Kode & Nama Bahan */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-3)' }}>
+            <FormField label="Kode Bahan (Code)" required>
+              <Input
+                value={form.code}
+                onChange={e => setForm(f => ({ ...f, code: e.target.value }))}
+                placeholder={form.material_category === 'Packaging' ? 'e.g. PKG-PCH-BAL-60G' : 'e.g. RM-JAMUR-BASAH'}
+              />
+            </FormField>
 
-          <FormField label="Nama Bahan (Name)" required>
-            <Input
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              placeholder={form.material_category === 'Packaging' ? 'e.g. Packaging Standing Pouch Balado 75g' : 'e.g. Jamur Tiram Basah'}
-            />
-          </FormField>
+            <FormField label="Nama Bahan (Name)" required>
+              <Input
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder={form.material_category === 'Packaging' ? 'e.g. Packaging Standing Pouch Balado 60g' : 'e.g. Jamur Tiram Segar'}
+              />
+            </FormField>
+          </div>
 
-          <FormField label="Satuan / Unit of Measure (UOM)" required>
-            <Input
-              value={form.uom}
-              onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}
-              placeholder={form.material_category === 'Packaging' ? 'pcs' : 'kg, gram, liter'}
-            />
-          </FormField>
-
+          {/* Baris 3: Min Stock & ROP */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
             <FormField label="Minimum Stock">
               <Input
@@ -679,7 +726,17 @@ export default function RawmaterialsPage() {
             </FormField>
           </div>
         </div>
-      </Drawer>
+      </Modal>
+
+      <BatchPackagingGeneratorModal
+        isOpen={isBatchModalOpen}
+        onClose={() => setIsBatchModalOpen(false)}
+        existingMaterials={data}
+        onSuccess={() => {
+          loadData();
+          setActiveTab('PACKAGING');
+        }}
+      />
 
       <ConfirmDialog
         isOpen={confirmDialog.isOpen}

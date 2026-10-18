@@ -589,6 +589,7 @@ export function PremixMixingForm() {
 
               {/* TOMBOL SIMPAN */}
               <Button
+                id="btn-simpan-premix"
                 variant="primary"
                 onClick={handleSubmit}
                 disabled={isSubmitting || isLoading || !form.output_qty || Number(form.output_qty) <= 0 || ingredients.length === 0}

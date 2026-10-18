@@ -99,7 +99,7 @@ export default function InventoryPage() {
   const [isSavingOpname, setIsSavingOpname] = useState(false);
 
   const [inboundDrawerOpen, setInboundDrawerOpen] = useState(false);
-  const [inboundForm, setInboundForm] = useState({ item_name: '', uom: 'kg', quantity: 0, notes: '' });
+  const [inboundForm, setInboundForm] = useState({ item_id: '', item_name: '', uom: 'kg', quantity: 0, notes: '' });
   const [isSavingInbound, setIsSavingInbound] = useState(false);
   const [masterRawMaterials, setMasterRawMaterials] = useState<DbRawMaterial[]>([]);
   const [masterProducts, setMasterProducts] = useState<DbProduct[]>([]);
@@ -204,7 +204,7 @@ export default function InventoryPage() {
     if (res.success) {
       toast.success('Penerimaan barang berhasil');
       setInboundDrawerOpen(false);
-      setInboundForm({ item_name: '', uom: 'kg', quantity: 0, notes: '' });
+      setInboundForm({ item_id: '', item_name: '', uom: 'kg', quantity: 0, notes: '' });
       loadData();
     } else {
       toast.error(res.error || 'Gagal menerima barang');
@@ -750,29 +750,41 @@ export default function InventoryPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <FormField label="Nama Barang" required>
             <Select
-              value={inboundForm.item_name}
+              value={inboundForm.item_id}
               onChange={e => {
                 const val = e.target.value;
-                let selectedUom = inboundForm.uom;
-                if (isWarehouseMode) {
-                  const selected = masterRawMaterials.find(rm => rm.name === val);
-                  if (selected) selectedUom = selected.uom;
-                } else {
-                  selectedUom = 'pcs';
+                if (!val) {
+                  setInboundForm(f => ({ ...f, item_id: '', item_name: '', uom: isWarehouseMode ? 'kg' : 'pcs' }));
+                  return;
                 }
-                setInboundForm(f => ({ 
-                  ...f, 
-                  item_name: val,
-                  uom: selectedUom 
-                }));
+                if (isWarehouseMode) {
+                  const selected = masterRawMaterials.find(rm => rm.id === val);
+                  if (selected) {
+                    setInboundForm(f => ({ 
+                      ...f, 
+                      item_id: selected.id,
+                      item_name: selected.name,
+                      uom: selected.uom || 'kg' 
+                    }));
+                  }
+                } else {
+                  const selected = masterProducts.find(p => p.id === val);
+                  if (selected) {
+                    setInboundForm(f => ({ 
+                      ...f, 
+                      item_id: selected.id,
+                      item_name: selected.name,
+                      uom: 'pcs' 
+                    }));
+                  }
+                }
               }}
               options={[
                 { value: '', label: `Pilih ${isWarehouseMode ? 'Bahan Baku' : 'Produk Jadi'} dari Master Data...` },
-                ...Array.from(new Set(
-                  isWarehouseMode 
-                    ? masterRawMaterials.map(rm => rm.name)
-                    : masterProducts.map(p => p.name)
-                )).map(name => ({ value: name, label: name }))
+                ...(isWarehouseMode 
+                  ? masterRawMaterials.filter(rm => !(rm as any).deleted_at).map(rm => ({ value: rm.id, label: `${rm.name} (${rm.uom || 'kg'})` }))
+                  : masterProducts.filter(p => !(p as any).deleted_at).map(p => ({ value: p.id, label: p.name }))
+                )
               ]}
             />
           </FormField>

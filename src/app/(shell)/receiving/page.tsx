@@ -496,6 +496,7 @@ export default function ReceivingPage() {
               Import CSV / Excel
             </Button>
             <Button 
+              id="btn-tambah-penerimaan"
               variant="primary" 
               onClick={handleOpenCreate}
               leftIcon={<Plus size={16} />}
@@ -566,7 +567,7 @@ export default function ReceivingPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Batal</Button>
-            <Button variant="primary" onClick={handleSave} loading={isSaving}>
+            <Button id="btn-simpan-penerimaan" variant="primary" onClick={handleSave} loading={isSaving}>
               {editId ? "Simpan Revisi" : "Simpan & Kirim Nota WA"}
             </Button>
           </>

@@ -243,69 +243,102 @@ export async function getInventoryForecasting(inventoryId: string): Promise<{
   }
 }
 
-export async function receiveNonMushroomItem(payload: { item_name: string, uom: string, quantity: number, notes?: string, item_type?: string }): Promise<{ success: boolean; error?: string }> {
+export async function receiveNonMushroomItem(payload: { 
+  item_name: string; 
+  uom: string; 
+  quantity: number; 
+  notes?: string; 
+  item_type?: string;
+  item_id?: string;
+}): Promise<{ success: boolean; error?: string }> {
   try {
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
     const itemType = payload.item_type || 'RAW_MATERIAL';
 
     // 1. Find or create master item
-    let masterItemId = '';
+    let masterItemId = payload.item_id || '';
     
-    if (itemType === 'PRODUCT') {
-      const { data: existingProd } = await supabaseAdmin.from('products').select('id').ilike('name', payload.item_name).maybeSingle();
-      if (existingProd) {
-        masterItemId = existingProd.id;
+    if (!masterItemId) {
+      if (itemType === 'PRODUCT') {
+        const { data: existingProds } = await supabaseAdmin
+          .from('products')
+          .select('id')
+          .is('deleted_at', null)
+          .ilike('name', payload.item_name.trim())
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        if (existingProds && existingProds.length > 0) {
+          masterItemId = existingProds[0].id;
+        } else {
+          const sku = `PROD-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
+          const { data: newProd, error: prodError } = await supabaseAdmin.from('products').insert({
+            sku,
+            name: payload.item_name.trim(),
+          }).select('id').single();
+          if (prodError) throw prodError;
+          masterItemId = newProd.id;
+        }
       } else {
-        const sku = `PROD-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
-        const { data: newProd, error: prodError } = await supabaseAdmin.from('products').insert({
-          sku,
-          name: payload.item_name,
-        }).select('id').single();
-        if (prodError) throw prodError;
-        masterItemId = newProd.id;
-      }
-    } else {
-      const { data: existingRm } = await supabaseAdmin.from('raw_materials').select('id').ilike('name', payload.item_name).maybeSingle();
-      if (existingRm) {
-        masterItemId = existingRm.id;
-      } else {
-        const code = `RM-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
-        const { data: newRm, error: rmError } = await supabaseAdmin.from('raw_materials').insert({
-          code,
-          name: payload.item_name,
-          uom: payload.uom || 'kg',
-          min_stock: 0,
-          rop: 0
-        }).select('id').single();
-        if (rmError) throw rmError;
-        masterItemId = newRm.id;
+        const { data: existingRms } = await supabaseAdmin
+          .from('raw_materials')
+          .select('id')
+          .is('deleted_at', null)
+          .ilike('name', payload.item_name.trim())
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        if (existingRms && existingRms.length > 0) {
+          masterItemId = existingRms[0].id;
+        } else {
+          const code = `RM-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
+          const { data: newRm, error: rmError } = await supabaseAdmin.from('raw_materials').insert({
+            code,
+            name: payload.item_name.trim(),
+            uom: payload.uom || 'kg',
+            min_stock: 0,
+            rop: 0
+          }).select('id').single();
+          if (rmError) throw rmError;
+          masterItemId = newRm.id;
+        }
       }
     }
 
     // 2. Find or create inventory
     let inventoryId = '';
     let currentQty = 0;
-    const { data: existingInv } = await supabaseAdmin.from('inventory')
-      .select('id, quantity')
+
+    // Pick target warehouse (Gudang Utama)
+    const { data: whList } = await supabaseAdmin
+      .from('warehouses')
+      .select('id, name')
+      .is('deleted_at', null);
+
+    const mainWarehouse = whList?.find(w => w.name.toLowerCase().includes('utama') || w.name.toLowerCase().includes('pabrik'))
+      || whList?.[0];
+    const targetWarehouseId = mainWarehouse?.id;
+    if (!targetWarehouseId) throw new Error('No warehouse found');
+
+    const { data: existingInvs } = await supabaseAdmin.from('inventory')
+      .select('id, quantity, warehouse_id')
       .eq('item_type', itemType)
       .eq('item_id', masterItemId)
-      .maybeSingle();
+      .is('deleted_at', null);
+
+    // Prefer inventory in main warehouse, otherwise pick the first existing
+    const existingInv = existingInvs?.find(inv => inv.warehouse_id === targetWarehouseId) || existingInvs?.[0];
 
     if (existingInv) {
       inventoryId = existingInv.id;
-      currentQty = existingInv.quantity;
+      currentQty = Number(existingInv.quantity || 0);
       await supabaseAdmin.from('inventory').update({ 
         quantity: currentQty + payload.quantity, 
         last_updated_at: new Date().toISOString() 
       }).eq('id', inventoryId);
     } else {
-      // Find a warehouse
-      const { data: wh } = await supabaseAdmin.from('warehouses').select('id').limit(1).single();
-      const warehouseId = wh?.id;
-      if (!warehouseId) throw new Error('No warehouse found');
-
       const { data: newInv, error: invError } = await supabaseAdmin.from('inventory').insert({
-        warehouse_id: warehouseId,
+        warehouse_id: targetWarehouseId,
         item_type: itemType,
         item_id: masterItemId,
         quantity: payload.quantity,
@@ -325,6 +358,9 @@ export async function receiveNonMushroomItem(payload: { item_name: string, uom: 
       notes: payload.notes || 'Inbound Manual',
       created_by: user.userId
     });
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
 
     return { success: true };
   } catch (err: any) {

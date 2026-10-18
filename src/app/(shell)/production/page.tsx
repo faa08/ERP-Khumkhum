@@ -1535,7 +1535,7 @@ export default function ProductionPage() {
       ...f,
       batches: f.batches.map(b => ({ ...b, duration_minutes: '15.0', oil_temp_celsius: '170' })),
     }));
-    toast.info('Seluruh batch wajan diset ke standar HACCP (15.0 menit, 170°C)');
+    toast.info('Seluruh batch diset ke standar HACCP (15.0 menit, 170°C)');
   };
 
   // Handler: Submit Rekap Selesai Masak SPK & Potong Stok Gudang Aktual
@@ -2038,7 +2038,7 @@ export default function ProductionPage() {
   const fryingColumns = useMemo<ColumnDef<DbFryingBatch>[]>(() => [
     {
       accessorKey: 'wajan_number',
-      header: 'Wajan #',
+      header: 'Batch #',
       cell: ({ row }) => (
         <strong style={{ color: 'var(--color-primary-700)', fontFamily: 'monospace', fontSize: 'var(--text-lg)' }}>
           #{row.original.wajan_number}
@@ -2450,7 +2450,7 @@ export default function ProductionPage() {
         const order = orders.find(o => o.id === row.production_order_id) || row.production_order;
         return order?.batch_number || '';
       },
-      header: 'SPK & Wajan Asal',
+      header: 'SPK & Batch Asal',
       cell: ({ row }) => {
         const order = orders.find(o => o.id === row.original.production_order_id) || row.original.production_order;
         const wajanNum = row.original.frying_batch?.wajan_number;
@@ -2460,7 +2460,7 @@ export default function ProductionPage() {
               {order?.batch_number || 'SPK Terintegrasi'}
             </strong>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-              {wajanNum ? `Wajan #${wajanNum}` : 'Campuran SPK'}
+              {wajanNum ? `Batch #${wajanNum}` : 'Campuran SPK'}
             </div>
           </div>
         );
@@ -2589,6 +2589,7 @@ export default function ProductionPage() {
               Standar Resep (BOM)
             </Button>
             <Button 
+              id="btn-buat-spk"
               variant="primary" 
               onClick={() => handleOpenCreateSpk(activeTab === 'PACKING' ? 'PACKING' : 'FRYING')}
               leftIcon={<Plus size={16} aria-hidden="true" />}
@@ -2644,7 +2645,7 @@ export default function ProductionPage() {
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
                 <Flame className="w-5 h-5 text-[var(--color-danger-600)]" aria-hidden="true" />
-                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Batch Wajan Hari Ini</span>
+                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Batch Goreng Hari Ini</span>
               </div>
               <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-primary-700)' }}>
                 {fryingMetrics.activeFryingBatchesToday} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>Batch</span>
@@ -2735,7 +2736,7 @@ export default function ProductionPage() {
                         <td style={{ padding: '10px 12px' }}>
                           <strong>{targetKg.toLocaleString('id-ID')} kg</strong>
                           <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                            ~{Math.round(targetKg / 0.8)} wajan (@800g)
+                            ~{Math.round(targetKg / 0.8)} batch (@800g)
                           </div>
                         </td>
                         <td style={{ padding: '10px 12px' }}>
@@ -2744,7 +2745,7 @@ export default function ProductionPage() {
                               {realizedKg.toFixed(1)} kg
                             </span>
                             <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginLeft: '4px' }}>
-                              ({realizedBatchesCount} wajan)
+                              ({realizedBatchesCount} batch)
                             </span>
                           </div>
                           {avgDurationMinutes > 0 ? (
@@ -2771,7 +2772,7 @@ export default function ProductionPage() {
                             </div>
                           ) : (
                             <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                              Belum ada wajan selesai
+                              Belum ada batch selesai
                             </div>
                           )}
                         </td>
@@ -4072,9 +4073,9 @@ export default function ProductionPage() {
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '11px', color: 'var(--color-primary-800)' }}>Estimasi Total Wajan</div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-primary-800)' }}>Estimasi Total Batch</div>
                       <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
-                        ~{Math.round(targetMushroom / 0.8)} wajan
+                        ~{Math.round(targetMushroom / 0.8)} batch
                       </div>
                     </div>
                   </div>
@@ -4100,7 +4101,7 @@ export default function ProductionPage() {
                       id: 'BATCH',
                       label: '3. Waktu Batch (HACCP)',
                       icon: <Timer size={14} />,
-                      badge: fryingRunForm.batches.length > 0 ? `${fryingRunForm.batches.length} wajan` : undefined,
+                      badge: fryingRunForm.batches.length > 0 ? `${fryingRunForm.batches.length} batch` : undefined,
                     },
                   ].map((tab) => {
                     const isActive = fryingRunTab === tab.id;
@@ -4466,7 +4467,7 @@ export default function ProductionPage() {
                             RATA-RATA WAKTU PENGGORENGAN PER BATCH (HACCP)
                           </div>
                           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: isHaccpOptimal ? 'var(--color-success-800)' : 'var(--color-warning-800)', fontFamily: 'monospace' }}>
-                            {avgMinutes.toFixed(1)} menit / wajan
+                            {avgMinutes.toFixed(1)} menit / batch
                           </div>
                           <div style={{ fontSize: '11px', color: isHaccpOptimal ? 'var(--color-success-700)' : 'var(--color-warning-800)', marginTop: '2px' }}>
                             {isHaccpOptimal && (
@@ -4493,7 +4494,7 @@ export default function ProductionPage() {
                             variant="secondary"
                             size="sm"
                             onClick={handleSetAllBatchesStandard}
-                            title="Set semua wajan ke 15.0 menit dan 170°C"
+                            title="Set semua batch ke 15.0 menit dan 170°C"
                           >
                             Set Standar 15 Mnt
                           </Button>
@@ -4504,16 +4505,16 @@ export default function ProductionPage() {
                             leftIcon={<Plus size={14} />}
                             onClick={handleAddBatch}
                           >
-                            Tambah Wajan
+                            Tambah Batch
                           </Button>
                         </div>
                       </div>
 
-                      {/* Tabel Durasi Wajan */}
+                      {/* Tabel Durasi Batch */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                            Daftar Wajan dalam SPK Ini ({fryingRunForm.batches.length} Batch Wajan):
+                            Daftar Batch dalam SPK Ini ({fryingRunForm.batches.length} Batch):
                           </span>
                           <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
                             Total Waktu: <strong>{validBatches.reduce((s, b) => s + parseFloat(b.duration_minutes), 0).toFixed(1)} menit</strong>
@@ -4522,7 +4523,7 @@ export default function ProductionPage() {
 
                         {fryingRunForm.batches.length === 0 ? (
                           <div style={{ textAlign: 'center', padding: 'var(--space-4)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
-                            Belum ada wajan tercatat. Klik &quot;+ Tambah Wajan&quot; untuk memasukkan durasi wajan.
+                            Belum ada batch tercatat. Klik &quot;+ Tambah Batch&quot; untuk memasukkan durasi batch.
                           </div>
                         ) : (
                           <div style={{
@@ -4548,14 +4549,14 @@ export default function ProductionPage() {
                               >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-primary-800)' }}>
-                                    Wajan #{b.wajan_number}
+                                    Batch #{b.wajan_number}
                                   </span>
                                   {fryingRunForm.batches.length > 1 && (
                                     <button
                                       type="button"
                                       onClick={() => handleRemoveBatch(idx)}
                                       style={{ background: 'none', border: 'none', color: 'var(--color-danger-600)', cursor: 'pointer', padding: '2px' }}
-                                      title="Hapus wajan ini"
+                                      title="Hapus batch ini"
                                     >
                                       <Trash2 size={13} />
                                     </button>

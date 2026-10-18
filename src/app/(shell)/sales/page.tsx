@@ -606,6 +606,7 @@ export default function SalesPage() {
             </Button>
             {!isManagement && (
               <Button
+                id="btn-buat-sales-order"
                 variant="primary"
                 onClick={() => {
                   setForm(EMPTY_FORM);

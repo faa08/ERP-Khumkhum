@@ -513,21 +513,12 @@ export async function deleteInventoryItem(id: string): Promise<{ success: boolea
     // 2. Hapus riwayat pergerakan stok terkait
     await supabaseAdmin.from('stock_movements').delete().eq('inventory_id', id);
     
-    // 3. Hapus baris inventory
+    // 3. Hapus baris inventory (HANYA menghapus stok di gudang ini, TIDAK menghapus Data Induk master)
     const { error } = await supabaseAdmin.from('inventory').delete().eq('id', id);
     if (error) throw error;
-
-    // 4. Sinkronkan ke Master Data: Soft-delete item master agar konsisten dan tidak muncul kembali saat auto-sync
-    if (inv?.item_type === 'RAW_MATERIAL' && inv.item_id) {
-      await supabaseAdmin.from('raw_materials').update({ deleted_at: new Date().toISOString() }).eq('id', inv.item_id);
-    } else if (inv?.item_type === 'PRODUCT' && inv.item_id) {
-      await supabaseAdmin.from('products').update({ deleted_at: new Date().toISOString() }).eq('id', inv.item_id);
-    }
     
     revalidatePath('/inventory');
     revalidatePath('/warehouse');
-    revalidatePath('/master/raw-materials');
-    revalidatePath('/master/products');
 
     return { success: true };
   } catch (err: any) {

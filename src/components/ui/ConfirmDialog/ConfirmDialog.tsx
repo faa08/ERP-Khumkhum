@@ -13,7 +13,7 @@ export interface ConfirmDialogProps extends Pick<ModalProps, 'isOpen' | 'onClose
   cancelLabel?: string;
   variant?: 'danger' | 'primary';
   isLoading?: boolean;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }
 
 /**
@@ -31,6 +31,22 @@ export function ConfirmDialog({
   isLoading = false,
   onConfirm,
 }: ConfirmDialogProps) {
+  const [internalLoading, setInternalLoading] = React.useState(false);
+
+  const handleConfirm = async () => {
+    try {
+      setInternalLoading(true);
+      await onConfirm();
+      onClose();
+    } catch (err) {
+      console.error('ConfirmDialog error:', err);
+    } finally {
+      setInternalLoading(false);
+    }
+  };
+
+  const loading = isLoading || internalLoading;
+
   return (
     <Modal
       isOpen={isOpen}
@@ -38,13 +54,13 @@ export function ConfirmDialog({
       title={title}
       description={description}
       size="sm"
-      closeOnOverlayClick={!isLoading}
+      closeOnOverlayClick={!loading}
       footer={
         <>
-          <Button variant="secondary" onClick={onClose} disabled={isLoading}>
+          <Button variant="secondary" onClick={onClose} disabled={loading}>
             {cancelLabel}
           </Button>
-          <Button variant={variant} onClick={onConfirm} loading={isLoading}>
+          <Button variant={variant} onClick={handleConfirm} loading={loading}>
             {confirmLabel}
           </Button>
         </>

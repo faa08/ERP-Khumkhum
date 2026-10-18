@@ -254,7 +254,7 @@ export default function InventoryPage() {
     const res = await deleteInventoryItem(deleteInv.id);
     setIsDeleting(false);
     if (res.success) {
-      toast.success('Item berhasil dihapus dan dinonaktifkan di Data Induk');
+      toast.success('Item berhasil dihapus dari inventaris gudang (Master Data tetap aman)');
       setDeleteOpen(false);
       loadData();
     } else {
@@ -887,7 +887,7 @@ export default function InventoryPage() {
           </>
         }
       >
-        <p>Apakah Anda yakin ingin menghapus <strong>{deleteInv?.item_name}</strong> dari inventaris gudang dan menonaktifkannya dari Data Induk?</p>
+        <p>Apakah Anda yakin ingin menghapus <strong>{deleteInv?.item_name}</strong> dari inventaris gudang ini? Data Induk (Master Data) tetap aman dan tidak akan terhapus.</p>
       </Modal>
 
       <Modal

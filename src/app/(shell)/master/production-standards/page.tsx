@@ -45,7 +45,7 @@ export default function ProductionStandardsPage() {
   const { user } = useAuth();
   const isManagement = user?.role === 'MANAGEMENT';
 
-  const [activeTab, setActiveTab] = useState<'FRYING' | 'PACKAGING' | 'MACHINERY'>('FRYING');
+  const [activeTab, setActiveTab] = useState<'FRYING' | 'MACHINERY'>('FRYING');
 
   const [config, setConfig] = useState<ProductionStandardConfig>({
     min_yield_percentage: 80.0,
@@ -82,17 +82,8 @@ export default function ProductionStandardsPage() {
   const [newFryingRatio, setNewFryingRatio] = useState('0.25');
   const [isAddingFryingCustom, setIsAddingFryingCustom] = useState(false);
 
-  // State tambah varian rasa baru
-  const [newVariantName, setNewVariantName] = useState('');
-  const [isAddingVariant, setIsAddingVariant] = useState(false);
-
   // State Simulasi Level 2 (Wajan Penggorengan Curah)
   const [simulatedBatchGram, setSimulatedBatchGram] = useState<number>(800);
-
-  // State Simulasi Level 3 (Finishing & Packing)
-  const [packingSimVariant, setPackingSimVariant] = useState<string>('Balado');
-  const [packingSimWeightGram, setPackingSimWeightGram] = useState<number>(60);
-  const [packingSimQty, setPackingSimQty] = useState<number>(100);
 
   const toast = useToast();
 
@@ -285,119 +276,16 @@ export default function ProductionStandardsPage() {
     toast.success('Formula acuan standar wajan berhasil dimuat. Bahan terkunci, takaran rasio bebas disesuaikan.');
   };
 
-  // ── Grouping Bahan Baku Kemasan & Bumbu untuk Dropdown Terstruktur ──
-  const packagingMaterials = useMemo(() => {
-    return rawMaterials.filter(rm => {
-      const cat = (rm.material_category || '').toLowerCase();
-      const name = (rm.name || '').toLowerCase();
-      return (
-        cat === 'packaging' ||
-        rm.uom === 'pcs' ||
-        name.includes('packaging') ||
-        name.includes('kemasan') ||
-        name.includes('pouch') ||
-        name.includes('toples') ||
-        name.includes('bantal') ||
-        name.includes('sachet') ||
-        name.includes('box')
-      );
-    });
-  }, [rawMaterials]);
-
-  const nonPackagingMaterials = useMemo(() => {
-    return rawMaterials.filter(rm => !packagingMaterials.includes(rm));
-  }, [rawMaterials, packagingMaterials]);
-
-  const seasoningMaterials = useMemo(() => {
-    return rawMaterials.filter(rm => {
-      const cat = (rm.material_category || '').toLowerCase();
-      const name = (rm.name || '').toLowerCase();
-      return (
-        cat === 'bumbu tabur' ||
-        name.includes('bumbu') ||
-        name.includes('seasoning') ||
-        name.includes('balado') ||
-        name.includes('barbeque') ||
-        name.includes('keju') ||
-        name.includes('pedas') ||
-        name.includes('jagung')
-      );
-    });
-  }, [rawMaterials]);
-
-  const nonSeasoningMaterials = useMemo(() => {
-    return rawMaterials.filter(rm => !seasoningMaterials.includes(rm));
-  }, [rawMaterials, seasoningMaterials]);
-
-  // ── Seasoning / Packaging Helpers ──
-  const updateSeasoningConfig = (index: number, fields: Partial<SeasoningConfig>) => {
-    const updated = [...(config.seasoning_per_variant || [])];
-    if (updated[index]) {
-      updated[index] = { ...updated[index], ...fields };
-      setConfig({ ...config, seasoning_per_variant: updated });
-    }
-  };
-
-  const handleAddVariant = () => {
-    if (!newVariantName.trim()) {
-      toast.error('Masukkan nama varian rasa');
-      return;
-    }
-    const exists = (config.seasoning_per_variant || []).some(
-      s => s.variant.toLowerCase() === newVariantName.trim().toLowerCase()
-    );
-    if (exists) {
-      toast.error(`Varian ${newVariantName} sudah terdaftar`);
-      return;
-    }
-    const newSeasoning: SeasoningConfig = {
-      variant: newVariantName.trim() as any,
-      seasoning_name: `Bumbu Tabur ${newVariantName.trim()}`,
-      seasoning_ratio_per_kg: 0.08,
-      seasoning_material_id: '',
-      packaging_material_id: '',
-    };
-    setConfig(prev => ({
-      ...prev,
-      seasoning_per_variant: [...(prev.seasoning_per_variant || []), newSeasoning],
-    }));
-    setNewVariantName('');
-    setIsAddingVariant(false);
-    toast.success(`Varian rasa ${newSeasoning.variant} berhasil ditambahkan. Silakan tentukan bahan bumbu & kemasannya.`);
-  };
-
-  const handleRemoveVariant = (variantName: string) => {
-    setConfig(prev => ({
-      ...prev,
-      seasoning_per_variant: (prev.seasoning_per_variant || []).filter(s => s.variant !== variantName),
-    }));
-    toast.success(`Varian ${variantName} dihapus.`);
-  };
-
-  const updatePackagingConfig = (index: number, fields: Partial<PackagingConfig>) => {
-    const updated = [...(config.packaging_configs || [])];
-    if (updated[index]) {
-      updated[index] = { ...updated[index], ...fields };
-      setConfig({ ...config, packaging_configs: updated });
-    }
-  };
-
   // Kalkulasi Simulasi Wajan (Dinamis dari fryingIngredients)
   const simScale = simulatedBatchGram / 1000;
   const simOutputMinKg = Math.round(simScale * ((config.min_yield_percentage || 80) / 100) * 0.35 * 1000) / 1000;
   const simOutputMaxKg = Math.round(simScale * 0.35 * 1000) / 1000;
 
-  // Kalkulasi Simulasi Finishing & Packing
-  const packingSimTotalMushroomKg = Math.round(((packingSimQty * packingSimWeightGram) / 1000) * 100) / 100;
-  const currentVariantSeasoning = (config.seasoning_per_variant || []).find(s => s.variant === packingSimVariant) || (config.seasoning_per_variant || [])[0];
-  const packingSimSeasoningRatio = currentVariantSeasoning?.seasoning_ratio_per_kg || 0.08;
-  const packingSimSeasoningGram = Math.round(packingSimTotalMushroomKg * packingSimSeasoningRatio * 1000);
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <PageHeader
         title="Standar Manufaktur & Resep Formula (BOM)"
-        description="Konfigurasi integrasi alur pabrik: Resep wajan curah, bumbu & packaging per varian, serta parameter efisiensi rendemen."
+        description="Konfigurasi integrasi alur pabrik: Resep wajan curah serta parameter efisiensi rendemen mesin."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Standar Produksi' }]}
         actions={
           !isManagement ? (
@@ -429,7 +317,7 @@ export default function ProductionStandardsPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
               gap: 'var(--space-3)',
               background: 'var(--bg-subtle)',
               padding: 'var(--space-3)',
@@ -445,15 +333,7 @@ export default function ProductionStandardsPage() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-info-100)', color: 'var(--color-info-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>2</div>
-              <div>
-                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Bumbu Tabur &amp; Kemasan</strong>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Formula Bumbu Supplier + Kemasan Gudang</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-success-100)', color: 'var(--color-success-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>3</div>
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-success-100)', color: 'var(--color-success-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>2</div>
               <div>
                 <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Standar Mesin &amp; Rendemen</strong>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Suhu Penggorengan &amp; Target Rendemen Min 80%</span>
@@ -463,7 +343,7 @@ export default function ProductionStandardsPage() {
         </div>
       </Card>
 
-      {/* NAVIGATION TABS (3 CORE TABS) */}
+      {/* NAVIGATION TABS (2 CORE TABS) */}
       <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', flexWrap: 'wrap' }}>
         <Button
           variant={activeTab === 'FRYING' ? 'primary' : 'ghost'}
@@ -471,13 +351,6 @@ export default function ProductionStandardsPage() {
           leftIcon={<Flame className="w-4 h-4" aria-hidden="true" />}
         >
           Resep Wajan Curah (Goreng Polos)
-        </Button>
-        <Button
-          variant={activeTab === 'PACKAGING' ? 'primary' : 'ghost'}
-          onClick={() => setActiveTab('PACKAGING')}
-          leftIcon={<Package className="w-4 h-4" aria-hidden="true" />}
-        >
-          Standar Bumbu Tabur &amp; Kemasan
         </Button>
         <Button
           variant={activeTab === 'MACHINERY' ? 'primary' : 'ghost'}
@@ -850,468 +723,6 @@ export default function ProductionStandardsPage() {
                   </strong>
                 </div>
               </div>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════════════════════════ */}
-      {/* ── TAB 2: STANDAR BUMBU TABUR & KEMASAN (PACKING) ──    */}
-      {/* ═══════════════════════════════════════════════════════ */}
-      {activeTab === 'PACKAGING' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          <Card
-            header={
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Package className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
-                  <div>
-                    <strong style={{ fontSize: 'var(--text-base)' }}>Standar Bumbu Tabur &amp; Bahan Kemasan (Tahap Packing)</strong>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>
-                      Pilih bebas bahan bumbu supplier &amp; kemasan gudang untuk setiap varian rasa
-                    </span>
-                  </div>
-                </div>
-
-                {!isManagement && (
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <Link
-                      href="/master/raw-materials?tab=PACKAGING"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        color: 'var(--color-primary-800, #5C3D2E)',
-                        background: 'var(--color-primary-50, #FDF8F0)',
-                        border: '1px solid var(--color-primary-300, #E0C9A6)',
-                        borderRadius: 'var(--radius-md, 6px)',
-                        padding: '6px 10px',
-                        textDecoration: 'none',
-                      }}
-                    >
-                      <Package size={13} />
-                      Tambah Kemasan
-                    </Link>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => setIsAddingVariant(true)}
-                      leftIcon={<Plus size={13} />}
-                      style={{ fontSize: '12px' }}
-                    >
-                      + Tambah Varian Rasa
-                    </Button>
-                  </div>
-                )}
-              </div>
-            }
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                gap: '10px',
-                padding: 'var(--space-3)',
-                borderRadius: 'var(--radius-md)',
-                background: 'var(--color-info-50)',
-                border: '1px solid var(--color-info-200)',
-                fontSize: 'var(--text-sm)',
-                color: 'var(--color-info-800)',
-                marginBottom: 'var(--space-4)',
-              }}
-            >
-              <Info className="w-5 h-5 text-[var(--color-info-600)] shrink-0 mt-0.5" aria-hidden="true" />
-              <div>
-                <strong>Alur Tahap Packing:</strong> Bumbu tabur adalah barang jadi yang dibeli dari supplier. Anda bebas memilih bahan bumbu apa saja dan bahan kemasan apa saja langsung dari warehouse tanpa batasan kata kunci.
-              </div>
-            </div>
-
-            {/* FORM TAMBAH VARIAN BARU */}
-            {isAddingVariant && (
-              <div
-                style={{
-                  marginBottom: 'var(--space-4)',
-                  padding: '14px',
-                  background: 'var(--bg-default)',
-                  border: '1.5px solid var(--color-primary-300)',
-                  borderRadius: 'var(--radius-md)',
-                  display: 'flex',
-                  gap: '8px',
-                  alignItems: 'center',
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <Input
-                    placeholder="Nama varian baru (misal: Rumput Laut, Truffle, Salted Egg)..."
-                    value={newVariantName}
-                    onChange={e => setNewVariantName(e.target.value)}
-                    style={{ fontSize: '12px', minHeight: '36px' }}
-                  />
-                </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleAddVariant}
-                  style={{ fontSize: '12px', minHeight: '36px' }}
-                >
-                  Tambahkan Varian
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setIsAddingVariant(false);
-                    setNewVariantName('');
-                  }}
-                  style={{ fontSize: '12px', minHeight: '36px' }}
-                >
-                  Batal
-                </Button>
-              </div>
-            )}
-
-            {/* LIVE FINISHING PACKING SIMULATOR */}
-            <div
-              style={{
-                padding: 'var(--space-4)',
-                borderRadius: 'var(--radius-lg, 12px)',
-                background: 'var(--bg-subtle)',
-                border: '1px solid var(--border-default)',
-                marginBottom: 'var(--space-4)',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 'var(--space-3)',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Calculator className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                  <strong>Simulasi Kebutuhan Bumbu Tabur &amp; Kemasan (Live Preview)</strong>
-                </div>
-                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', background: 'var(--bg-default)', padding: '2px 8px', borderRadius: '4px' }}>
-                  Kalkulator Estimasi Kebutuhan Finishing
-                </span>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-3)' }}>
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                    Varian Rasa Target:
-                  </label>
-                  <select
-                    value={packingSimVariant}
-                    onChange={(e) => setPackingSimVariant(e.target.value)}
-                    style={{
-                      width: '100%',
-                      padding: '6px 10px',
-                      borderRadius: 'var(--radius-md)',
-                      border: '1px solid var(--border-default)',
-                      fontSize: '12px',
-                    }}
-                  >
-                    {(config.seasoning_per_variant || []).map(s => (
-                      <option key={s.variant} value={s.variant}>{s.variant}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                    Ukuran Kemasan (Netto):
-                  </label>
-                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                    {[30, 50, 60, 75, 100, 250, 500].map(w => (
-                      <button
-                        key={w}
-                        type="button"
-                        onClick={() => setPackingSimWeightGram(w)}
-                        style={{
-                          padding: '3px 8px',
-                          fontSize: '11px',
-                          borderRadius: 'var(--radius-sm)',
-                          border: packingSimWeightGram === w ? '1px solid var(--color-primary-600)' : '1px solid var(--border-default)',
-                          background: packingSimWeightGram === w ? 'var(--color-primary-50)' : 'var(--bg-default)',
-                          color: packingSimWeightGram === w ? 'var(--color-primary-700)' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          fontWeight: packingSimWeightGram === w ? 700 : 400,
-                        }}
-                      >
-                        {w}g
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                    Target Kemasan Jadi:
-                  </label>
-                  <div className="input-group">
-                    <input
-                      type="number"
-                      step="10"
-                      value={packingSimQty}
-                      onChange={(e) => setPackingSimQty(Number(e.target.value) || 0)}
-                    />
-                    <span className="input-group-addon">pcs</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Simulation Result Metric Cards */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-2)', marginTop: '4px' }}>
-                <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Jamur Curah (Longsong) Butuh:</span>
-                  <strong style={{ fontSize: '14px', color: 'var(--text-primary)' }}>{packingSimTotalMushroomKg} kg</strong>
-                </div>
-
-                <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Bumbu Tabur {packingSimVariant}:</span>
-                  <strong style={{ fontSize: '14px', color: 'var(--color-warning-700)' }}>{packingSimSeasoningGram} gram ({Math.round(packingSimSeasoningRatio * 100)}%)</strong>
-                </div>
-
-                <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Bahan Kemasan ({packingSimWeightGram}g):</span>
-                  <strong style={{ fontSize: '14px', color: 'var(--color-primary-700)' }}>{packingSimQty} pcs</strong>
-                </div>
-              </div>
-            </div>
-
-            {/* Seasoning per Variant Grid */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-              {(config.seasoning_per_variant || []).map((seasoning, sIdx) => {
-                const ratioGram = Math.round(Number(seasoning.seasoning_ratio_per_kg || 0) * 1000);
-                return (
-                  <div
-                    key={seasoning.variant}
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: '170px 1.2fr 1.1fr 1.2fr auto',
-                      gap: 'var(--space-3)',
-                      alignItems: 'center',
-                      padding: '16px',
-                      borderRadius: 'var(--radius-lg, 12px)',
-                      background: 'linear-gradient(180deg, #FFFDF8 0%, #FAF5EB 100%)',
-                      border: '1.5px solid rgba(139, 94, 60, 0.18)',
-                      boxShadow: '0 1px 3px rgba(42, 24, 16, 0.04)',
-                    }}
-                  >
-                    <div>
-                      <strong style={{ fontSize: '14px', color: 'var(--text-primary)', display: 'block' }}>
-                        Varian {seasoning.variant}
-                      </strong>
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-                        KhumKhum {seasoning.variant}
-                      </span>
-                    </div>
-
-                    {/* PILIH BEBAS DARI BAHAN BAKU BUMBU */}
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                        Bahan Bumbu Tabur (Gudang):
-                      </label>
-                      <select
-                        disabled={isManagement}
-                        value={seasoning.seasoning_material_id || ''}
-                        onChange={(e) => updateSeasoningConfig(sIdx, { seasoning_material_id: e.target.value })}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border-default)',
-                          fontSize: 'var(--text-xs)',
-                          background: 'var(--bg-default)',
-                        }}
-                      >
-                        <option value="">
-                          {rawMaterials.length === 0
-                            ? '-- Belum ada bahan baku di warehouse --'
-                            : `-- Pilih Bahan Baku Bumbu (${rawMaterials.length} bahan) --`}
-                        </option>
-                        {seasoningMaterials.length > 0 && (
-                          <optgroup label="🧂 Bumbu Tabur & Seasoning Gudang">
-                            {seasoningMaterials.map(rm => {
-                              const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
-                              return (
-                                <option key={rm.id} value={rm.id}>
-                                  {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                        )}
-                        {nonSeasoningMaterials.length > 0 && (
-                          <optgroup label="Bahan Baku Lainnya">
-                            {nonSeasoningMaterials.map(rm => {
-                              const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
-                              return (
-                                <option key={rm.id} value={rm.id}>
-                                  {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                        )}
-                      </select>
-
-                      {seasoning.seasoning_material_id && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', fontSize: '10.5px', color: 'var(--color-primary-700)' }}>
-                          <Lock size={10} />
-                          <span>Terkunci: <strong>{rawMaterials.find(r => r.id === seasoning.seasoning_material_id)?.name}</strong></span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* INPUT RASIO BUMBU */}
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                        Rasio Bumbu per kg Jamur:
-                      </label>
-                      <div className="input-group">
-                        <input
-                          disabled={isManagement}
-                          type="number"
-                          step="0.005"
-                          value={seasoning.seasoning_ratio_per_kg}
-                          onChange={(e) => updateSeasoningConfig(sIdx, { seasoning_ratio_per_kg: Number(e.target.value) })}
-                        />
-                        <span className="input-group-addon">{ratioGram}g / kg</span>
-                      </div>
-                    </div>
-
-                    {/* PILIH BEBAS DARI BAHAN KEMASAN */}
-                    <div>
-                      <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>
-                        Bahan Kemasan Standar:
-                      </label>
-                      <select
-                        disabled={isManagement}
-                        value={seasoning.packaging_material_id || ''}
-                        onChange={(e) => updateSeasoningConfig(sIdx, { packaging_material_id: e.target.value })}
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border-default)',
-                          fontSize: 'var(--text-xs)',
-                          background: 'var(--bg-default)',
-                        }}
-                      >
-                        <option value="">
-                          {packagingMaterials.length === 0 && rawMaterials.length === 0
-                            ? '-- Belum ada kemasan di warehouse --'
-                            : `-- Pilih Bahan Baku Kemasan (${packagingMaterials.length || rawMaterials.length} bahan) --`}
-                        </option>
-                        {packagingMaterials.length > 0 && (
-                          <optgroup label="📦 Bahan Kemasan / Packaging Gudang">
-                            {packagingMaterials.map(rm => {
-                              const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
-                              return (
-                                <option key={rm.id} value={rm.id}>
-                                  {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                        )}
-                        {nonPackagingMaterials.length > 0 && (
-                          <optgroup label="Bahan Gudang Lainnya">
-                            {nonPackagingMaterials.map(rm => {
-                              const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
-                              return (
-                                <option key={rm.id} value={rm.id}>
-                                  {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom}) — Stok: {stock} {rm.uom}
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                        )}
-                      </select>
-
-                      {seasoning.packaging_material_id && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px', fontSize: '10.5px', color: 'var(--color-primary-700)' }}>
-                          <Lock size={10} />
-                          <span>Terkunci: <strong>{rawMaterials.find(r => r.id === seasoning.packaging_material_id)?.name}</strong></span>
-                        </div>
-                      )}
-                    </div>
-
-                    {!isManagement && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveVariant(seasoning.variant)}
-                        style={{
-                          background: 'transparent',
-                          border: 'none',
-                          color: 'var(--color-danger-600)',
-                          cursor: 'pointer',
-                          padding: '4px',
-                        }}
-                        title={`Hapus varian ${seasoning.variant}`}
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-
-          {/* Packaging Types Specifications */}
-          <Card
-            header={
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Package className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                <strong>Spesifikasi Tipe Kemasan &amp; Master Material Gudang</strong>
-              </div>
-            }
-          >
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 'var(--space-3)' }}>
-              {(config.packaging_configs || []).map((pkg, pIdx) => (
-                <div
-                  key={pkg.packaging_type}
-                  style={{
-                    padding: '16px',
-                    borderRadius: 'var(--radius-lg, 12px)',
-                    border: '1.5px solid rgba(139, 94, 60, 0.18)',
-                    background: 'linear-gradient(180deg, #FFFDF8 0%, #FAF5EB 100%)',
-                    boxShadow: '0 1px 3px rgba(42, 24, 16, 0.04)',
-                  }}
-                >
-                  <strong style={{ fontSize: '13.5px', color: 'var(--ink, #2A1810)', display: 'block', marginBottom: '6px' }}>{pkg.packaging_type}</strong>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-secondary)' }}>Material Gudang Terhubung:</label>
-                    <select
-                      disabled={isManagement}
-                      value={pkg.packaging_material_id || ''}
-                      onChange={(e) => updatePackagingConfig(pIdx, { packaging_material_id: e.target.value })}
-                    >
-                      <option value="">-- Pilih Bahan Kemasan Gudang --</option>
-                      {packagingMaterials.length > 0 && (
-                        <optgroup label="📦 Bahan Kemasan / Packaging Gudang">
-                          {packagingMaterials.map(rm => (
-                            <option key={rm.id} value={rm.id}>
-                              {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom})
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                      {nonPackagingMaterials.length > 0 && (
-                        <optgroup label="Bahan Gudang Lainnya">
-                          {nonPackagingMaterials.map(rm => (
-                            <option key={rm.id} value={rm.id}>
-                              {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom})
-                            </option>
-                          ))}
-                        </optgroup>
-                      )}
-                    </select>
-                  </div>
-                </div>
-              ))}
             </div>
           </Card>
         </div>

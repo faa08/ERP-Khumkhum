@@ -244,6 +244,7 @@ export interface DbProductionOrder {
   results?: DbProductionResult[];
   frying_batches?: DbFryingBatch[];
   packing_entries?: DbPackingEntry[];
+  longsong_containers?: DbLongsongContainer[];
   deleted_at?: string | null;
 }
 
@@ -315,6 +316,20 @@ export interface DbPackingEntry {
   frying_batch?: Pick<DbFryingBatch, 'id' | 'wajan_number' | 'batch_weight_gram'> | null;
   production_order?: Pick<DbProductionOrder, 'id' | 'batch_number' | 'product_variant'> | null;
   deleted_at?: string | null;
+}
+
+export interface DbLongsongContainer {
+  id: string;
+  production_order_id?: string | null;
+  container_number: number;
+  initial_weight_kg: number;
+  current_weight_kg: number;
+  status: 'AVAILABLE' | 'PARTIAL' | 'EMPTY';
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined
+  production_order?: Pick<DbProductionOrder, 'id' | 'batch_number' | 'start_date'> | null;
 }
 
 export interface DbTimeStudySample {

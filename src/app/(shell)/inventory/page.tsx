@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/useToast';
 import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info, Filter, Layers, Tag } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
-import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment, updateInventoryItem, deleteInventoryItem, syncInventoryWithMaster } from '@/actions/inventory';
+import { getInventorySummary, getStockMovements, updateStockMovement, deleteStockMovement, deleteMultipleStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment, updateInventoryItem, deleteInventoryItem, syncInventoryWithMaster } from '@/actions/inventory';
 import { getRawMaterials, getWarehouses, getProducts } from '@/actions/master';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
@@ -121,6 +121,25 @@ export default function InventoryPage() {
 
   const [infoOpen, setInfoOpen] = useState(false);
   const [infoInv, setInfoInv] = useState<DbInventory | null>(null);
+
+  const [editMvOpen, setEditMvOpen] = useState(false);
+  const [editMv, setEditMv] = useState<any | null>(null);
+  const [editMvForm, setEditMvForm] = useState({
+    movement_date: '',
+    movement_type: 'IN' as 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER',
+    quantity: 0,
+    notes: '',
+  });
+  const [isEditingMv, setIsEditingMv] = useState(false);
+
+  const [deleteMvOpen, setDeleteMvOpen] = useState(false);
+  const [deleteMv, setDeleteMv] = useState<any | null>(null);
+  const [isDeletingMv, setIsDeletingMv] = useState(false);
+
+  const [selectedMvIds, setSelectedMvIds] = useState<string[]>([]);
+  const [bulkDeleteMvOpen, setBulkDeleteMvOpen] = useState(false);
+  const [isBulkDeletingMv, setIsBulkDeletingMv] = useState(false);
+  const [ledgerKey, setLedgerKey] = useState(0);
 
   const toast = useToast();
 
@@ -262,6 +281,63 @@ export default function InventoryPage() {
     }
   };
 
+  const handleEditMv = async () => {
+    if (!editMv) return;
+    setIsEditingMv(true);
+    const res = await updateStockMovement(editMv.id, {
+      movement_date: editMvForm.movement_date ? new Date(editMvForm.movement_date).toISOString() : undefined,
+      movement_type: editMvForm.movement_type,
+      quantity: Number(editMvForm.quantity),
+      notes: editMvForm.notes,
+    });
+    setIsEditingMv(false);
+    if (res.success) {
+      toast.success('Data mutasi berhasil diperbarui dan stok dikalibrasi');
+      setEditMvOpen(false);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal memperbarui mutasi');
+    }
+  };
+
+  const handleDeleteMv = async (revertStock: boolean = true) => {
+    if (!deleteMv) return;
+    setIsDeletingMv(true);
+    const res = await deleteStockMovement(deleteMv.id, { revertStock });
+    setIsDeletingMv(false);
+    if (res.success) {
+      toast.success(
+        revertStock 
+          ? 'Data mutasi berhasil dihapus dan stok dikalibrasi kembali' 
+          : 'Data mutasi berhasil dihapus (stok gudang tetap)'
+      );
+      setDeleteMvOpen(false);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal menghapus mutasi');
+    }
+  };
+
+  const handleBulkDeleteMv = async (revertStock: boolean = true) => {
+    if (!selectedMvIds || selectedMvIds.length === 0) return;
+    setIsBulkDeletingMv(true);
+    const res = await deleteMultipleStockMovements(selectedMvIds, { revertStock });
+    setIsBulkDeletingMv(false);
+    if (res.success) {
+      toast.success(
+        revertStock 
+          ? `${res.count || selectedMvIds.length} data mutasi berhasil dihapus dan stok dikalibrasi kembali` 
+          : `${res.count || selectedMvIds.length} data mutasi berhasil dihapus (stok gudang tetap)`
+      );
+      setBulkDeleteMvOpen(false);
+      setSelectedMvIds([]);
+      setLedgerKey(k => k + 1);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal menghapus mutasi terpilih');
+    }
+  };
+
   const { categoryCounts, categoryMap } = useMemo(() => {
     const counts: Record<string, number> = { ALL: inventoryData.length };
     const map: Record<string, DbInventory[]> = {
@@ -397,7 +473,13 @@ export default function InventoryPage() {
       let currentBalance = inv.quantity;
       
       for (const m of invMovements) {
-        result.push({ ...m, item_name: inv.item_name, balance: currentBalance });
+        result.push({ 
+          ...m, 
+          item_name: inv.item_name, 
+          uom: inv.uom || (isWarehouseMode ? 'kg' : 'pcs'),
+          warehouse_name: inv.warehouse?.name || 'Utama',
+          balance: currentBalance 
+        });
         
         if (m.movement_type === 'IN') {
           currentBalance -= m.quantity;
@@ -412,7 +494,7 @@ export default function InventoryPage() {
     }
     
     return result.sort((a, b) => new Date(b.movement_date).getTime() - new Date(a.movement_date).getTime());
-  }, [movements, inventoryData]);
+  }, [movements, inventoryData, isWarehouseMode]);
 
   const invColumns = useMemo<ColumnDef<DbInventory>[]>(() => [
     {
@@ -560,15 +642,64 @@ export default function InventoryPage() {
     { id: 'in', header: 'In', cell: ({ row }) => {
       const isPositive = row.original.quantity > 0 || row.original.movement_type === 'IN'; 
       const qty = Math.abs(row.original.quantity);
-      return <strong style={{ color: 'var(--color-success-600)' }}>{isPositive && qty > 0 ? `+${qty.toLocaleString('id-ID')} kg` : '-'}</strong>;
+      const uom = row.original.uom || (isWarehouseMode ? 'kg' : 'pcs');
+      return <strong style={{ color: 'var(--color-success-600)' }}>{isPositive && qty > 0 ? `+${qty.toLocaleString('id-ID')} ${uom}` : '-'}</strong>;
     }},
     { id: 'out', header: 'Out', cell: ({ row }) => {
       const isNegative = row.original.quantity < 0 || row.original.movement_type === 'OUT';
       const qty = Math.abs(row.original.quantity);
-      return <strong style={{ color: 'var(--color-danger-600)' }}>{isNegative && qty > 0 ? `-${qty.toLocaleString('id-ID')} kg` : '-'}</strong>;
+      const uom = row.original.uom || (isWarehouseMode ? 'kg' : 'pcs');
+      return <strong style={{ color: 'var(--color-danger-600)' }}>{isNegative && qty > 0 ? `-${qty.toLocaleString('id-ID')} ${uom}` : '-'}</strong>;
     }},
-    { id: 'balance', header: 'Saldo (kg)', cell: ({ row }) => <strong>{row.original.balance.toLocaleString('id-ID')} kg</strong> },
-  ], []);
+    { id: 'balance', header: 'Saldo', cell: ({ row }) => {
+      const uom = row.original.uom || (isWarehouseMode ? 'kg' : 'pcs');
+      return <strong>{row.original.balance.toLocaleString('id-ID')} {uom}</strong>;
+    }},
+    ...(isReadOnly ? [] : [{
+      id: 'actions',
+      header: 'Aksi',
+      cell: ({ row }: { row: any }) => (
+        <Dropdown
+          trigger={
+            <Button variant="secondary" size="sm" style={{ padding: '6px' }}>
+              <MoreVertical size={16} />
+            </Button>
+          }
+          items={[
+            {
+              id: 'edit_mv',
+              label: 'Edit Data Mutasi',
+              icon: <Edit size={14} />,
+              onClick: () => {
+                setEditMv(row.original);
+                const d = new Date(row.original.movement_date);
+                const tzOffset = d.getTimezoneOffset() * 60000;
+                const localISOTime = (new Date(d.getTime() - tzOffset)).toISOString().slice(0, 16);
+                setEditMvForm({
+                  movement_date: localISOTime,
+                  movement_type: row.original.movement_type || 'IN',
+                  quantity: Math.abs(row.original.quantity) || 0,
+                  notes: row.original.notes || '',
+                });
+                setEditMvOpen(true);
+              }
+            },
+            { id: 'div', label: '', divider: true },
+            {
+              id: 'del_mv',
+              label: 'Hapus Mutasi',
+              icon: <Trash2 size={14} />,
+              danger: true,
+              onClick: () => {
+                setDeleteMv(row.original);
+                setDeleteMvOpen(true);
+              }
+            }
+          ]}
+        />
+      )
+    }])
+  ], [isReadOnly, isWarehouseMode]);
 
   const lossColumns = useMemo<ColumnDef<any>[]>(() => [
     { id: 'date', header: 'Tanggal Opname', cell: ({ row }) => format(new Date(row.original.created_at), 'dd/MM/yyyy HH:mm') },
@@ -734,7 +865,11 @@ export default function InventoryPage() {
           ) : undefined
         }
       />
+    </>
+  );
 
+  const modals = (
+    <>
       <Modal
         isOpen={inboundDrawerOpen}
         onClose={() => setInboundDrawerOpen(false)}
@@ -940,12 +1075,267 @@ export default function InventoryPage() {
           </div>
         )}
       </Modal>
+
+      <Modal
+        isOpen={editMvOpen}
+        onClose={() => setEditMvOpen(false)}
+        title={`Edit Data Mutasi: ${editMv?.item_name || 'Item'}`}
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditMvOpen(false)}>Batal</Button>
+            <Button variant="primary" onClick={handleEditMv} loading={isEditingMv}>Simpan Perubahan</Button>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <FormField label="Tanggal & Waktu Mutasi" required>
+            <Input 
+              type="datetime-local" 
+              value={editMvForm.movement_date} 
+              onChange={e => setEditMvForm(f => ({ ...f, movement_date: e.target.value }))} 
+            />
+          </FormField>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+            <FormField label="Tipe Mutasi" required>
+              <Select
+                value={editMvForm.movement_type}
+                onChange={e => setEditMvForm(f => ({ ...f, movement_type: e.target.value as any }))}
+                options={[
+                  { value: 'IN', label: 'IN (Pemasukan)' },
+                  { value: 'OUT', label: 'OUT (Pengeluaran)' },
+                  { value: 'ADJUSTMENT', label: 'ADJUSTMENT (Penyesuaian)' },
+                  { value: 'TRANSFER', label: 'TRANSFER (Pindah Gudang)' },
+                ]}
+              />
+            </FormField>
+            <FormField label={`Jumlah (${editMv?.uom || 'kg/pcs'})`} required>
+              <Input 
+                type="number" step="0.001"
+                value={editMvForm.quantity.toString()} 
+                onChange={e => setEditMvForm(f => ({ ...f, quantity: parseFloat(e.target.value) || 0 }))} 
+              />
+            </FormField>
+          </div>
+          <FormField label="Keterangan / Referensi">
+            <Input 
+              value={editMvForm.notes} 
+              onChange={e => setEditMvForm(f => ({ ...f, notes: e.target.value }))} 
+              placeholder="Contoh: Pembelian supplier, Koreksi fisik, dll." 
+            />
+          </FormField>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={deleteMvOpen}
+        onClose={() => setDeleteMvOpen(false)}
+        title="Hapus Data Mutasi Stok"
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', width: '100%', flexWrap: 'wrap' }}>
+            <Button variant="secondary" onClick={() => setDeleteMvOpen(false)}>
+              Batal
+            </Button>
+            <Button 
+              variant="secondary" 
+              onClick={() => handleDeleteMv(false)} 
+              loading={isDeletingMv}
+              title="Hapus catatan mutasi saja tanpa mengubah jumlah stok fisik saat ini"
+            >
+              Hapus Saja (Tanpa Kalibrasi)
+            </Button>
+            <Button 
+              variant="danger" 
+              onClick={() => handleDeleteMv(true)} 
+              loading={isDeletingMv}
+              title="Hapus mutasi dan kembalikan efek kuantitas ke saldo stok gudang"
+            >
+              Hapus & Kembalikan Stok
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: 'var(--text-sm)' }}>
+          {deleteMv && (
+            <div style={{ 
+              background: 'var(--surface-secondary)', 
+              padding: '12px 16px', 
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-color)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px'
+            }}>
+              <div><strong>Item:</strong> {deleteMv.item_name}</div>
+              <div><strong>Tanggal:</strong> {deleteMv.movement_date ? format(new Date(deleteMv.movement_date), 'dd/MM/yyyy HH:mm') : '-'}</div>
+              <div>
+                <strong>Tipe & Jumlah:</strong>{' '}
+                <span style={{ 
+                  color: deleteMv.movement_type === 'IN' ? 'var(--color-success-600)' : deleteMv.movement_type === 'OUT' ? 'var(--color-danger-600)' : 'inherit',
+                  fontWeight: 600
+                }}>
+                  {deleteMv.movement_type} ({deleteMv.quantity} {deleteMv.uom || 'kg'})
+                </span>
+              </div>
+              {deleteMv.notes && <div><strong>Keterangan:</strong> {deleteMv.notes}</div>}
+            </div>
+          )}
+
+          <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+            Pilih metode penghapusan yang diinginkan:
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{
+              border: '1px solid var(--color-danger-200)',
+              background: 'var(--color-danger-50)',
+              padding: '12px',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <strong style={{ color: 'var(--color-danger-700)', fontSize: 'var(--text-xs)' }}>
+                1. Kembalikan Kalibrasi (Default)
+              </strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-danger-900)', lineHeight: 1.4 }}>
+                Menghapus catatan mutasi dan <strong>mengembalikan/membalikkan efek kuantitasnya</strong> ke stok fisik gudang saat ini.
+              </span>
+            </div>
+
+            <div style={{
+              border: '1px solid var(--border-color)',
+              background: 'var(--surface-primary)',
+              padding: '12px',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <strong style={{ color: 'var(--text-primary)', fontSize: 'var(--text-xs)' }}>
+                2. Tanpa Kalibrasi
+              </strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                Hanya menghapus riwayat mutasi dari buku rekening koran. <strong>Jumlah stok gudang saat ini TIDAK berubah</strong>.
+              </span>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={bulkDeleteMvOpen}
+        onClose={() => setBulkDeleteMvOpen(false)}
+        title={`Hapus Masal ${selectedMvIds.length} Data Mutasi Stok`}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', width: '100%', flexWrap: 'wrap' }}>
+            <Button variant="secondary" onClick={() => setBulkDeleteMvOpen(false)}>
+              Batal
+            </Button>
+            <Button 
+              variant="secondary" 
+              onClick={() => handleBulkDeleteMv(false)} 
+              loading={isBulkDeletingMv}
+              title="Hapus catatan mutasi saja tanpa mengubah stok fisik saat ini"
+            >
+              Hapus Saja (Tanpa Kalibrasi)
+            </Button>
+            <Button 
+              variant="danger" 
+              onClick={() => handleBulkDeleteMv(true)} 
+              loading={isBulkDeletingMv}
+              title="Hapus mutasi dan kembalikan efek kuantitas ke saldo stok gudang"
+            >
+              Hapus & Kembalikan Stok ({selectedMvIds.length})
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: 'var(--text-sm)' }}>
+          <div style={{ 
+            background: 'var(--surface-secondary)', 
+            padding: '12px 16px', 
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-color)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px'
+          }}>
+            <div>
+              <strong>Total Mutasi Terpilih:</strong>{' '}
+              <span style={{ fontWeight: 700, color: 'var(--color-danger-600)' }}>{selectedMvIds.length} baris mutasi</span>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              Aksi ini akan menghapus semua record mutasi yang dicentang secara sekaligus.
+            </div>
+          </div>
+
+          <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+            Pilih metode penghapusan masal yang diinginkan:
+          </p>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div style={{
+              border: '1px solid var(--color-danger-200)',
+              background: 'var(--color-danger-50)',
+              padding: '12px',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <strong style={{ color: 'var(--color-danger-700)', fontSize: 'var(--text-xs)' }}>
+                1. Kembalikan Kalibrasi (Default)
+              </strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-danger-900)', lineHeight: 1.4 }}>
+                Menghapus catatan mutasi terpilih dan <strong>mengembalikan/membalikkan efek total kuantitasnya</strong> ke stok fisik gudang masing-masing.
+              </span>
+            </div>
+
+            <div style={{
+              border: '1px solid var(--border-color)',
+              background: 'var(--surface-primary)',
+              padding: '12px',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '4px'
+            }}>
+              <strong style={{ color: 'var(--text-primary)', fontSize: 'var(--text-xs)' }}>
+                2. Tanpa Kalibrasi
+              </strong>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                Hanya menghapus riwayat mutasi dari buku rekening koran. <strong>Jumlah stok fisik gudang saat ini TIDAK berubah</strong>.
+              </span>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 
   const movementContent = (
     <div style={{ marginTop: 'var(--space-4)' }}>
-      <DataTable columns={mvColumns} data={movementsWithBalance} />
+      <DataTable 
+        key={`ledger-${ledgerKey}`}
+        columns={mvColumns} 
+        data={movementsWithBalance} 
+        enableRowSelection={!isReadOnly}
+        bulkActions={isReadOnly ? [] : [
+          {
+            id: 'bulk_delete_mv',
+            label: 'Hapus Mutasi Terpilih',
+            icon: <Trash2 size={14} />,
+            variant: 'danger',
+            onClick: (selectedIds: string[]) => {
+              setSelectedMvIds(selectedIds);
+              setBulkDeleteMvOpen(true);
+            }
+          }
+        ]}
+      />
     </div>
   );
 
@@ -1090,6 +1480,8 @@ export default function InventoryPage() {
           { id: 'loss', label: <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><TrendingDown className="w-4 h-4 text-currentColor" aria-hidden="true" /> Laporan Kerugian</span>, content: lossContent },
         ]}
       />
+
+      {modals}
     </div>
   );
 }

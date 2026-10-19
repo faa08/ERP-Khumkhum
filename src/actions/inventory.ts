@@ -116,6 +116,194 @@ export async function getStockMovements(inventoryId?: string): Promise<{
   }
 }
 
+export async function updateStockMovement(
+  movementId: string,
+  input: {
+    movement_date?: string;
+    quantity?: number;
+    movement_type?: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER';
+    notes?: string;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+
+    const { data: oldMv, error: fetchErr } = await supabaseAdmin
+      .from('stock_movements')
+      .select('*, inventory:inventory(id, quantity)')
+      .eq('id', movementId)
+      .single();
+
+    if (fetchErr || !oldMv) {
+      return { success: false, error: 'Data mutasi tidak ditemukan' };
+    }
+
+    const updates: Record<string, any> = {};
+    if (input.movement_date !== undefined) updates.movement_date = input.movement_date;
+    if (input.notes !== undefined) updates.notes = input.notes;
+    if (input.movement_type !== undefined) updates.movement_type = input.movement_type;
+    if (input.quantity !== undefined) updates.quantity = input.quantity;
+
+    const oldQty = Number(oldMv.quantity) || 0;
+    const oldType = oldMv.movement_type;
+    const newQty = input.quantity !== undefined ? Number(input.quantity) : oldQty;
+    const newType = input.movement_type !== undefined ? input.movement_type : oldType;
+
+    if (oldMv.inventory_id && (oldQty !== newQty || oldType !== newType)) {
+      let oldEffect = 0;
+      if (oldType === 'IN') oldEffect = oldQty;
+      else if (oldType === 'OUT') oldEffect = -oldQty;
+      else if (oldType === 'ADJUSTMENT') oldEffect = oldQty;
+
+      let newEffect = 0;
+      if (newType === 'IN') newEffect = newQty;
+      else if (newType === 'OUT') newEffect = -newQty;
+      else if (newType === 'ADJUSTMENT') newEffect = newQty;
+
+      const delta = newEffect - oldEffect;
+      const currentInvQty = Number(oldMv.inventory?.quantity) || 0;
+      const finalInvQty = Math.max(0, currentInvQty + delta);
+
+      await supabaseAdmin
+        .from('inventory')
+        .update({ quantity: finalInvQty, last_updated_at: new Date().toISOString() })
+        .eq('id', oldMv.inventory_id);
+    }
+
+    const { error: updErr } = await supabaseAdmin
+      .from('stock_movements')
+      .update(updates)
+      .eq('id', movementId);
+
+    if (updErr) throw updErr;
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteStockMovement(
+  movementId: string,
+  options?: { revertStock?: boolean }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+
+    const { data: oldMv, error: fetchErr } = await supabaseAdmin
+      .from('stock_movements')
+      .select('*, inventory:inventory(id, quantity)')
+      .eq('id', movementId)
+      .single();
+
+    if (fetchErr || !oldMv) {
+      return { success: false, error: 'Data mutasi tidak ditemukan' };
+    }
+
+    const shouldRevert = options?.revertStock !== false;
+
+    if (shouldRevert && oldMv.inventory_id) {
+      const oldQty = Number(oldMv.quantity) || 0;
+      let oldEffect = 0;
+      if (oldMv.movement_type === 'IN') oldEffect = oldQty;
+      else if (oldMv.movement_type === 'OUT') oldEffect = -oldQty;
+      else if (oldMv.movement_type === 'ADJUSTMENT') oldEffect = oldQty;
+
+      const currentInvQty = Number(oldMv.inventory?.quantity) || 0;
+      const finalInvQty = Math.max(0, currentInvQty - oldEffect);
+
+      await supabaseAdmin
+        .from('inventory')
+        .update({ quantity: finalInvQty, last_updated_at: new Date().toISOString() })
+        .eq('id', oldMv.inventory_id);
+    }
+
+    const { error: delErr } = await supabaseAdmin
+      .from('stock_movements')
+      .delete()
+      .eq('id', movementId);
+
+    if (delErr) throw delErr;
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteMultipleStockMovements(
+  movementIds: string[],
+  options?: { revertStock?: boolean }
+): Promise<{ success: boolean; count?: number; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+
+    if (!movementIds || movementIds.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    const { data: movements, error: fetchErr } = await supabaseAdmin
+      .from('stock_movements')
+      .select('id, inventory_id, movement_type, quantity, inventory:inventory(id, quantity)')
+      .in('id', movementIds);
+
+    if (fetchErr || !movements) {
+      return { success: false, error: 'Data mutasi tidak ditemukan' };
+    }
+
+    const shouldRevert = options?.revertStock !== false;
+
+    if (shouldRevert) {
+      const effectsByInv = new Map<string, { currentQty: number; totalEffect: number }>();
+
+      for (const m of movements) {
+        if (!m.inventory_id) continue;
+        const invId = m.inventory_id;
+        if (!effectsByInv.has(invId)) {
+          const curQty = Number((m as any).inventory?.quantity) || 0;
+          effectsByInv.set(invId, { currentQty: curQty, totalEffect: 0 });
+        }
+
+        const qty = Number(m.quantity) || 0;
+        let effect = 0;
+        if (m.movement_type === 'IN') effect = qty;
+        else if (m.movement_type === 'OUT') effect = -qty;
+        else if (m.movement_type === 'ADJUSTMENT') effect = qty;
+
+        effectsByInv.get(invId)!.totalEffect += effect;
+      }
+
+      for (const [invId, { currentQty, totalEffect }] of effectsByInv.entries()) {
+        const finalInvQty = Math.max(0, currentQty - totalEffect);
+        await supabaseAdmin
+          .from('inventory')
+          .update({ quantity: finalInvQty, last_updated_at: new Date().toISOString() })
+          .eq('id', invId);
+      }
+    }
+
+    const { error: delErr } = await supabaseAdmin
+      .from('stock_movements')
+      .delete()
+      .in('id', movementIds);
+
+    if (delErr) throw delErr;
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+
+    return { success: true, count: movements.length };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 import { subDays, format, addDays } from 'date-fns';
 
 export async function getInventoryForecasting(inventoryId: string): Promise<{

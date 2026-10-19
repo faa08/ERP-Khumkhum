@@ -2228,29 +2228,33 @@ async function deductPackingMaterials(
       }
 
       if (seasoningMatId) {
-        const { data: sInv } = await supabaseAdmin
-          .from('inventory')
-          .select('id, quantity, warehouse_id')
-          .eq('item_type', 'RAW_MATERIAL')
-          .eq('item_id', seasoningMatId)
-          .limit(1);
+        const { data: whList } = await supabaseAdmin
+          .from('warehouses')
+          .select('id, name')
+          .is('deleted_at', null);
+        const mainWh = whList?.find((w: any) =>
+          w.name.toLowerCase().includes('bahan baku') ||
+          w.name.toLowerCase().includes('utama') ||
+          w.name.toLowerCase().includes('pabrik')
+        ) || whList?.[0];
 
-        let targetInvId = sInv && sInv.length > 0 ? sInv[0].id : null;
-        let currentInvQty = sInv && sInv.length > 0 ? Number(sInv[0].quantity) || 0 : 0;
+        let targetInvId: string | null = null;
+        let currentInvQty = 0;
 
-        // Auto-provision inventory slot di gudang bahan baku jika belum ada record
-        if (!targetInvId) {
-          const { data: whList } = await supabaseAdmin
-            .from('warehouses')
-            .select('id, name')
-            .is('deleted_at', null);
-          const mainWh = whList?.find((w: any) =>
-            w.name.toLowerCase().includes('bahan baku') ||
-            w.name.toLowerCase().includes('utama') ||
-            w.name.toLowerCase().includes('pabrik')
-          ) || whList?.[0];
+        if (mainWh?.id) {
+          const { data: sInv } = await supabaseAdmin
+            .from('inventory')
+            .select('id, quantity, warehouse_id')
+            .eq('warehouse_id', mainWh.id)
+            .eq('item_type', 'RAW_MATERIAL')
+            .eq('item_id', seasoningMatId)
+            .limit(1);
 
-          if (mainWh?.id) {
+          if (sInv && sInv.length > 0) {
+            targetInvId = sInv[0].id;
+            currentInvQty = Number(sInv[0].quantity) || 0;
+          } else {
+            // Auto-provision inventory slot di gudang bahan baku jika belum ada record
             const { data: newInv } = await supabaseAdmin
               .from('inventory')
               .insert({
@@ -2358,29 +2362,34 @@ async function deductPackingMaterials(
       }
 
       if (pkgMatId) {
-        const { data: pInv } = await supabaseAdmin
-          .from('inventory')
-          .select('id, quantity, warehouse_id')
-          .eq('item_type', 'RAW_MATERIAL')
-          .eq('item_id', pkgMatId)
-          .limit(1);
+        // Cari Gudang Utama terlebih dahulu agar tidak salah gudang/konsinyasi
+        const { data: whList } = await supabaseAdmin
+          .from('warehouses')
+          .select('id, name')
+          .is('deleted_at', null);
+        const mainWh = whList?.find((w: any) =>
+          w.name.toLowerCase().includes('bahan baku') ||
+          w.name.toLowerCase().includes('utama') ||
+          w.name.toLowerCase().includes('pabrik')
+        ) || whList?.[0];
 
-        let targetPkgInvId = pInv && pInv.length > 0 ? pInv[0].id : null;
-        let currentPkgQty = pInv && pInv.length > 0 ? Number(pInv[0].quantity) || 0 : 0;
+        let targetPkgInvId: string | null = null;
+        let currentPkgQty = 0;
 
-        // Auto-provision inventory slot jika belum ada
-        if (!targetPkgInvId) {
-          const { data: whList } = await supabaseAdmin
-            .from('warehouses')
-            .select('id, name')
-            .is('deleted_at', null);
-          const mainWh = whList?.find((w: any) =>
-            w.name.toLowerCase().includes('bahan baku') ||
-            w.name.toLowerCase().includes('utama') ||
-            w.name.toLowerCase().includes('pabrik')
-          ) || whList?.[0];
+        if (mainWh?.id) {
+          const { data: pInv } = await supabaseAdmin
+            .from('inventory')
+            .select('id, quantity, warehouse_id')
+            .eq('warehouse_id', mainWh.id)
+            .eq('item_type', 'RAW_MATERIAL')
+            .eq('item_id', pkgMatId)
+            .limit(1);
 
-          if (mainWh?.id) {
+          if (pInv && pInv.length > 0) {
+            targetPkgInvId = pInv[0].id;
+            currentPkgQty = Number(pInv[0].quantity) || 0;
+          } else {
+            // Auto-provision inventory slot jika belum ada di Gudang Utama
             const { data: newInv } = await supabaseAdmin
               .from('inventory')
               .insert({

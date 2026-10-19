@@ -45,7 +45,7 @@ export default function ProductionStandardsPage() {
   const { user } = useAuth();
   const isManagement = user?.role === 'MANAGEMENT';
 
-  const [activeTab, setActiveTab] = useState<'FRYING' | 'PACKAGING' | 'MACHINERY'>('FRYING');
+  const [activeTab, setActiveTab] = useState<'FRYING' | 'MACHINERY'>('FRYING');
 
   const [config, setConfig] = useState<ProductionStandardConfig>({
     min_yield_percentage: 80.0,
@@ -82,17 +82,8 @@ export default function ProductionStandardsPage() {
   const [newFryingRatio, setNewFryingRatio] = useState('0.25');
   const [isAddingFryingCustom, setIsAddingFryingCustom] = useState(false);
 
-  // State tambah varian rasa baru
-  const [newVariantName, setNewVariantName] = useState('');
-  const [isAddingVariant, setIsAddingVariant] = useState(false);
-
   // State Simulasi Level 2 (Wajan Penggorengan Curah)
   const [simulatedBatchGram, setSimulatedBatchGram] = useState<number>(800);
-
-  // State Simulasi Level 3 (Finishing & Packing)
-  const [packingSimVariant, setPackingSimVariant] = useState<string>('Balado');
-  const [packingSimWeightGram, setPackingSimWeightGram] = useState<number>(60);
-  const [packingSimQty, setPackingSimQty] = useState<number>(100);
 
   const toast = useToast();
 
@@ -285,119 +276,16 @@ export default function ProductionStandardsPage() {
     toast.success('Formula acuan standar wajan berhasil dimuat. Bahan terkunci, takaran rasio bebas disesuaikan.');
   };
 
-  // ── Grouping Bahan Baku Kemasan & Bumbu untuk Dropdown Terstruktur ──
-  const packagingMaterials = useMemo(() => {
-    return rawMaterials.filter(rm => {
-      const cat = (rm.material_category || '').toLowerCase();
-      const name = (rm.name || '').toLowerCase();
-      return (
-        cat === 'packaging' ||
-        rm.uom === 'pcs' ||
-        name.includes('packaging') ||
-        name.includes('kemasan') ||
-        name.includes('pouch') ||
-        name.includes('toples') ||
-        name.includes('bantal') ||
-        name.includes('sachet') ||
-        name.includes('box')
-      );
-    });
-  }, [rawMaterials]);
-
-  const nonPackagingMaterials = useMemo(() => {
-    return rawMaterials.filter(rm => !packagingMaterials.includes(rm));
-  }, [rawMaterials, packagingMaterials]);
-
-  const seasoningMaterials = useMemo(() => {
-    return rawMaterials.filter(rm => {
-      const cat = (rm.material_category || '').toLowerCase();
-      const name = (rm.name || '').toLowerCase();
-      return (
-        cat === 'bumbu tabur' ||
-        name.includes('bumbu') ||
-        name.includes('seasoning') ||
-        name.includes('balado') ||
-        name.includes('barbeque') ||
-        name.includes('keju') ||
-        name.includes('pedas') ||
-        name.includes('jagung')
-      );
-    });
-  }, [rawMaterials]);
-
-  const nonSeasoningMaterials = useMemo(() => {
-    return rawMaterials.filter(rm => !seasoningMaterials.includes(rm));
-  }, [rawMaterials, seasoningMaterials]);
-
-  // ── Seasoning / Packaging Helpers ──
-  const updateSeasoningConfig = (index: number, fields: Partial<SeasoningConfig>) => {
-    const updated = [...(config.seasoning_per_variant || [])];
-    if (updated[index]) {
-      updated[index] = { ...updated[index], ...fields };
-      setConfig({ ...config, seasoning_per_variant: updated });
-    }
-  };
-
-  const handleAddVariant = () => {
-    if (!newVariantName.trim()) {
-      toast.error('Masukkan nama varian rasa');
-      return;
-    }
-    const exists = (config.seasoning_per_variant || []).some(
-      s => s.variant.toLowerCase() === newVariantName.trim().toLowerCase()
-    );
-    if (exists) {
-      toast.error(`Varian ${newVariantName} sudah terdaftar`);
-      return;
-    }
-    const newSeasoning: SeasoningConfig = {
-      variant: newVariantName.trim() as any,
-      seasoning_name: `Bumbu Tabur ${newVariantName.trim()}`,
-      seasoning_ratio_per_kg: 0.08,
-      seasoning_material_id: '',
-      packaging_material_id: '',
-    };
-    setConfig(prev => ({
-      ...prev,
-      seasoning_per_variant: [...(prev.seasoning_per_variant || []), newSeasoning],
-    }));
-    setNewVariantName('');
-    setIsAddingVariant(false);
-    toast.success(`Varian rasa ${newSeasoning.variant} berhasil ditambahkan. Silakan tentukan bahan bumbu & kemasannya.`);
-  };
-
-  const handleRemoveVariant = (variantName: string) => {
-    setConfig(prev => ({
-      ...prev,
-      seasoning_per_variant: (prev.seasoning_per_variant || []).filter(s => s.variant !== variantName),
-    }));
-    toast.success(`Varian ${variantName} dihapus.`);
-  };
-
-  const updatePackagingConfig = (index: number, fields: Partial<PackagingConfig>) => {
-    const updated = [...(config.packaging_configs || [])];
-    if (updated[index]) {
-      updated[index] = { ...updated[index], ...fields };
-      setConfig({ ...config, packaging_configs: updated });
-    }
-  };
-
   // Kalkulasi Simulasi Wajan (Dinamis dari fryingIngredients)
   const simScale = simulatedBatchGram / 1000;
   const simOutputMinKg = Math.round(simScale * ((config.min_yield_percentage || 80) / 100) * 0.35 * 1000) / 1000;
   const simOutputMaxKg = Math.round(simScale * 0.35 * 1000) / 1000;
 
-  // Kalkulasi Simulasi Finishing & Packing
-  const packingSimTotalMushroomKg = Math.round(((packingSimQty * packingSimWeightGram) / 1000) * 100) / 100;
-  const currentVariantSeasoning = (config.seasoning_per_variant || []).find(s => s.variant === packingSimVariant) || (config.seasoning_per_variant || [])[0];
-  const packingSimSeasoningRatio = currentVariantSeasoning?.seasoning_ratio_per_kg || 0.08;
-  const packingSimSeasoningGram = Math.round(packingSimTotalMushroomKg * packingSimSeasoningRatio * 1000);
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <PageHeader
         title="Standar Manufaktur & Resep Formula (BOM)"
-        description="Konfigurasi integrasi alur pabrik: Resep wajan curah, bumbu & packaging per varian, serta parameter efisiensi rendemen."
+        description="Konfigurasi integrasi alur pabrik: Resep wajan curah serta parameter efisiensi rendemen mesin."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Standar Produksi' }]}
         actions={
           !isManagement ? (
@@ -429,7 +317,7 @@ export default function ProductionStandardsPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
               gap: 'var(--space-3)',
               background: 'var(--bg-subtle)',
               padding: 'var(--space-3)',
@@ -445,15 +333,7 @@ export default function ProductionStandardsPage() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-info-100)', color: 'var(--color-info-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>2</div>
-              <div>
-                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Bumbu Tabur &amp; Kemasan</strong>
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Formula Bumbu Supplier + Kemasan Gudang</span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-success-100)', color: 'var(--color-success-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>3</div>
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-success-100)', color: 'var(--color-success-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>2</div>
               <div>
                 <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Standar Mesin &amp; Rendemen</strong>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Suhu Penggorengan &amp; Target Rendemen Min 80%</span>
@@ -463,7 +343,7 @@ export default function ProductionStandardsPage() {
         </div>
       </Card>
 
-      {/* NAVIGATION TABS (3 CORE TABS) */}
+      {/* NAVIGATION TABS (2 CORE TABS) */}
       <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px', flexWrap: 'wrap' }}>
         <Button
           variant={activeTab === 'FRYING' ? 'primary' : 'ghost'}
@@ -471,13 +351,6 @@ export default function ProductionStandardsPage() {
           leftIcon={<Flame className="w-4 h-4" aria-hidden="true" />}
         >
           Resep Wajan Curah (Goreng Polos)
-        </Button>
-        <Button
-          variant={activeTab === 'PACKAGING' ? 'primary' : 'ghost'}
-          onClick={() => setActiveTab('PACKAGING')}
-          leftIcon={<Package className="w-4 h-4" aria-hidden="true" />}
-        >
-          Standar Bumbu Tabur &amp; Kemasan
         </Button>
         <Button
           variant={activeTab === 'MACHINERY' ? 'primary' : 'ghost'}

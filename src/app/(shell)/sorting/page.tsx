@@ -435,6 +435,7 @@ export default function SortingPage() {
             </span>
           ) : (
             <Button
+              id="btn-buat-sortasi"
               variant="primary"
               onClick={() => {
                 setForm({ ...EMPTY_FORM, sorting_date: getCurrentDateTimeLocal() });
@@ -507,7 +508,7 @@ export default function SortingPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>Batal</Button>
-            <Button variant="primary" onClick={handleSave} loading={isSaving}>Simpan Sortasi</Button>
+            <Button id="btn-simpan-sortasi" variant="primary" onClick={handleSave} loading={isSaving}>Simpan Sortasi</Button>
           </>
         }
       >

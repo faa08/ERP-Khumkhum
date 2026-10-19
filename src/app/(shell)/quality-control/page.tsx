@@ -435,7 +435,7 @@ export default function QualityControlPage() {
         breadcrumbs={[{ label: 'Operasional' }, { label: 'Quality Control' }]}
         actions={
           !isManagement ? (
-            <Button variant="primary" onClick={() => handleOpenInspection()} leftIcon={<Plus size={16} />}>
+            <Button id="btn-catat-qc" variant="primary" onClick={() => handleOpenInspection()} leftIcon={<Plus size={16} />}>
               Catat Inspeksi Baru
             </Button>
           ) : undefined

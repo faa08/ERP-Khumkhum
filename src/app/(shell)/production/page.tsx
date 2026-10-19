@@ -49,6 +49,11 @@ import {
   Info,
   Pencil,
   Sliders,
+  ArrowLeft,
+  ArrowRight,
+  Lock,
+  Zap,
+  Check,
 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, isToday, isThisMonth, isThisYear, startOfDay, endOfDay } from 'date-fns';
@@ -70,7 +75,15 @@ import {
   startFryingBatchTimer,
   getAllFryingBatches,
   recordFryingRunCompletion,
+  getLongsongContainers,
+  createLongsongContainer,
+  updateLongsongContainer,
+  deleteLongsongContainer,
+  updateProductionOrder,
+  deleteProductionOrder,
+  updateFryingBatch,
   createPackingEntry,
+  consumeLongsongForPacking,
   markLongsongPacked,
   getAllPackingEntries,
   getUnpackedLongsongReminder,
@@ -86,7 +99,7 @@ import {
 import { getProductionStandards } from '@/actions/standards';
 import { supabase } from '@/lib/supabase';
 import { getPpicData } from '@/actions/ppic';
-import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry, ProductionStandardConfig } from '@/types/database';
+import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry, DbLongsongContainer, ProductionStandardConfig, FlavorVariant } from '@/types/database';
 import { FLAVOR_VARIANTS, PACKAGING_TYPES, PACKAGING_WEIGHTS, isFryingSpk } from '@/types/database';
 
 // ─────────────────────────────────────────────
@@ -162,11 +175,23 @@ export default function ProductionPage() {
   const [activeTab, setActiveTab] = useState<'FRYING' | 'PACKING'>('FRYING');
   const toast = useToast();
 
+  // Sync activeTab with URL query parameter ?tab=packing
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab')?.toUpperCase();
+      if (tabParam === 'PACKING' || tabParam === 'FRYING') {
+        setActiveTab(tabParam as any);
+      }
+    }
+  }, []);
+
   // ── Shared state ──
   const [orders, setOrders] = useState<DbProductionOrder[]>([]);
   const [products, setProducts] = useState<DbProduct[]>([]);
   const [rawMaterials, setRawMaterials] = useState<(DbRawMaterial & { available_stock?: number })[]>([]);
   const [productionStandards, setProductionStandards] = useState<ProductionStandardConfig | null>(null);
+  const [longsongContainers, setLongsongContainers] = useState<DbLongsongContainer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   // ── SPK Creation state ──
   const [createSpkOpen, setCreateSpkOpen] = useState(false);
@@ -244,13 +269,30 @@ export default function ProductionPage() {
   // 4. Rekap Selesai Masak SPK Goreng (Run Selesai - Bahan Aktual vs Standar BOM)
   const [recordFryingRunOpen, setRecordFryingRunOpen] = useState(false);
   const [selectedFryingOrder, setSelectedFryingOrder] = useState<DbProductionOrder | null>(null);
-  const [fryingRunForm, setFryingRunForm] = useState({
+  const [fryingRunTab, setFryingRunTab] = useState<'BAHAN' | 'LONGSONG' | 'BATCH'>('BAHAN');
+  const [fryingRunForm, setFryingRunForm] = useState<{
+    actual_mushroom_kg: string;
+    actual_premix_kg: string;
+    actual_cooking_oil_liter: string;
+    output_finished_kg: string;
+    output_longsong_count: string;
+    notes: string;
+    containers: { container_number: number; weight_kg: string }[];
+    batches: {
+      wajan_number: number;
+      duration_minutes: string;
+      oil_temp_celsius: string;
+      notes?: string;
+    }[];
+  }>({
     actual_mushroom_kg: '',
     actual_premix_kg: '',
     actual_cooking_oil_liter: '',
     output_finished_kg: '',
     output_longsong_count: '',
     notes: '',
+    containers: [],
+    batches: [],
   });
   const [isSubmittingFryingRun, setIsSubmittingFryingRun] = useState(false);
 
@@ -274,12 +316,43 @@ export default function ProductionPage() {
     );
   }, [haccpFryingForm]);
 
+  // ── SPK Edit state ──
+  const [editSpkOpen, setEditSpkOpen] = useState(false);
+  const [selectedSpkForEdit, setSelectedSpkForEdit] = useState<DbProductionOrder | null>(null);
+  const [editSpkForm, setEditSpkForm] = useState({
+    target_quantity: '',
+    start_date: '',
+    notes: '',
+  });
+  const [isUpdatingSpk, setIsUpdatingSpk] = useState(false);
+
+  // ── Longsong CRUD states ──
+  const [createLongsongOpen, setCreateLongsongOpen] = useState(false);
+  const [createLongsongForm, setCreateLongsongForm] = useState({
+    production_order_id: '',
+    container_number: '1',
+    initial_weight_kg: '2.5',
+    notes: '',
+  });
+  const [isCreatingLongsong, setIsCreatingLongsong] = useState(false);
+
+  const [editLongsongOpen, setEditLongsongOpen] = useState(false);
+  const [selectedLongsongForEdit, setSelectedLongsongForEdit] = useState<DbLongsongContainer | null>(null);
+  const [editLongsongForm, setEditLongsongForm] = useState({
+    current_weight_kg: '',
+    status: 'AVAILABLE' as 'AVAILABLE' | 'PARTIAL' | 'EMPTY',
+    notes: '',
+  });
+  const [isUpdatingLongsong, setIsUpdatingLongsong] = useState(false);
+
   // ── Packing state ──
   const [packingEntries, setPackingEntries] = useState<DbPackingEntry[]>([]);
   const [createPackingOpen, setCreatePackingOpen] = useState(false);
   const [isSavingPacking, setIsSavingPacking] = useState(false);
+  const [packingNavTab, setPackingNavTab] = useState<'PACKAGING' | 'BUMBU'>('PACKAGING');
   const [packingForm, setPackingForm] = useState({
     production_order_id: '',
+    seasoning_material_id: '',
     frying_batch_id: '',
     flavor_variant: 'Original',
     longsong_number: '1',
@@ -334,6 +407,48 @@ export default function ProductionPage() {
     return 0;
   }, [getSeasoningRatioForVariant]);
 
+  // Deteksi otomatis rasa & berat kemasan dari SPK tujuan packing (misal Balado 60g atau Original 75g)
+  const detectSpkFlavorAndWeight = useCallback((order?: DbProductionOrder | null) => {
+    if (!order) return { flavor: 'Original' as FlavorVariant, weight: '60g', packagingType: 'Standing Pouch' };
+
+    const textToSearch = [
+      order.product?.name || '',
+      order.product?.sku || '',
+      order.product_variant || '',
+      order.notes || '',
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    // 1. Deteksi Varian Rasa
+    let matchedFlavor: FlavorVariant = 'Original';
+    if (textToSearch.includes('balado') || textToSearch.includes('bld')) matchedFlavor = 'Balado';
+    else if (textToSearch.includes('barbeque') || textToSearch.includes('bbq')) matchedFlavor = 'BBQ';
+    else if (textToSearch.includes('super pedas') || textToSearch.includes('spd') || textToSearch.includes('extra pedas')) matchedFlavor = 'Super Pedas';
+    else if (textToSearch.includes('pedas manis') || textToSearch.includes('pm')) matchedFlavor = 'Pedas Manis';
+    else if (textToSearch.includes('keju') || textToSearch.includes('cheese')) matchedFlavor = 'Keju';
+    else if (textToSearch.includes('jagung')) matchedFlavor = 'Jagung Bakar';
+    else if (textToSearch.includes('original') || textToSearch.includes('ori') || textToSearch.includes('gurih') || textToSearch.includes('asin')) matchedFlavor = 'Original';
+
+    // 2. Deteksi Berat Kemasan (Utamakan 60g dan 75g sesuai produk utama KhumKhum)
+    let matchedWeight = '60g';
+    if (textToSearch.includes('60g') || textToSearch.includes('60gram') || textToSearch.includes('60 gram') || textToSearch.includes('60gr') || textToSearch.includes('-60')) matchedWeight = '60g';
+    else if (textToSearch.includes('75g') || textToSearch.includes('75gram') || textToSearch.includes('75 gram') || textToSearch.includes('75gr') || textToSearch.includes('-75')) matchedWeight = '75g';
+    else if (textToSearch.includes('100g') || textToSearch.includes('100gram') || textToSearch.includes('100 gram') || textToSearch.includes('100gr') || textToSearch.includes('-100')) matchedWeight = '100g';
+    else if (textToSearch.includes('150g') || textToSearch.includes('150gram') || textToSearch.includes('150 gram') || textToSearch.includes('150gr') || textToSearch.includes('-150')) matchedWeight = '150g';
+    else if (textToSearch.includes('250g') || textToSearch.includes('250gram') || textToSearch.includes('250 gram') || textToSearch.includes('250gr') || textToSearch.includes('-250')) matchedWeight = '250g';
+    else if (textToSearch.includes('500g') || textToSearch.includes('500gram') || textToSearch.includes('500 gram') || textToSearch.includes('500gr') || textToSearch.includes('-500')) matchedWeight = '500g';
+    else if (textToSearch.includes('30g') || textToSearch.includes('30gram') || textToSearch.includes('30 gram') || textToSearch.includes('-30')) matchedWeight = '30g';
+    else if (textToSearch.includes('50g') || textToSearch.includes('50gram') || textToSearch.includes('50 gram') || textToSearch.includes('-50')) matchedWeight = '50g';
+
+    // 3. Deteksi Tipe Kemasan
+    let matchedType = 'Standing Pouch';
+    if (textToSearch.includes('toples')) matchedType = 'Toples';
+    else if (textToSearch.includes('dus') || textToSearch.includes('box')) matchedType = 'Box / Dus';
+    else if (textToSearch.includes('bantal')) matchedType = 'Plastik Bantal';
+    else if (textToSearch.includes('pouch')) matchedType = 'Standing Pouch';
+
+    return { flavor: matchedFlavor, weight: matchedWeight, packagingType: matchedType };
+  }, []);
+
   const matchedSeasoningInfo = useMemo(() => {
     const flavor = (packingForm.flavor_variant || 'Original').trim();
     const { ratio, name: recipeName } = getSeasoningRatioForVariant(flavor);
@@ -379,20 +494,26 @@ export default function ProductionPage() {
   const matchedPackagingInfo = useMemo(() => {
     const pkgType = packingForm.packaging_type || 'Standing Pouch';
     const pkgWeight = packingForm.packaging_weight_gram || '60g';
+    const flavor = (packingForm.flavor_variant || '').toLowerCase();
     const neededPcs = (Number(packingForm.packaged_toples_count) || 0) + (Number(packingForm.defect_packaging_count) || 0);
 
     const matchedRm = rawMaterials.find(rm => {
       if (rm.material_category !== 'Packaging') return false;
       const nameLower = rm.name.toLowerCase();
-      const pkgTypeLower = (rm.packaging_type || '').toLowerCase();
-      const typeMatch = pkgTypeLower.includes(pkgType.toLowerCase()) || nameLower.includes(pkgType.toLowerCase());
-      const weightMatch = (rm.package_weight || '').toLowerCase().includes(pkgWeight.toLowerCase()) || nameLower.includes(pkgWeight.toLowerCase());
-      return typeMatch && weightMatch;
+      const codeLower = (rm.code || '').toLowerCase();
+      const weightMatch = nameLower.includes(pkgWeight.toLowerCase()) || (rm.package_weight || '').toLowerCase().includes(pkgWeight.toLowerCase());
+      const flavorMatch = !flavor || nameLower.includes(flavor) ||
+        (flavor.includes('balado') && (nameLower.includes('balado') || codeLower.includes('bal'))) ||
+        (flavor.includes('bbq') && (nameLower.includes('bbq') || nameLower.includes('barbeque') || codeLower.includes('bar'))) ||
+        (flavor.includes('pedas manis') && (nameLower.includes('pedas manis') || codeLower.includes('ped'))) ||
+        (flavor.includes('super pedas') && (nameLower.includes('super pedas') || codeLower.includes('sup'))) ||
+        (flavor.includes('original') && (nameLower.includes('original') || codeLower.includes('ori')));
+      return weightMatch && flavorMatch;
     }) || rawMaterials.find(rm => {
       if (rm.material_category !== 'Packaging') return false;
       const nameLower = rm.name.toLowerCase();
       return nameLower.includes(pkgWeight.toLowerCase());
-    });
+    }) || rawMaterials.find(rm => rm.material_category === 'Packaging');
 
     const availableStock = matchedRm ? Number(matchedRm.available_stock || 0) : null;
     const isStockSufficient = availableStock !== null ? availableStock >= neededPcs : true;
@@ -403,7 +524,163 @@ export default function ProductionPage() {
       availableStock,
       isStockSufficient,
     };
-  }, [packingForm.packaging_type, packingForm.packaging_weight_gram, packingForm.packaged_toples_count, packingForm.defect_packaging_count, rawMaterials]);
+  }, [packingForm.packaging_type, packingForm.packaging_weight_gram, packingForm.flavor_variant, packingForm.packaged_toples_count, packingForm.defect_packaging_count, rawMaterials]);
+
+  // List seluruh bahan baku kategori Bumbu dari warehouse
+  const warehouseSeasoningMaterials = useMemo(() => {
+    return rawMaterials.filter(rm => {
+      const cat = (rm.material_category || '').toLowerCase();
+      const code = (rm.code || '').toUpperCase();
+      const name = (rm.name || '').toLowerCase();
+      return cat.includes('bumbu') || cat.includes('seasoning') || code.startsWith('BT-') || name.includes('bumbu tabur');
+    });
+  }, [rawMaterials]);
+
+  // Status validasi stok bahan baku warehouse & buffer WIP untuk packing
+  const packingValidationStatus = useMemo(() => {
+    const pcs = Number(packingForm.packaged_toples_count) || 0;
+    const cleanPackGram = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
+    const neededKg = Number(((pcs * cleanPackGram) / 1000).toFixed(2));
+    const seasoningGramsInput = Number(packingForm.seasoning_used_gram) || 0;
+
+    // 1. Stok Kemasan di Warehouse
+    const isPackagingSufficient = matchedPackagingInfo.availableStock !== null
+      ? matchedPackagingInfo.availableStock >= matchedPackagingInfo.neededPcs && matchedPackagingInfo.neededPcs > 0
+      : true;
+
+    // 2. Stok Bumbu Tabur di Warehouse
+    const currentSeasoningRm = warehouseSeasoningMaterials.find(rm => rm.id === packingForm.seasoning_material_id) || matchedSeasoningInfo.matchedRm;
+    const isGramUom = currentSeasoningRm?.uom?.toLowerCase() === 'gram' || currentSeasoningRm?.uom?.toLowerCase() === 'gr';
+    const currentSeasoningStockGram = currentSeasoningRm
+      ? (isGramUom ? Number(currentSeasoningRm.available_stock || 0) : Number(currentSeasoningRm.available_stock || 0) * 1000)
+      : 0;
+    const isSeasoningSufficient = currentSeasoningRm
+      ? currentSeasoningStockGram >= seasoningGramsInput && seasoningGramsInput > 0
+      : seasoningGramsInput > 0;
+
+    // 3. Stok Wadah Jamur Selongsong di Buffer WIP
+    const activeContainers = longsongContainers.filter(
+      c => (c.status === 'AVAILABLE' || c.status === 'PARTIAL') && Number(c.current_weight_kg) > 0
+    );
+    const totalContainerKg = activeContainers.reduce((sum, c) => sum + (Number(c.current_weight_kg) || 0), 0);
+    const isLongsongSufficient = totalContainerKg >= neededKg && neededKg > 0;
+
+    const isValid = pcs > 0 && seasoningGramsInput > 0 && isPackagingSufficient && isSeasoningSufficient && isLongsongSufficient;
+
+    let errorMessage = '';
+    if (pcs <= 0) errorMessage = 'Jumlah kemasan wajib diisi minimal 1 pcs';
+    else if (!isPackagingSufficient) errorMessage = `Stok kemasan di warehouse kurang (${matchedPackagingInfo.availableStock || 0}/${matchedPackagingInfo.neededPcs} pcs)`;
+    else if (seasoningGramsInput <= 0) errorMessage = 'Timbangan bumbu tabur riil belum diisi';
+    else if (!isSeasoningSufficient) errorMessage = `Stok bumbu di warehouse kurang (${currentSeasoningStockGram}g/${seasoningGramsInput}g)`;
+    else if (!isLongsongSufficient) errorMessage = `Stok selongsong di buffer kurang (${totalContainerKg.toFixed(1)}kg/${neededKg.toFixed(1)}kg)`;
+
+    return {
+      isValid,
+      isPackagingSufficient,
+      isSeasoningSufficient,
+      isLongsongSufficient,
+      seasoningGramsInput,
+      currentSeasoningStockGram,
+      currentSeasoningRm,
+      neededKg,
+      totalContainerKg,
+      errorMessage,
+    };
+  }, [
+    packingForm.packaged_toples_count,
+    packingForm.packaging_weight_gram,
+    packingForm.seasoning_used_gram,
+    packingForm.seasoning_material_id,
+    matchedPackagingInfo,
+    warehouseSeasoningMaterials,
+    matchedSeasoningInfo.matchedRm,
+    longsongContainers,
+  ]);
+
+  // Status ketersediaan stok gudang untuk 3 bahan baku utama penggorengan
+  const fryingStockStatus = useMemo(() => {
+    const findStock = (
+      keywords: string[],
+      defaultUom: string,
+      code?: string,
+      excludeKeywords: string[] = []
+    ) => {
+      // 1. Coba pencocokan kode master item jika ada
+      if (code) {
+        const byCode = rawMaterials.find(m => (m.code || '').toLowerCase() === code.toLowerCase());
+        if (byCode) {
+          return {
+            matchedRm: byCode,
+            availableStock: Number(byCode.available_stock || 0),
+            uom: byCode.uom || defaultUom,
+          };
+        }
+      }
+
+      // 2. Cari berdasarkan keyword secara berurutan (dari yang paling spesifik)
+      for (const kw of keywords) {
+        const found = rawMaterials.find(m => {
+          const n = m.name.toLowerCase();
+          const c = (m.code || '').toLowerCase();
+          // Tolak jika mengandung kata eksklusi (misal: gagang, baby)
+          if (excludeKeywords.some(ex => n.includes(ex) || c.includes(ex))) {
+            return false;
+          }
+          return n.includes(kw) || c === kw;
+        });
+
+        if (found) {
+          return {
+            matchedRm: found,
+            availableStock: Number(found.available_stock || 0),
+            uom: found.uom || defaultUom,
+          };
+        }
+      }
+
+      return {
+        matchedRm: undefined,
+        availableStock: 0,
+        uom: defaultUom,
+      };
+    };
+
+    const mushroomStock = findStock(
+      ['jamur tiram segar', 'jamur tiram'],
+      'kg',
+      'jmr-trm',
+      ['gagang', 'baby']
+    );
+    const premixStock = findStock(
+      ['tepung premix khumkhum', 'tepung premix', 'premix'],
+      'kg',
+      'rm-prx',
+      ['terigu', 'tapioka']
+    );
+    const oilStock = findStock(
+      ['minyak goreng', 'minyak'],
+      'liter',
+      'rm-miny',
+      ['bekas', 'jelantah', 'pelumas']
+    );
+
+    const actualMushroom = parseFloat(fryingRunForm.actual_mushroom_kg) || 0;
+    const actualPremix = parseFloat(fryingRunForm.actual_premix_kg) || 0;
+    const actualOil = parseFloat(fryingRunForm.actual_cooking_oil_liter) || 0;
+
+    const isMushroomShortage = actualMushroom > 0 && actualMushroom > mushroomStock.availableStock;
+    const isPremixShortage = actualPremix > 0 && actualPremix > premixStock.availableStock;
+    const isOilShortage = actualOil > 0 && actualOil > oilStock.availableStock;
+
+    const hasAnyShortage = isMushroomShortage || isPremixShortage || isOilShortage;
+
+    return {
+      mushroom: { ...mushroomStock, actual: actualMushroom, isShortage: isMushroomShortage },
+      premix: { ...premixStock, actual: actualPremix, isShortage: isPremixShortage },
+      oil: { ...oilStock, actual: actualOil, isShortage: isOilShortage },
+      hasAnyShortage,
+    };
+  }, [rawMaterials, fryingRunForm.actual_mushroom_kg, fryingRunForm.actual_premix_kg, fryingRunForm.actual_cooking_oil_liter]);
 
   // ── Batch Stopwatch state (Per-batch inline timer: Running, Pause, Resume, Reset) ──
   interface BatchTimerState {
@@ -504,13 +781,14 @@ export default function ProductionPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [ordersRes, optionsRes, fryingRes, packingRes, metricsRes, standardsRes] = await Promise.all([
+      const [ordersRes, optionsRes, fryingRes, packingRes, metricsRes, standardsRes, containersRes] = await Promise.all([
         getProductionOrders(),
         getProductionFormOptions(),
         getAllFryingBatches(),
         getAllPackingEntries(),
         getFryingPackingMetrics(),
         getProductionStandards(),
+        getLongsongContainers(),
       ]);
 
       if (ordersRes.success && ordersRes.data) setOrders(ordersRes.data);
@@ -522,6 +800,7 @@ export default function ProductionPage() {
       if (packingRes.success && packingRes.data) setPackingEntries(packingRes.data);
       if (metricsRes.success && metricsRes.data) setFryingMetrics(metricsRes.data);
       if (standardsRes?.success && standardsRes.data) setProductionStandards(standardsRes.data);
+      if (containersRes?.success && containersRes.data) setLongsongContainers(containersRes.data);
     } catch (err: any) {
       console.error('Gagal memuat data produksi:', err);
     } finally {
@@ -544,6 +823,9 @@ export default function ProductionPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'packing_entries' }, () => {
         loadData();
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_longsong_containers' }, () => {
+        loadData();
+      })
       .subscribe();
 
     return () => {
@@ -551,8 +833,15 @@ export default function ProductionPage() {
     };
   }, [loadData]);
 
-  // ── Longsong Belum Packing (Reactive: Produced - Packed) ──
+  // ── Longsong Belum Packing (Wadah Fisik Buffer WIP yang Aktif / Tersedia) ──
   const unpackedLongsongCount = useMemo(() => {
+    // 1. Jika ada wadah fisik longsong di Buffer WIP, hitung langsung wadah yang AVAILABLE atau PARTIAL
+    const availableContainers = longsongContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL');
+    if (longsongContainers.length > 0) {
+      return availableContainers.length;
+    }
+
+    // 2. Jika tidak ada wadah fisik terdaftar, hitung selisih dari wajan goreng selesai vs packing
     const totalProduced = fryingBatches
       .filter(b => b.finished_at && Number(b.longsong_count) > 0)
       .reduce((sum, b) => sum + (Number(b.longsong_count) || 0), 0);
@@ -564,7 +853,7 @@ export default function ProductionPage() {
       return Math.max(0, diff);
     }
     return fryingMetrics.unpackedLongsongCount || 0;
-  }, [fryingBatches, packingEntries, fryingMetrics.unpackedLongsongCount]);
+  }, [longsongContainers, fryingBatches, packingEntries, fryingMetrics.unpackedLongsongCount]);
 
   // Semua SPK Penggorengan Curah (untuk antrean & progres di Tab 1)
   const allFryingOrders = useMemo(() => {
@@ -579,6 +868,10 @@ export default function ProductionPage() {
   // ── SPK yang Sudah Melewati Tahap Produksi Goreng Jamur (Terintegrasi ke Packing) ──
   // Total pool longsong jamur matang curah di seluruh wajan pabrik
   const totalAllLongsongProduced = useMemo(() => {
+    if (longsongContainers.length > 0) {
+      return longsongContainers.length;
+    }
+
     const batchTotal = fryingBatches.reduce((sum, b) => {
       const isFried = (b.finished_at != null || (b.output_weight_gram != null && b.output_weight_gram > 0)) && Number(b.longsong_count) > 0;
       return sum + (isFried ? (Number(b.longsong_count) || 0) : 0);
@@ -594,15 +887,18 @@ export default function ProductionPage() {
     }, 0);
 
     return batchTotal + orderTotal;
-  }, [fryingBatches, allFryingOrders]);
+  }, [longsongContainers, fryingBatches, allFryingOrders]);
 
   const totalAllLongsongPacked = useMemo(() => {
     return packingEntries.filter(p => p.is_packed).length;
   }, [packingEntries]);
 
   const availablePoolLongsong = useMemo(() => {
+    if (longsongContainers.length > 0) {
+      return longsongContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL').length;
+    }
     return Math.max(0, totalAllLongsongProduced - totalAllLongsongPacked);
-  }, [totalAllLongsongProduced, totalAllLongsongPacked]);
+  }, [longsongContainers, totalAllLongsongProduced, totalAllLongsongPacked]);
 
   // Agregasi Progres SPK Goreng Jamur Curah (Target kg, Realisasi kg, Sisa kg, Persen)
   const fryingOrdersWithProgress = useMemo(() => {
@@ -631,6 +927,31 @@ export default function ProductionPage() {
       const progressPct = order.status === 'COMPLETED' ? 100 : Math.min(100, Math.round((realizedKg / targetKg) * 100));
       const isFulfilled = realizedKg >= targetKg || order.status === 'COMPLETED';
 
+      // Waktu rata-rata per batch & HACCP Time Study (Standar: 15 ± 2 menit)
+      const finishedBatches = batches.filter(b => b.finished_at && Number(b.frying_duration_minutes) > 0);
+      let avgDurationMinutes = 0;
+      if (finishedBatches.length > 0) {
+        avgDurationMinutes = finishedBatches.reduce((s, b) => s + (Number(b.frying_duration_minutes) || 0), 0) / finishedBatches.length;
+      } else if (order.cycle_time_avg_seconds && order.cycle_time_avg_seconds > 0) {
+        avgDurationMinutes = order.cycle_time_avg_seconds / 60;
+      }
+
+      let haccpCompliance: 'OPTIMAL' | 'OVERCOOK' | 'UNDERCOOK' | 'NO_DATA' = 'NO_DATA';
+      if (avgDurationMinutes > 0) {
+        if (avgDurationMinutes >= 13 && avgDurationMinutes <= 17) {
+          haccpCompliance = 'OPTIMAL';
+        } else if (avgDurationMinutes > 17) {
+          haccpCompliance = 'OVERCOOK';
+        } else {
+          haccpCompliance = 'UNDERCOOK';
+        }
+      }
+
+      // Wadah longsong fisik yang terasosiasi dengan SPK ini
+      const linkedContainers = longsongContainers.filter(c => c.production_order_id === order.id);
+      const readyContainers = linkedContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL');
+      const availableWeightKg = readyContainers.reduce((s, c) => s + (Number(c.current_weight_kg) || 0), 0);
+
       return {
         order,
         targetKg,
@@ -644,9 +965,14 @@ export default function ProductionPage() {
         progressPct,
         progressPercent: progressPct,
         isFulfilled,
+        avgDurationMinutes,
+        haccpCompliance,
+        linkedContainers,
+        readyContainers,
+        availableWeightKg,
       };
     });
-  }, [allFryingOrders, fryingBatches]);
+  }, [allFryingOrders, fryingBatches, longsongContainers]);
 
 
 
@@ -977,17 +1303,56 @@ export default function ProductionPage() {
     }
   };
 
-  // Handler: Buka Modal Rekap Selesai Masak SPK (Bahan Aktual & Output Longsong)
+  // Handler: Buka Modal Rekap Selesai Masak SPK (Bahan Aktual & Output Longsong & Waktu Batch)
   const handleOpenRecordFryingRun = (order: DbProductionOrder) => {
     const targetKg = Number(order.target_quantity) || 50;
+    const estOutputKg = Number((targetKg * 0.67).toFixed(1));
+    const autoLongsong = Math.max(1, Math.round(estOutputKg / 2.5));
+
+    const initialContainers: { container_number: number; weight_kg: string }[] = [];
+    const perWadah = Number((estOutputKg / autoLongsong).toFixed(2));
+    let rem = estOutputKg;
+    for (let i = 1; i <= autoLongsong; i++) {
+      const w = i === autoLongsong ? Number(rem.toFixed(2)) : perWadah;
+      initialContainers.push({ container_number: i, weight_kg: String(w) });
+      rem -= perWadah;
+    }
+
+    // Inisialisasi daftar batch wajan dari data wajan SPK ini
+    const existingOrderBatches = fryingBatches.filter(b => b.production_order_id === order.id);
+    let initialBatches: { wajan_number: number; duration_minutes: string; oil_temp_celsius: string; notes?: string }[] = [];
+    if (existingOrderBatches.length > 0) {
+      initialBatches = existingOrderBatches
+        .sort((a, b) => a.wajan_number - b.wajan_number)
+        .map(b => ({
+          wajan_number: b.wajan_number,
+          duration_minutes: String(b.frying_duration_minutes || 15),
+          oil_temp_celsius: String(b.oil_temp_celsius || 170),
+          notes: b.notes || '',
+        }));
+    } else {
+      const estBatchCount = Math.max(1, Math.round(targetKg / 0.8));
+      for (let i = 1; i <= estBatchCount; i++) {
+        initialBatches.push({
+          wajan_number: i,
+          duration_minutes: '15.0',
+          oil_temp_celsius: '170',
+          notes: '',
+        });
+      }
+    }
+
+    setFryingRunTab('BAHAN');
     setSelectedFryingOrder(order);
     setFryingRunForm({
       actual_mushroom_kg: String(targetKg),
       actual_premix_kg: String(Number((targetKg * 0.25).toFixed(2))),
       actual_cooking_oil_liter: String(Number((targetKg * 0.30).toFixed(2))),
-      output_finished_kg: '',
-      output_longsong_count: '',
+      output_finished_kg: String(estOutputKg),
+      output_longsong_count: String(autoLongsong),
       notes: '',
+      containers: initialContainers,
+      batches: initialBatches,
     });
     setRecordFryingRunOpen(true);
   };
@@ -1001,6 +1366,7 @@ export default function ProductionPage() {
         actual_cooking_oil_liter: '',
         output_finished_kg: '',
         output_longsong_count: '',
+        containers: [],
       }));
       return;
     }
@@ -1021,7 +1387,7 @@ export default function ProductionPage() {
 
   const handleFryingRunOutputKgChange = (valStr: string) => {
     if (valStr === '') {
-      setFryingRunForm(f => ({ ...f, output_finished_kg: '', output_longsong_count: '' }));
+      setFryingRunForm(f => ({ ...f, output_finished_kg: '', output_longsong_count: '', containers: [] }));
       return;
     }
     const val = parseFloat(valStr);
@@ -1036,33 +1402,140 @@ export default function ProductionPage() {
     if (maxAllowed > 0 && val > maxAllowed) {
       clampedVal = maxAllowed;
     }
-    const autoLongsong = Math.max(1, Math.round(clampedVal / 2.5));
+    const count = parseInt(fryingRunForm.output_longsong_count, 10) || Math.max(1, Math.round(clampedVal / 2.5));
+    
+    // Auto-update container weights
+    const perWadah = Number((clampedVal / count).toFixed(2));
+    let remaining = clampedVal;
+    const newContainers: { container_number: number; weight_kg: string }[] = [];
+    for (let i = 1; i <= count; i++) {
+      const w = i === count ? Number(remaining.toFixed(2)) : perWadah;
+      newContainers.push({ container_number: i, weight_kg: String(w) });
+      remaining -= perWadah;
+    }
+
     setFryingRunForm(f => ({
       ...f,
       output_finished_kg: clampedVal.toString(),
-      output_longsong_count: autoLongsong.toString(),
+      output_longsong_count: count.toString(),
+      containers: newContainers,
     }));
   };
 
   const handleFryingRunLongsongChange = (valStr: string) => {
     if (valStr === '') {
-      setFryingRunForm(f => ({ ...f, output_longsong_count: '', output_finished_kg: '' }));
+      setFryingRunForm(f => ({ ...f, output_longsong_count: '', output_finished_kg: '', containers: [] }));
       return;
     }
     const count = parseInt(valStr, 10);
-    if (isNaN(count)) {
+    if (isNaN(count) || count <= 0) {
       setFryingRunForm(f => ({ ...f, output_longsong_count: valStr }));
       return;
     }
     const currentMushroom = parseFloat(fryingRunForm.actual_mushroom_kg) || (Number(selectedFryingOrder?.target_quantity) || 50);
     const maxAllowed = Math.round(currentMushroom * 1.25 * 10) / 10;
+    const curOutput = parseFloat(fryingRunForm.output_finished_kg);
+    const totalWeight = (!isNaN(curOutput) && curOutput > 0) ? curOutput : Math.min(maxAllowed, Number((count * 2.5).toFixed(1)));
 
-    const estimatedWeight = Math.min(maxAllowed, Number((count * 2.5).toFixed(1)));
+    const perWadah = Number((totalWeight / count).toFixed(2));
+    let remaining = totalWeight;
+    const newContainers: { container_number: number; weight_kg: string }[] = [];
+    for (let i = 1; i <= count; i++) {
+      const w = i === count ? Number(remaining.toFixed(2)) : perWadah;
+      newContainers.push({ container_number: i, weight_kg: String(w) });
+      remaining -= perWadah;
+    }
+
     setFryingRunForm(f => ({
       ...f,
       output_longsong_count: valStr,
-      output_finished_kg: estimatedWeight.toString(),
+      output_finished_kg: totalWeight.toString(),
+      containers: newContainers,
     }));
+  };
+
+  const handleContainerWeightChange = (index: number, weightStr: string) => {
+    setFryingRunForm(f => {
+      const updated = [...f.containers];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], weight_kg: weightStr };
+      }
+      const sum = updated.reduce((acc, c) => acc + (parseFloat(c.weight_kg) || 0), 0);
+      return {
+        ...f,
+        containers: updated,
+        output_finished_kg: sum > 0 ? Number(sum.toFixed(2)).toString() : f.output_finished_kg,
+      };
+    });
+  };
+
+  const handleAutoBalanceContainers = () => {
+    setFryingRunForm(f => {
+      const total = parseFloat(f.output_finished_kg) || 0;
+      const count = f.containers.length || parseInt(f.output_longsong_count, 10) || 1;
+      if (total <= 0 || count <= 0) return f;
+      const perWadah = Number((total / count).toFixed(2));
+      let remaining = total;
+      const balanced = [];
+      for (let i = 1; i <= count; i++) {
+        const w = i === count ? Number(remaining.toFixed(2)) : perWadah;
+        balanced.push({ container_number: i, weight_kg: String(w) });
+        remaining -= perWadah;
+      }
+      return {
+        ...f,
+        containers: balanced,
+      };
+    });
+    toast.info('Berat wadah longsong berhasil dibagi rata otomatis');
+  };
+
+  const handleBatchDurationChange = (index: number, val: string) => {
+    setFryingRunForm(f => {
+      const updated = [...f.batches];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], duration_minutes: val };
+      }
+      return { ...f, batches: updated };
+    });
+  };
+
+  const handleBatchTempChange = (index: number, val: string) => {
+    setFryingRunForm(f => {
+      const updated = [...f.batches];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], oil_temp_celsius: val };
+      }
+      return { ...f, batches: updated };
+    });
+  };
+
+  const handleAddBatch = () => {
+    setFryingRunForm(f => {
+      const nextNo = (f.batches.length > 0 ? Math.max(...f.batches.map(b => b.wajan_number)) : 0) + 1;
+      return {
+        ...f,
+        batches: [
+          ...f.batches,
+          { wajan_number: nextNo, duration_minutes: '15.0', oil_temp_celsius: '170', notes: '' },
+        ],
+      };
+    });
+  };
+
+  const handleRemoveBatch = (index: number) => {
+    setFryingRunForm(f => {
+      const updated = f.batches.filter((_, idx) => idx !== index);
+      return { ...f, batches: updated };
+    });
+  };
+
+  const handleSetAllBatchesStandard = () => {
+    setFryingRunForm(f => ({
+      ...f,
+      batches: f.batches.map(b => ({ ...b, duration_minutes: '15.0', oil_temp_celsius: '170' })),
+    }));
+    toast.info('Seluruh batch diset ke standar HACCP (15.0 menit, 170°C)');
   };
 
   // Handler: Submit Rekap Selesai Masak SPK & Potong Stok Gudang Aktual
@@ -1079,10 +1552,31 @@ export default function ProductionPage() {
       return;
     }
 
+    if (fryingStockStatus.hasAnyShortage) {
+      toast.error('Stok bahan baku di gudang tidak mencukupi untuk menyelesaikan SPK ini. Harap lakukan Inbound / Restock terlebih dahulu.');
+      return;
+    }
+
     if (outputKg > mushroomKg * 1.5) {
       toast.error(`Berat output jamur matang (${outputKg} kg) tidak wajar karena melebihi batas 150% bahan jamur segar (${mushroomKg} kg). Mohon periksa kembali input Anda.`);
       return;
     }
+
+    const containersPayload = (fryingRunForm.containers && fryingRunForm.containers.length > 0)
+      ? fryingRunForm.containers.map(c => ({
+          container_number: c.container_number,
+          weight_kg: parseFloat(c.weight_kg) || 0,
+        }))
+      : undefined;
+
+    const batchesPayload = (fryingRunForm.batches && fryingRunForm.batches.length > 0)
+      ? fryingRunForm.batches.map(b => ({
+          wajan_number: b.wajan_number,
+          duration_minutes: parseFloat(b.duration_minutes) || 15,
+          oil_temp_celsius: parseFloat(b.oil_temp_celsius) || 170,
+          notes: b.notes || undefined,
+        }))
+      : undefined;
 
     setIsSubmittingFryingRun(true);
     try {
@@ -1093,6 +1587,8 @@ export default function ProductionPage() {
         actual_cooking_oil_liter: oilLiter || 0,
         output_finished_kg: outputKg,
         output_longsong_count: longsongCount,
+        containers: containersPayload,
+        batches: batchesPayload,
         notes: fryingRunForm.notes || undefined,
       });
 
@@ -1118,12 +1614,121 @@ export default function ProductionPage() {
       description: `Apakah Anda yakin ingin menyelesaikan SPK ${batchNumber}? Seluruh target penggorengan wajan untuk SPK ini akan ditandai COMPLETED.`,
       variant: 'primary',
       onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         const res = await completeProductionOrder(orderId);
         if (res.success) {
           toast.success(`SPK ${batchNumber} berhasil diselesaikan!`);
           loadData();
         } else {
           toast.error(res.error || 'Gagal menyelesaikan SPK');
+        }
+      },
+    });
+  };
+
+  // Handler: Edit SPK
+  const handleOpenEditSpk = (order: DbProductionOrder) => {
+    setSelectedSpkForEdit(order);
+    setEditSpkForm({
+      target_quantity: String(order.target_quantity || ''),
+      start_date: order.start_date ? order.start_date.split('T')[0] : format(new Date(), 'yyyy-MM-dd'),
+      notes: order.notes || '',
+    });
+    setEditSpkOpen(true);
+  };
+
+  const handleSaveEditSpk = async () => {
+    if (!selectedSpkForEdit) return;
+    const targetQty = parseFloat(editSpkForm.target_quantity);
+    if (!targetQty || targetQty <= 0) {
+      toast.error('Target kuantitas harus lebih dari 0 kg');
+      return;
+    }
+    setIsUpdatingSpk(true);
+    const res = await updateProductionOrder(selectedSpkForEdit.id, {
+      target_quantity: targetQty,
+      start_date: editSpkForm.start_date,
+      notes: editSpkForm.notes,
+    });
+    setIsUpdatingSpk(false);
+    if (res.success) {
+      toast.success(`SPK ${selectedSpkForEdit.batch_number} berhasil diperbarui!`);
+      setEditSpkOpen(false);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal memperbarui SPK');
+    }
+  };
+
+  // Handler: Hapus / Batalkan SPK
+  const handleDeleteSpk = (order: DbProductionOrder) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: `Hapus / Batalkan SPK ${order.batch_number}`,
+      description: `Apakah Anda yakin ingin menghapus SPK ${order.batch_number}? Seluruh data alokasi penggorengan terkait SPK ini akan dihapus.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        const res = await deleteProductionOrder(order.id);
+        if (res.success) {
+          toast.success(`SPK ${order.batch_number} berhasil dihapus!`);
+          loadData();
+        } else {
+          toast.error(res.error || 'Gagal menghapus SPK');
+        }
+      },
+    });
+  };
+
+  // Handler: Edit Wadah Longsong
+  const handleOpenEditLongsong = (c: DbLongsongContainer) => {
+    setSelectedLongsongForEdit(c);
+    setEditLongsongForm({
+      current_weight_kg: String(c.current_weight_kg ?? c.initial_weight_kg ?? 2.5),
+      status: c.status || 'AVAILABLE',
+      notes: c.notes || '',
+    });
+    setEditLongsongOpen(true);
+  };
+
+  const handleSaveEditLongsong = async () => {
+    if (!selectedLongsongForEdit) return;
+    const weight = parseFloat(editLongsongForm.current_weight_kg);
+    if (isNaN(weight) || weight < 0) {
+      toast.error('Berat sisa tidak boleh negatif');
+      return;
+    }
+    setIsUpdatingLongsong(true);
+    const res = await updateLongsongContainer(selectedLongsongForEdit.id, {
+      current_weight_kg: weight,
+      status: editLongsongForm.status,
+      notes: editLongsongForm.notes,
+    });
+    setIsUpdatingLongsong(false);
+    if (res.success) {
+      toast.success(`Wadah #${selectedLongsongForEdit.container_number} berhasil diperbarui!`);
+      setEditLongsongOpen(false);
+      loadData();
+    } else {
+      toast.error(res.error || 'Gagal memperbarui wadah');
+    }
+  };
+
+  // Handler: Hapus Wadah Longsong
+  const handleDeleteLongsong = (c: DbLongsongContainer) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: `Hapus Wadah #${c.container_number}`,
+      description: `Apakah Anda yakin ingin menghapus kartu wadah longsong #${c.container_number} (Sisa: ${c.current_weight_kg} kg)? Data stok wadah ini akan ditiadakan.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        const res = await deleteLongsongContainer(c.id);
+        if (res.success) {
+          toast.success(`Wadah #${c.container_number} berhasil dihapus`);
+          loadData();
+        } else {
+          toast.error(res.error || 'Gagal menghapus wadah');
         }
       },
     });
@@ -1137,6 +1742,7 @@ export default function ProductionPage() {
       description: `Apakah Anda yakin ingin membatalkan wajan #${batch.wajan_number}? Stok bahan baku (Jamur, Tepung, Minyak) yang sebelumnya dialokasikan/dipotong akan dikembalikan otomatis ke gudang.`,
       variant: 'danger',
       onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         const res = await deleteFryingBatch(batch.id);
         if (res.success) {
           toast.success(`Wajan #${batch.wajan_number} berhasil dibatalkan dan stok dikembalikan`);
@@ -1308,42 +1914,51 @@ export default function ProductionPage() {
 
     const spkId = target.order.id;
     const nextLongsong = target.packedCount + 1;
-    const avgWeightNum = target.totalLongsongProduced > 0 && target.totalOutputGram > 0
-      ? Math.round(target.totalOutputGram / target.totalLongsongProduced)
-      : 500;
-    const avgWeightStr = String(avgWeightNum);
 
-    // Auto-detect rasa, gramatur & tipe packaging dari varian target SPK
-    const spkVariant = target.order.product_variant || '';
-    const matchedFlavor = FLAVOR_VARIANTS.find(f => spkVariant.toLowerCase().includes(f.toLowerCase())) || 'Original';
-    const matchedWeight = PACKAGING_WEIGHTS.find(w => spkVariant.toLowerCase().includes(w.value.toLowerCase()))?.value || '100g';
-    const matchedType = PACKAGING_TYPES.find(t => spkVariant.toLowerCase().includes(t.toLowerCase())) || 'Standing Pouch';
+    // Auto-detect rasa, gramatur & tipe packaging dari varian target SPK (misal Balado 60g atau Original 75g)
+    const detected = detectSpkFlavorAndWeight(target.order);
+    const cleanPackGram = parseInt(detected.weight.replace(/\D/g, ''), 10) || 60;
+    
+    // Default pcs = Sisa target SPK (target_quantity - totalPackagedPcs) atau minimal 1
+    const spkTargetPcs = target.order.target_quantity || 200;
+    const remainingPcs = Math.max(1, spkTargetPcs - (target.totalPackagedPcs || 0));
+    const totalNeededGram = remainingPcs * cleanPackGram;
 
-    // Estimasi cerdas jumlah kemasan (pcs) & bumbu tabur (gram) sesuai standar resep
-    const cleanPackGram = parseInt(matchedWeight.replace(/\D/g, ''), 10) || 100;
-    const autoPcs = Math.max(1, Math.floor(avgWeightNum / cleanPackGram));
-    const autoSeasoning = calculateRecipeSeasoningGram(matchedFlavor, String(autoPcs), matchedWeight, avgWeightStr) || Math.round(avgWeightNum * 0.08);
+    // Cari raw material bumbu tabur yang cocok di warehouse
+    const sLower = detected.flavor.toLowerCase();
+    const matchedSeasoningRm = rawMaterials.find(rm => {
+      const rmName = rm.name.toLowerCase();
+      const rmCode = (rm.code || '').toLowerCase();
+      if (sLower.includes('balado')) return rmName.includes('balado') || rmCode.includes('bld');
+      if (sLower.includes('bbq') || sLower.includes('barbeque')) return rmName.includes('bbq') || rmName.includes('barbeque') || rmCode.includes('bbq');
+      if (sLower.includes('super pedas')) return rmName.includes('super pedas') || rmCode.includes('sp');
+      if (sLower.includes('pedas manis')) return rmName.includes('pedas manis') || rmName.includes('manis pedas') || rmCode.includes('pm');
+      if (sLower.includes('original')) return rmName.includes('gurih') || rmName.includes('original') || rmName.includes('asin');
+      return rmName.includes(sLower);
+    });
 
     setPackingForm({
       production_order_id: spkId,
+      seasoning_material_id: matchedSeasoningRm?.id || '',
       frying_batch_id: '',
-      flavor_variant: matchedFlavor,
+      flavor_variant: detected.flavor,
       longsong_number: String(nextLongsong),
-      longsong_weight_gram: avgWeightStr,
-      packaged_toples_count: String(autoPcs),
-      packaging_type: matchedType,
-      packaging_weight_gram: matchedWeight,
-      seasoning_used_gram: String(autoSeasoning),
+      longsong_weight_gram: String(totalNeededGram),
+      packaged_toples_count: String(remainingPcs),
+      packaging_type: detected.packagingType,
+      packaging_weight_gram: detected.weight,
+      seasoning_used_gram: '', // Diisi manual riil hasil timbangan
       longsongs_used_count: '1',
       defect_packaging_count: '0',
       notes: '',
     });
+    setPackingNavTab('PACKAGING');
     setCreatePackingOpen(true);
   };
 
   const handleCreatePacking = async () => {
     if (!packingForm.production_order_id) {
-      toast.error('Pilih SPK Produksi tujuan packing terlebih dahulu');
+      toast.error('Target SPK Produksi tujuan packing belum terhubung');
       return;
     }
     const pcs = Number(packingForm.packaged_toples_count);
@@ -1352,6 +1967,16 @@ export default function ProductionPage() {
       return;
     }
 
+    // Validasi stok bahan baku warehouse & buffer WIP
+    if (!packingValidationStatus.isValid) {
+      toast.error(packingValidationStatus.errorMessage || 'Stok bahan baku di gudang atau selongsong tidak mencukupi');
+      return;
+    }
+
+    const cleanPackGram = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
+    const neededKg = Number(((pcs * cleanPackGram) / 1000).toFixed(2));
+    const seasoningGram = Number(packingForm.seasoning_used_gram) || 0;
+
     setIsSavingPacking(true);
     try {
       const res = await createPackingEntry({
@@ -1359,11 +1984,11 @@ export default function ProductionPage() {
         frying_batch_id: packingForm.frying_batch_id || undefined,
         flavor_variant: packingForm.flavor_variant,
         longsong_number: Number(packingForm.longsong_number) || 1,
-        longsong_weight_gram: Number(packingForm.longsong_weight_gram) || undefined,
+        longsong_weight_gram: pcs * cleanPackGram,
         packaged_toples_count: pcs,
         packaging_type: packingForm.packaging_type,
         packaging_weight_gram: packingForm.packaging_weight_gram,
-        seasoning_used_gram: Number(packingForm.seasoning_used_gram) || 0,
+        seasoning_used_gram: seasoningGram,
         longsongs_used_count: Number(packingForm.longsongs_used_count) || 1,
         defect_packaging_count: Number(packingForm.defect_packaging_count) || 0,
         notes: packingForm.notes,
@@ -1371,7 +1996,16 @@ export default function ProductionPage() {
       });
 
       if (res.success) {
-        toast.success(`Packing #${packingForm.longsong_number} (${packingForm.flavor_variant}) ${pcs} pcs berhasil dicatat & masuk antrean inspeksi QC!`);
+        // Otomatis potong wadah selongsong di Buffer WIP (FIFO)
+        if (neededKg > 0) {
+          try {
+            await consumeLongsongForPacking(neededKg);
+          } catch (cErr) {
+            console.warn('Longsong container deduction notice:', cErr);
+          }
+        }
+
+        toast.success(`Packing ${pcs} pcs (${packingForm.flavor_variant} ${packingForm.packaging_weight_gram}) berhasil dicatat & masuk antrean inspeksi QC!`);
         setCreatePackingOpen(false);
         await loadData();
       } else {
@@ -1404,7 +2038,7 @@ export default function ProductionPage() {
   const fryingColumns = useMemo<ColumnDef<DbFryingBatch>[]>(() => [
     {
       accessorKey: 'wajan_number',
-      header: 'Wajan #',
+      header: 'Batch #',
       cell: ({ row }) => (
         <strong style={{ color: 'var(--color-primary-700)', fontFamily: 'monospace', fontSize: 'var(--text-lg)' }}>
           #{row.original.wajan_number}
@@ -1816,7 +2450,7 @@ export default function ProductionPage() {
         const order = orders.find(o => o.id === row.production_order_id) || row.production_order;
         return order?.batch_number || '';
       },
-      header: 'SPK & Wajan Asal',
+      header: 'SPK & Batch Asal',
       cell: ({ row }) => {
         const order = orders.find(o => o.id === row.original.production_order_id) || row.original.production_order;
         const wajanNum = row.original.frying_batch?.wajan_number;
@@ -1826,7 +2460,7 @@ export default function ProductionPage() {
               {order?.batch_number || 'SPK Terintegrasi'}
             </strong>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-              {wajanNum ? `Wajan #${wajanNum}` : 'Campuran SPK'}
+              {wajanNum ? `Batch #${wajanNum}` : 'Campuran SPK'}
             </div>
           </div>
         );
@@ -1955,6 +2589,7 @@ export default function ProductionPage() {
               Standar Resep (BOM)
             </Button>
             <Button 
+              id="btn-buat-spk"
               variant="primary" 
               onClick={() => handleOpenCreateSpk(activeTab === 'PACKING' ? 'PACKING' : 'FRYING')}
               leftIcon={<Plus size={16} aria-hidden="true" />}
@@ -1972,7 +2607,15 @@ export default function ProductionPage() {
         {tabs.map(tab => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            id={`tab-${tab.key.toLowerCase()}`}
+            onClick={() => {
+              setActiveTab(tab.key);
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', tab.key.toLowerCase());
+                window.history.replaceState(null, '', url.toString());
+              }
+            }}
             style={{
               display: 'flex', alignItems: 'center', gap: '8px',
               padding: 'var(--space-3) var(--space-5)',
@@ -2002,7 +2645,7 @@ export default function ProductionPage() {
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
                 <Flame className="w-5 h-5 text-[var(--color-danger-600)]" aria-hidden="true" />
-                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Batch Wajan Hari Ini</span>
+                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Batch Goreng Hari Ini</span>
               </div>
               <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-primary-700)' }}>
                 {fryingMetrics.activeFryingBatchesToday} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>Batch</span>
@@ -2034,65 +2677,53 @@ export default function ProductionPage() {
 
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-                <AlertTriangle className={`w-5 h-5 ${unpackedLongsongCount > 0 ? 'text-[var(--color-danger-600)]' : 'text-[var(--color-success-600)]'}`} aria-hidden="true" />
-                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Longsong Belum Packing</span>
+                <Box className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
+                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Longsong yang Tersedia</span>
               </div>
-              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: unpackedLongsongCount > 0 ? 'var(--color-danger-700)' : 'var(--color-success-700)' }}>
-                {unpackedLongsongCount}
+              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-primary-700)' }}>
+                {unpackedLongsongCount} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>wadah</span>
               </div>
-              {unpackedLongsongCount > 0 && (
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-600)', marginTop: 'var(--space-1)' }}>
-                  Perlu segera dipacking!
-                </div>
-              )}
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>
+                {unpackedLongsongCount > 0 ? 'Siap untuk tahap packing rasa' : 'Semua longsong sudah dipacking'}
+              </div>
             </Card>
           </div>
 
           {/* Antrean & Progres SPK Goreng Jamur */}
-          <Card>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+          <Card style={{ marginTop: '-4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-2)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Flame className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
                   Antrean &amp; Progres SPK Penggorengan Jamur
                 </h3>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Target kiloan bahan baku, realisasi wajan yang sudah digoreng, dan sisa kiloan yang harus diselesaikan.
-                </div>
               </div>
-
-              {!isManagement && (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
-                  onClick={() => handleOpenCreateSpk('FRYING')}
-                >
-                  Buat SPK Goreng
-                </Button>
-              )}
             </div>
 
             {fryingOrdersWithProgress.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 'var(--space-4)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
-                Belum ada SPK Goreng aktif. Klik &quot;+ Buat SPK Goreng&quot; untuk menerbitkan perintah kerja baru.
+                Belum ada SPK Goreng aktif. Klik tombol &quot;+ Buat SPK Baru&quot; di bagian atas untuk menerbitkan perintah kerja baru.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              <div style={{
+                overflowX: 'auto',
+                maxHeight: fryingOrdersWithProgress.length > 5 ? '380px' : undefined,
+                overflowY: fryingOrdersWithProgress.length > 5 ? 'auto' : undefined,
+              }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
-                  <thead>
+                  <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-surface)', zIndex: 1 }}>
                     <tr style={{ borderBottom: '2px solid var(--border-default)', textAlign: 'left', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>No. SPK / Batch</th>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>Target Bahan</th>
-                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Realisasi Penggorengan</th>
-                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Sisa Kiloan</th>
-                      <th style={{ padding: '8px 12px', fontWeight: 600, minWidth: '160px' }}>Progres</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Realisasi &amp; Waktu HACCP</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Output Longsong (WIP)</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600, minWidth: '140px' }}>Progres</th>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>Status</th>
                       {!isManagement && <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Aksi</th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {fryingOrdersWithProgress.map(({ order, targetKg, realizedKg, realizedBatchesCount, remainingKg, progressPercent, outputKg, longsongTotal }) => (
+                    {fryingOrdersWithProgress.map(({ order, targetKg, realizedKg, realizedBatchesCount, remainingKg, progressPercent, outputKg, longsongTotal, avgDurationMinutes, haccpCompliance, readyContainers, availableWeightKg }) => (
                       <tr key={order.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                         <td style={{ padding: '10px 12px' }}>
                           <strong style={{ fontFamily: 'monospace', color: 'var(--color-primary-800)' }}>
@@ -2105,24 +2736,65 @@ export default function ProductionPage() {
                         <td style={{ padding: '10px 12px' }}>
                           <strong>{targetKg.toLocaleString('id-ID')} kg</strong>
                           <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                            ~{Math.round(targetKg / 0.8)} wajan (@800g)
+                            ~{Math.round(targetKg / 0.8)} batch (@800g)
                           </div>
                         </td>
                         <td style={{ padding: '10px 12px' }}>
-                          <span style={{ fontWeight: 600, color: 'var(--color-success-700)' }}>
-                            {realizedKg.toFixed(1)} kg
-                          </span>
-                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginLeft: '4px' }}>
-                            ({realizedBatchesCount} wajan)
-                          </span>
+                          <div>
+                            <span style={{ fontWeight: 600, color: 'var(--color-success-700)' }}>
+                              {realizedKg.toFixed(1)} kg
+                            </span>
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginLeft: '4px' }}>
+                              ({realizedBatchesCount} batch)
+                            </span>
+                          </div>
+                          {avgDurationMinutes > 0 ? (
+                            <div style={{ fontSize: '11px', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                              <Clock size={11} className="text-secondary" />
+                              <span style={{ color: 'var(--text-secondary)' }}>
+                                Rata-rata: <strong>{avgDurationMinutes.toFixed(1)} mnt/batch</strong>
+                              </span>
+                              {haccpCompliance === 'OPTIMAL' && (
+                                <span style={{ background: 'var(--color-success-100)', color: 'var(--color-success-800)', padding: '1px 5px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                  <Check className="w-2.5 h-2.5" /> Sesuai HACCP (15±2m)
+                                </span>
+                              )}
+                              {haccpCompliance === 'OVERCOOK' && (
+                                <span style={{ background: 'var(--color-danger-100)', color: 'var(--color-danger-800)', padding: '1px 5px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                  <AlertTriangle className="w-2.5 h-2.5" /> &gt;17 mnt (Overcook)
+                                </span>
+                              )}
+                              {haccpCompliance === 'UNDERCOOK' && (
+                                <span style={{ background: 'var(--color-warning-100)', color: 'var(--color-warning-800)', padding: '1px 5px', borderRadius: '4px', fontSize: '10px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                  <AlertTriangle className="w-2.5 h-2.5" /> &lt;13 mnt (Undercook)
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                              Belum ada batch selesai
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '10px 12px' }}>
-                          <span style={{ fontWeight: 600, color: remainingKg > 0 ? 'var(--color-warning-800)' : 'var(--color-success-700)' }}>
-                            {remainingKg.toFixed(1)} kg
-                          </span>
-                          {remainingKg > 0 && (
+                          {longsongTotal > 0 || outputKg > 0 ? (
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--color-primary-800)' }}>
+                                {longsongTotal} Wadah ({outputKg.toFixed(1)} kg)
+                              </div>
+                              {readyContainers.length > 0 ? (
+                                <div style={{ fontSize: '11px', color: 'var(--color-success-700)', fontWeight: 600, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Box className="w-3.5 h-3.5 shrink-0" /> {availableWeightKg.toFixed(1)} kg Siap Packing ({readyContainers.length} wadah)
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                                  Seluruh wadah sudah terpakai packing
+                                </div>
+                              )}
+                            </div>
+                          ) : (
                             <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                              ~{Math.ceil(remainingKg / 0.8)} wajan lagi
+                              Menunggu input selesai masak
                             </div>
                           )}
                         </td>
@@ -2143,6 +2815,11 @@ export default function ProductionPage() {
                               {progressPercent}%
                             </span>
                           </div>
+                          {remainingKg > 0 && order.status !== 'COMPLETED' && (
+                            <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                              Sisa {remainingKg.toFixed(1)} kg (~{Math.ceil(remainingKg / 0.8)} wajan)
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '10px 12px' }}>
                           <StatusBadge
@@ -2170,10 +2847,28 @@ export default function ProductionPage() {
                                     <span>Selesai ({longsongTotal} Longsong)</span>
                                   </span>
                                   <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
-                                    Output: {outputKg.toFixed(1)} kg • Rendemen {order.yield_percentage ? `${order.yield_percentage}%` : `${((outputKg / (realizedKg || 1)) * 100).toFixed(0)}%`}
+                                    Rendemen: {order.yield_percentage ? `${order.yield_percentage}%` : `${((outputKg / (realizedKg || 1)) * 100).toFixed(0)}%`}
                                   </span>
                                 </div>
                               )}
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleOpenEditSpk(order)}
+                                title="Edit Target SPK"
+                                style={{ padding: '6px' }}
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteSpk(order)}
+                                title="Hapus / Batalkan SPK"
+                                style={{ color: 'var(--color-danger-600)', padding: '6px' }}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
                             </div>
                           </td>
                         )}
@@ -2185,28 +2880,190 @@ export default function ProductionPage() {
             )}
           </Card>
 
-          {/* Action Bar */}
-          {!isManagement && (
-            <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap', alignItems: 'center' }}>
-              <Button
-                variant="secondary"
-                leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />}
-                onClick={() => handleOpenCreateRegularFrying()}
-              >
-                Goreng Curah (Tanpa SPK)
-              </Button>
-              <Button
-                variant="secondary"
-                leftIcon={<ClipboardCheck className="w-4 h-4" aria-hidden="true" />}
-                onClick={() => handleOpenCreateHaccpFrying()}
-              >
-                Batch HACCP Time Study
-              </Button>
+          {/* Buffer WIP: Kartu Stok Longsong (Jamur Matang Curah) */}
+          <Card>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Box className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
+                  Buffer WIP: Kartu Stok Longsong (Jamur Matang Curah)
+                </h3>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  Daftar wadah fisik jamur matang hasil penggorengan per SPK dengan pencatatan berat aktual per wadah.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'var(--color-primary-50)',
+                  color: 'var(--color-primary-700)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  border: '1px solid var(--color-primary-200)',
+                }}>
+                  Total Tersedia: {longsongContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL').reduce((s, c) => s + (Number(c.current_weight_kg) || 0), 0).toFixed(1)} kg
+                </span>
+                <span style={{
+                  padding: '4px 10px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'var(--bg-subtle)',
+                  color: 'var(--text-secondary)',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  border: '1px solid var(--border-default)',
+                }}>
+                  {longsongContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL').length} Wadah Aktif
+                </span>
+              </div>
             </div>
-          )}
 
-          {/* Frying Data Table */}
-          <DataTable columns={fryingColumns} data={fryingBatches} />
+            {longsongContainers.length === 0 ? (
+              <div
+                key="empty-longsong-state"
+                style={{
+                  textAlign: 'center',
+                  padding: 'var(--space-4)',
+                  color: 'var(--text-secondary)',
+                  fontSize: 'var(--text-sm)',
+                }}
+              >
+                Belum ada kartu wadah longsong terdaftar. Selesaikan penggorengan SPK untuk menghasilkan kartu stok wadah longsong fisik.
+              </div>
+            ) : (
+              <div
+                key="grid-longsong-containers"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))',
+                  gap: '12px',
+                  maxHeight: longsongContainers.length > 5 ? '360px' : undefined,
+                  overflowY: longsongContainers.length > 5 ? 'auto' : undefined,
+                  padding: longsongContainers.length > 5 ? '0 6px 0 0' : '0',
+                }}
+              >
+                {longsongContainers.map(c => {
+                  const isAvailable = c.status === 'AVAILABLE';
+                  const isPartial = c.status === 'PARTIAL';
+                  const isEmpty = c.status === 'EMPTY';
+
+                  return (
+                    <div
+                      key={c.id}
+                      style={{
+                        padding: '12px',
+                        borderRadius: 'var(--radius-md)',
+                        border: isAvailable
+                          ? '1px solid var(--color-success-300)'
+                          : isPartial
+                          ? '1px solid var(--color-warning-300)'
+                          : '1px solid var(--border-default)',
+                        background: isAvailable
+                          ? 'var(--color-success-50)'
+                          : isPartial
+                          ? 'var(--color-warning-50)'
+                          : 'var(--bg-subtle)',
+                        opacity: isEmpty ? 0.6 : 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{
+                            fontWeight: 700,
+                            fontSize: '13px',
+                            color: isAvailable ? 'var(--color-success-900)' : isPartial ? 'var(--color-warning-900)' : 'var(--text-secondary)',
+                          }}>
+                            Wadah #{c.container_number}
+                          </span>
+                          <span style={{
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            background: isAvailable ? 'var(--color-success-200)' : isPartial ? 'var(--color-warning-200)' : 'var(--border-default)',
+                            color: isAvailable ? 'var(--color-success-900)' : isPartial ? 'var(--color-warning-900)' : 'var(--text-secondary)',
+                          }}>
+                            {isAvailable ? 'Tersedia' : isPartial ? 'Sebagian' : 'Kosong'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                          {c.production_order?.batch_number || 'SPK Curah'}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
+                          <span style={{ fontSize: '18px', fontWeight: 800, color: isAvailable ? 'var(--color-success-800)' : isPartial ? 'var(--color-warning-800)' : 'var(--text-primary)' }}>
+                            {Number(c.current_weight_kg || 0).toFixed(2)}
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                            / {Number(c.initial_weight_kg || 0).toFixed(2)} kg
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', paddingTop: '6px', borderTop: '1px dashed var(--border-default)' }}>
+                          <div style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
+                            {c.created_at ? format(new Date(c.created_at), 'dd MMM, HH:mm', { locale: idLocale }) : '-'}
+                          </div>
+                          {!isManagement && (
+                            <div style={{ display: 'flex', gap: '4px' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditLongsong(c)}
+                                title="Edit Wadah Longsong"
+                                style={{
+                                  border: '1px solid var(--border-default)',
+                                  background: 'var(--bg-surface)',
+                                  borderRadius: 'var(--radius-sm)',
+                                  padding: '3px 6px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  color: 'var(--text-secondary)',
+                                }}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLongsong(c)}
+                                title="Hapus Wadah Longsong"
+                                style={{
+                                  border: '1px solid var(--color-danger-300)',
+                                  background: 'var(--color-danger-50)',
+                                  borderRadius: 'var(--radius-sm)',
+                                  padding: '3px 6px',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  color: 'var(--color-danger-600)',
+                                }}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          {/* Frying Data Table with scroll for > 5 items */}
+          <div style={{
+            maxHeight: fryingBatches.length > 5 ? '420px' : undefined,
+            overflowY: fryingBatches.length > 5 ? 'auto' : undefined,
+            border: fryingBatches.length > 5 ? '1px solid var(--border-default)' : undefined,
+            borderRadius: fryingBatches.length > 5 ? 'var(--radius-md)' : undefined,
+          }}>
+            <DataTable columns={fryingColumns} data={fryingBatches} />
+          </div>
         </>
       )}
 
@@ -2215,43 +3072,6 @@ export default function ProductionPage() {
       {/* ════════════════════════════════════════════ */}
       {activeTab === 'PACKING' && (
         <>
-          {/* Reminder Banner */}
-          {unpackedLongsongCount > 0 && (
-            <div style={{
-              padding: 'var(--space-4)',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--color-danger-50)',
-              border: '1px solid var(--color-danger-200)',
-              marginBottom: 'var(--space-4)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 'var(--space-3)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                <AlertTriangle className="w-5 h-5 text-[var(--color-danger-600)] shrink-0" aria-hidden="true" />
-                <div>
-                  <strong style={{ color: 'var(--color-danger-900)' }}>
-                    Ada {unpackedLongsongCount} Longsong Hasil Goreng Belum Dipacking Rasa!
-                  </strong>
-                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-700)', marginTop: '2px' }}>
-                    Segera lakukan pembumbuan dan packing toples agar jamur tetap renyah dan kualitas terjaga.
-                  </div>
-                </div>
-              </div>
-              {!isManagement && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
-                  onClick={() => handleOpenCreatePacking()}
-                >
-                  Packing Sekarang
-                </Button>
-              )}
-            </div>
-          )}
-
           {/* Metric Cards Packing */}
           <div style={{
             display: 'grid',
@@ -2291,11 +3111,14 @@ export default function ProductionPage() {
 
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
-                <AlertTriangle className={`w-5 h-5 ${unpackedLongsongCount > 0 ? 'text-[var(--color-danger-600)]' : 'text-[var(--color-success-600)]'}`} aria-hidden="true" />
-                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Sisa Longsong Belum Packing</span>
+                <Box className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
+                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Longsong yang Tersedia</span>
               </div>
-              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: unpackedLongsongCount > 0 ? 'var(--color-danger-700)' : 'var(--color-success-700)' }}>
-                {unpackedLongsongCount}
+              <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-primary-700)' }}>
+                {unpackedLongsongCount} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>wadah</span>
+              </div>
+              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>
+                {unpackedLongsongCount > 0 ? 'Wadah jamur curah siap dibumbui' : 'Tidak ada wadah siap packing'}
               </div>
             </Card>
           </div>
@@ -2347,14 +3170,6 @@ export default function ProductionPage() {
                   SPK kemasan yang telah selesai dipacking wajib diajukan ke Quality Control untuk sampling mutu sebelum rilis ke penjualan.
                 </div>
               </div>
-
-              {!isManagement && (
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <Button variant="primary" leftIcon={<Plus className="w-4 h-4" aria-hidden="true" />} onClick={() => handleOpenCreatePacking()}>
-                    Input Packing Rasa
-                  </Button>
-                </div>
-              )}
             </div>
 
             {friedOrdersData.length === 0 ? (
@@ -2362,7 +3177,13 @@ export default function ProductionPage() {
                 Belum ada SPK Packing Retail aktif. Klik tombol &quot;Buat SPK Packing Rasa&quot; di bagian atas untuk menerbitkan SPK retail kemasan.
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
+              <div style={{
+                overflowX: 'auto',
+                maxHeight: friedOrdersData.length > 5 ? '420px' : undefined,
+                overflowY: friedOrdersData.length > 5 ? 'auto' : undefined,
+                border: friedOrdersData.length > 5 ? '1px solid var(--border-default)' : undefined,
+                borderRadius: friedOrdersData.length > 5 ? 'var(--radius-md)' : undefined,
+              }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--border-default)', textAlign: 'left' }}>
@@ -2466,6 +3287,24 @@ export default function ProductionPage() {
                                     Ajukan ke QC
                                   </Button>
                                 )}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSpk(item.order)}
+                                  title={`Hapus SPK ${item.order.batch_number}`}
+                                  style={{
+                                    border: '1px solid var(--color-danger-300)',
+                                    background: 'var(--color-danger-50)',
+                                    borderRadius: 'var(--radius-sm)',
+                                    cursor: 'pointer',
+                                    padding: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    color: 'var(--color-danger-600)',
+                                  }}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </td>
                           )}
@@ -3090,26 +3929,99 @@ export default function ProductionPage() {
         title={`Rekap Selesai Masak — SPK ${selectedFryingOrder?.batch_number}`}
         size="lg"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
-            <Button variant="secondary" onClick={() => setRecordFryingRunOpen(false)} disabled={isSubmittingFryingRun}>
-              Batal
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSubmitFryingRun}
-              leftIcon={<CheckCircle2 className="w-4 h-4" aria-hidden="true" />}
-              disabled={
-                isSubmittingFryingRun ||
-                !fryingRunForm.actual_mushroom_kg ||
-                Number(fryingRunForm.actual_mushroom_kg) <= 0 ||
-                !fryingRunForm.output_finished_kg ||
-                Number(fryingRunForm.output_finished_kg) <= 0 ||
-                !fryingRunForm.output_longsong_count ||
-                Number(fryingRunForm.output_longsong_count) <= 0
-              }
-            >
-              {isSubmittingFryingRun ? 'Sedang Menyimpan...' : 'Simpan & Potong Stok Gudang'}
-            </Button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div>
+              {fryingRunTab === 'BAHAN' ? (
+                <Button variant="secondary" onClick={() => setRecordFryingRunOpen(false)} disabled={isSubmittingFryingRun}>
+                  Batal
+                </Button>
+              ) : fryingRunTab === 'LONGSONG' ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => setFryingRunTab('BAHAN')}
+                  leftIcon={<ArrowLeft className="w-4 h-4" aria-hidden="true" />}
+                  disabled={isSubmittingFryingRun}
+                >
+                  Kembali ke Bahan
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={() => setFryingRunTab('LONGSONG')}
+                  leftIcon={<ArrowLeft className="w-4 h-4" aria-hidden="true" />}
+                  disabled={isSubmittingFryingRun}
+                >
+                  Kembali ke Longsong
+                </Button>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+              {fryingRunTab !== 'BAHAN' && (
+                <Button variant="secondary" onClick={() => setRecordFryingRunOpen(false)} disabled={isSubmittingFryingRun}>
+                  Batal
+                </Button>
+              )}
+
+              {fryingRunTab === 'BAHAN' ? (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    const actualMushroom = parseFloat(fryingRunForm.actual_mushroom_kg) || 0;
+                    const outputFinished = parseFloat(fryingRunForm.output_finished_kg) || 0;
+                    if (!actualMushroom || actualMushroom <= 0) {
+                      toast.error('Masukkan timbangan aktual jamur segar di Tab 1');
+                      return;
+                    }
+                    if (!outputFinished || outputFinished <= 0) {
+                      toast.error('Masukkan hasil jamur matang tiris di Tab 1');
+                      return;
+                    }
+                    setFryingRunTab('LONGSONG');
+                  }}
+                  rightIcon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
+                >
+                  Lanjut ke Rincian Longsong
+                </Button>
+              ) : fryingRunTab === 'LONGSONG' ? (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    const longsongCount = parseInt(fryingRunForm.output_longsong_count, 10) || 0;
+                    if (!longsongCount || longsongCount <= 0) {
+                      toast.error('Masukkan jumlah wadah longsong terisi di Tab 2');
+                      return;
+                    }
+                    setFryingRunTab('BATCH');
+                  }}
+                  rightIcon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
+                >
+                  Lanjut ke Waktu Batch (HACCP)
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={handleSubmitFryingRun}
+                  leftIcon={fryingStockStatus.hasAnyShortage ? <AlertTriangle className="w-4 h-4" aria-hidden="true" /> : <CheckCircle2 className="w-4 h-4" aria-hidden="true" />}
+                  disabled={
+                    isSubmittingFryingRun ||
+                    fryingStockStatus.hasAnyShortage ||
+                    !fryingRunForm.actual_mushroom_kg ||
+                    Number(fryingRunForm.actual_mushroom_kg) <= 0 ||
+                    !fryingRunForm.output_finished_kg ||
+                    Number(fryingRunForm.output_finished_kg) <= 0 ||
+                    !fryingRunForm.output_longsong_count ||
+                    Number(fryingRunForm.output_longsong_count) <= 0
+                  }
+                >
+                  {isSubmittingFryingRun
+                    ? 'Sedang Menyimpan...'
+                    : fryingStockStatus.hasAnyShortage
+                    ? 'Stok Gudang Kurang'
+                    : 'Simpan & Potong Stok Gudang'}
+                </Button>
+              )}
+            </div>
           </div>
         }
       >
@@ -3162,192 +4074,533 @@ export default function ProductionPage() {
                       </div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '11px', color: 'var(--color-primary-800)' }}>Estimasi Total Wajan</div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-primary-800)' }}>Estimasi Total Batch</div>
                       <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
-                        ~{Math.round(targetMushroom / 0.8)} wajan
+                        ~{Math.round(targetMushroom / 0.8)} batch
                       </div>
                     </div>
                   </div>
                 </div>
 
+                {/* Nav Tabs dalam Modal */}
                 <div style={{
-                  fontSize: 'var(--text-xs)',
-                  color: 'var(--text-secondary)',
-                  background: 'var(--bg-subtle)',
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  borderLeft: '3px solid var(--color-primary-600)',
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  borderBottom: '1px solid var(--border-default)',
+                  marginTop: '6px',
+                  width: '100%',
                 }}>
-                  Catat pemakaian bahan baku riil yang dipakai di dapur (dari papan catatan dapur) serta hasil jamur matang curah yang masuk ke wadah longsong.
-                </div>
-
-                {/* Bagian 1: Bahan Baku Aktual (Dapur) */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    1. Konsumsi Bahan Baku Riil di Dapur (Timbangan Aktual)
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
-                    <FormField label="Jamur Tiram Segar (kg)" required>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        value={fryingRunForm.actual_mushroom_kg}
-                        onChange={(e) => handleFryingRunMushroomChange(e.target.value)}
-                        placeholder={`Misal: ${targetMushroom}`}
-                      />
-                      <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-                        Standar SPK: {targetMushroom} kg
-                      </span>
-                    </FormField>
-
-                    <FormField label="Tepung Premix (kg)" required>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={fryingRunForm.actual_premix_kg}
-                        onChange={(e) => setFryingRunForm({ ...fryingRunForm, actual_premix_kg: e.target.value })}
-                        placeholder={`Misal: ${bomPremix.toFixed(1)}`}
-                      />
-                      <div style={{ fontSize: '11px', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-tertiary)' }}>BOM: {bomPremix.toFixed(1)} kg</span>
-                        {actualPremix > 0 && (
-                          <span style={{ fontWeight: 600, color: diffPremix > 0 ? 'var(--color-danger-700)' : 'var(--color-success-700)' }}>
-                            {diffPremix > 0 ? `+${diffPremix.toFixed(1)}kg` : `${diffPremix.toFixed(1)}kg`}
+                  {[
+                    { id: 'BAHAN', label: '1. Bahan & Hasil', icon: <Scale size={14} /> },
+                    {
+                      id: 'LONGSONG',
+                      label: '2. Longsong',
+                      icon: <Box size={14} />,
+                      badge: fryingRunForm.output_longsong_count ? `${fryingRunForm.output_longsong_count} wadah` : undefined,
+                    },
+                    {
+                      id: 'BATCH',
+                      label: '3. Waktu Batch (HACCP)',
+                      icon: <Timer size={14} />,
+                      badge: fryingRunForm.batches.length > 0 ? `${fryingRunForm.batches.length} batch` : undefined,
+                    },
+                  ].map((tab) => {
+                    const isActive = fryingRunTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setFryingRunTab(tab.id as any)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '7px 8px',
+                          border: 'none',
+                          borderBottom: isActive ? '2px solid var(--color-primary-600)' : '2px solid transparent',
+                          marginBottom: '-1px',
+                          background: isActive ? 'var(--color-primary-50)' : 'transparent',
+                          color: isActive ? 'var(--color-primary-800)' : 'var(--text-secondary)',
+                          fontWeight: isActive ? 700 : 500,
+                          fontSize: '12.5px',
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          transition: 'all 0.15s ease',
+                          borderRadius: '6px 6px 0 0',
+                          width: '100%',
+                        }}
+                      >
+                        {tab.icon}
+                        <span>{tab.label}</span>
+                        {tab.badge && (
+                          <span style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            padding: '1px 6px',
+                            borderRadius: '10px',
+                            background: isActive ? 'var(--color-primary-200)' : 'var(--bg-subtle)',
+                            color: isActive ? 'var(--color-primary-900)' : 'var(--text-tertiary)',
+                            flexShrink: 0,
+                          }}>
+                            {tab.badge}
                           </span>
                         )}
-                      </div>
-                    </FormField>
-
-                    <FormField label="Minyak Goreng (Liter)" required>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={fryingRunForm.actual_cooking_oil_liter}
-                        onChange={(e) => setFryingRunForm({ ...fryingRunForm, actual_cooking_oil_liter: e.target.value })}
-                        placeholder={`Misal: ${bomOil.toFixed(1)}`}
-                      />
-                      <div style={{ fontSize: '11px', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-tertiary)' }}>BOM: {bomOil.toFixed(1)} L</span>
-                        {actualOil > 0 && (
-                          <span style={{ fontWeight: 600, color: diffOil > 0 ? 'var(--color-danger-700)' : 'var(--color-success-700)' }}>
-                            {diffOil > 0 ? `+${diffOil.toFixed(1)}L` : `${diffOil.toFixed(1)}L`}
-                          </span>
-                        )}
-                      </div>
-                    </FormField>
-                  </div>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* Bagian 2: Hasil Jamur Matang Curah */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px dashed var(--border-default)' }}>
-                  <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    2. Hasil Output Jamur Matang Curah (WIP Longsong)
-                  </div>
+                {/* ── TAB 1: KONSUMSI BAHAN BAKU & HASIL TOTAL ── */}
+                {fryingRunTab === 'BAHAN' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                    {fryingStockStatus.hasAnyShortage && (
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--color-danger-50)',
+                        border: '1px solid var(--color-danger-300)',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '10px',
+                        color: 'var(--color-danger-900)',
+                        fontSize: '12px',
+                      }}>
+                        <AlertTriangle size={16} className="text-danger-600 shrink-0" style={{ marginTop: '2px' }} />
+                        <div>
+                          <div style={{ fontWeight: 700 }}>Stok Bahan Baku di Gudang Tidak Mencukupi!</div>
+                          <div style={{ marginTop: '2px', color: 'var(--color-danger-800)', fontSize: '11px' }}>
+                            Timbangan konsumsi riil melebihi stok yang tersedia di Warehouse. Harap lakukan penerimaan stok (Inbound / Restock) atau sesuaikan jumlah pemakaian sebelum menyimpan.
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-                  <div style={{
-                    padding: '8px 12px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--color-primary-50)',
-                    border: '1px solid var(--color-primary-200)',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    fontSize: '11px',
-                  }}>
-                    <div>
-                      <span style={{ color: 'var(--color-primary-800)' }}>
-                        Patokan Target SPK: <strong>{targetMushroom} kg</strong> Jamur Segar
-                      </span>
-                      <div style={{ color: 'var(--color-primary-700)', marginTop: '2px' }}>
-                        Estimasi output: ~{(actualMushroom * 0.67).toFixed(1)} kg (~{Math.max(1, Math.round((actualMushroom * 0.67) / 2.5))} wadah longsong @2.5 kg). Auto-Balance aktif.
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Konsumsi Bahan Baku Riil di Dapur (Timbangan Aktual)
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
+                        <FormField label="Jamur Tiram Segar (kg)" required>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={fryingRunForm.actual_mushroom_kg}
+                            onChange={(e) => handleFryingRunMushroomChange(e.target.value)}
+                            placeholder={`Misal: ${targetMushroom}`}
+                            style={{
+                              borderColor: fryingStockStatus.mushroom.isShortage ? 'var(--color-danger-500)' : undefined,
+                            }}
+                          />
+                          <div style={{ fontSize: '11px', marginTop: '3px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
+                              <span>Standar SPK: {targetMushroom} kg</span>
+                              <span style={{
+                                fontWeight: 600,
+                                color: fryingStockStatus.mushroom.isShortage ? 'var(--color-danger-600)' : 'var(--color-success-700)',
+                              }}>
+                                Stok: {fryingStockStatus.mushroom.availableStock.toFixed(1)} kg
+                              </span>
+                            </div>
+                            {fryingStockStatus.mushroom.isShortage && (
+                              <span style={{ color: 'var(--color-danger-600)', fontWeight: 600, fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <AlertTriangle className="w-3 h-3 shrink-0" /> Kurang {(fryingStockStatus.mushroom.actual - fryingStockStatus.mushroom.availableStock).toFixed(1)} kg
+                              </span>
+                            )}
+                          </div>
+                        </FormField>
+
+                        <FormField label="Tepung Premix (kg)" required>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            value={fryingRunForm.actual_premix_kg}
+                            onChange={(e) => setFryingRunForm({ ...fryingRunForm, actual_premix_kg: e.target.value })}
+                            placeholder={`Misal: ${bomPremix.toFixed(1)}`}
+                            style={{
+                              borderColor: fryingStockStatus.premix.isShortage ? 'var(--color-danger-500)' : undefined,
+                            }}
+                          />
+                          <div style={{ fontSize: '11px', marginTop: '3px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
+                              <span>BOM: {bomPremix.toFixed(1)} kg</span>
+                              <span style={{
+                                fontWeight: 600,
+                                color: fryingStockStatus.premix.isShortage ? 'var(--color-danger-600)' : 'var(--color-success-700)',
+                              }}>
+                                Stok: {fryingStockStatus.premix.availableStock.toFixed(1)} kg
+                              </span>
+                            </div>
+                            {fryingStockStatus.premix.isShortage && (
+                              <span style={{ color: 'var(--color-danger-600)', fontWeight: 600, fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <AlertTriangle className="w-3 h-3 shrink-0" /> Kurang {(fryingStockStatus.premix.actual - fryingStockStatus.premix.availableStock).toFixed(1)} kg
+                              </span>
+                            )}
+                          </div>
+                        </FormField>
+
+                        <FormField label="Minyak Goreng (Liter)" required>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            value={fryingRunForm.actual_cooking_oil_liter}
+                            onChange={(e) => setFryingRunForm({ ...fryingRunForm, actual_cooking_oil_liter: e.target.value })}
+                            placeholder={`Misal: ${bomOil.toFixed(1)}`}
+                            style={{
+                              borderColor: fryingStockStatus.oil.isShortage ? 'var(--color-danger-500)' : undefined,
+                            }}
+                          />
+                          <div style={{ fontSize: '11px', marginTop: '3px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
+                              <span>BOM: {bomOil.toFixed(1)} L</span>
+                              <span style={{
+                                fontWeight: 600,
+                                color: fryingStockStatus.oil.isShortage ? 'var(--color-danger-600)' : 'var(--color-success-700)',
+                              }}>
+                                Stok: {fryingStockStatus.oil.availableStock.toFixed(1)} L
+                              </span>
+                            </div>
+                            {fryingStockStatus.oil.isShortage && (
+                              <span style={{ color: 'var(--color-danger-600)', fontWeight: 600, fontSize: '10.5px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <AlertTriangle className="w-3 h-3 shrink-0" /> Kurang {(fryingStockStatus.oil.actual - fryingStockStatus.oil.availableStock).toFixed(1)} L
+                              </span>
+                            )}
+                          </div>
+                        </FormField>
                       </div>
                     </div>
-                    <span style={{
-                      padding: '2px 8px',
-                      borderRadius: 'var(--radius-full)',
-                      background: 'white',
-                      color: 'var(--color-primary-700)',
-                      fontWeight: 600,
-                      border: '1px solid var(--color-primary-300)',
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px dashed var(--border-default)' }}>
+                      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Total Hasil Jamur Matang Curah (Hasil Timbangan Akhir)
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                        <FormField label="Total Berat Jamur Matang + Kremesan (kg)" required>
+                          <Input
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            max={Number((actualMushroom * 1.25).toFixed(1)) || undefined}
+                            value={fryingRunForm.output_finished_kg}
+                            onChange={(e) => handleFryingRunOutputKgChange(e.target.value)}
+                            placeholder={`Misal: ${(actualMushroom * 0.67).toFixed(1)}`}
+                          />
+                          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                            Maksimal wajar: {(actualMushroom * 1.25).toFixed(1)} kg
+                          </span>
+                        </FormField>
+
+                        <div style={{
+                          padding: '10px 14px',
+                          borderRadius: 'var(--radius-md)',
+                          background: isGoodYield ? 'var(--color-success-50)' : 'var(--bg-subtle)',
+                          border: `1px solid ${isGoodYield ? 'var(--color-success-300)' : 'var(--border-default)'}`,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'center',
+                        }}>
+                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Rendemen Penggorengan:</div>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: isGoodYield ? 'var(--color-success-800)' : 'var(--color-warning-800)' }}>
+                            {yld.toFixed(1)}%
+                          </div>
+                          <div style={{ fontSize: '10px', color: isGoodYield ? 'var(--color-success-700)' : 'var(--text-tertiary)' }}>
+                            {isGoodYield ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <Check className="w-2.5 h-2.5" /> Memenuhi standar rendemen (≥65%)
+                              </span>
+                            ) : (
+                              'Target efisiensi dapur: 65% - 75%'
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <FormField label="Catatan Tambahan (Opsional)">
+                      <Textarea
+                        rows={2}
+                        value={fryingRunForm.notes}
+                        onChange={(e) => setFryingRunForm({ ...fryingRunForm, notes: e.target.value })}
+                        placeholder="Catatan kondisi minyak, api wajan, sisa adonan, dll..."
+                      />
+                    </FormField>
+                  </div>
+                )}
+
+                {/* ── TAB 2: RINCIAN WADAH LONGSONG ── */}
+                {fryingRunTab === 'LONGSONG' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                    <div style={{
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--color-primary-50)',
+                      border: '1px solid var(--color-primary-200)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '8px',
                     }}>
-                      Maks: {(actualMushroom * 1.25).toFixed(1)} kg
-                    </span>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-                    <FormField label="Total Berat Jamur Matang + Kremesan (kg)" required>
-                      <Input
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        max={Number((actualMushroom * 1.25).toFixed(1)) || undefined}
-                        value={fryingRunForm.output_finished_kg}
-                        onChange={(e) => handleFryingRunOutputKgChange(e.target.value)}
-                        placeholder={`Misal: ${(actualMushroom * 0.67).toFixed(1)}`}
-                      />
-                      <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-                        Maksimal: {(actualMushroom * 1.25).toFixed(1)} kg (Auto-fill jumlah wadah)
-                      </span>
-                    </FormField>
-
-                    <FormField label="Jumlah Wadah Longsong yang Terisi" required>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={fryingRunForm.output_longsong_count}
-                        onChange={(e) => handleFryingRunLongsongChange(e.target.value)}
-                        placeholder={`Misal: ${Math.max(1, Math.round((actualMushroom * 0.67) / 2.5))}`}
-                      />
-                      <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-                        Wadah tertutup (@2.5 kg/wadah, auto-balance)
-                      </span>
-                    </FormField>
-                  </div>
-                </div>
-
-                {/* Bagian 3: Kalkulasi Efisiensi & Rendemen */}
-                {outputFinished > 0 && actualMushroom > 0 && (
-                  <div style={{
-                    padding: 'var(--space-3)',
-                    borderRadius: 'var(--radius-md)',
-                    background: isGoodYield ? 'var(--color-success-50)' : 'var(--color-warning-50)',
-                    border: `1px solid ${isGoodYield ? 'var(--color-success-300)' : 'var(--color-warning-300)'}`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    flexWrap: 'wrap',
-                    gap: '12px',
-                  }}>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)', color: isGoodYield ? 'var(--color-success-900)' : 'var(--color-warning-900)' }}>
-                        Rendemen Produksi: {yld.toFixed(1)}%
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--color-primary-900)' }}>
+                          Total Output: {outputFinished.toFixed(2)} kg
+                        </div>
+                        <div style={{ fontSize: '11px', color: 'var(--color-primary-700)', marginTop: '2px' }}>
+                          Terbagi ke dalam {fryingRunForm.containers.length} wadah longsong tertutup
+                        </div>
                       </div>
-                      <div style={{ fontSize: 'var(--text-xs)', color: isGoodYield ? 'var(--color-success-700)' : 'var(--color-warning-800)' }}>
-                        {isGoodYield ? 'Memenuhi standar efisiensi dapur (≥ 65%)' : 'Di bawah standar efisiensi (target 65-70%)'}
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={handleAutoBalanceContainers}
+                          title="Bagi rata total berat output ke setiap wadah"
+                        >
+                          Bagi Rata Otomatis
+                        </Button>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '12px', fontSize: '11px' }}>
-                      <div style={{ background: 'var(--bg-surface)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
-                        Rasio Premix: <strong>{((actualPremix / actualMushroom) * 100).toFixed(1)}%</strong>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', alignItems: 'center' }}>
+                      <FormField label="Jumlah Wadah Longsong yang Terisi" required>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={fryingRunForm.output_longsong_count}
+                          onChange={(e) => handleFryingRunLongsongChange(e.target.value)}
+                          placeholder={`Misal: ${Math.max(1, Math.round((actualMushroom * 0.67) / 2.5))}`}
+                        />
+                        <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                          Mengubah jumlah wadah akan otomatis membagi rata beratnya
+                        </span>
+                      </FormField>
+
+                      <div style={{
+                        padding: '10px 12px',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--bg-subtle)',
+                        border: '1px solid var(--border-default)',
+                        fontSize: '11px',
+                        color: 'var(--text-secondary)',
+                      }}>
+                        <div>Rata-rata per Longsong: <strong>{(outputFinished / (longsongCount || 1)).toFixed(2)} kg</strong></div>
+                        <div style={{ marginTop: '2px', color: 'var(--text-tertiary)' }}>
+                          Standar wadah fisik longsong di pabrik: ~2.4 kg - 2.6 kg per wadah.
+                        </div>
                       </div>
-                      <div style={{ background: 'var(--bg-surface)', padding: '4px 8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
-                        Rata-rata/Longsong: <strong>{(outputFinished / (longsongCount || 1)).toFixed(2)} kg</strong>
+                    </div>
+
+                    {/* Grid Input Berat Wadah */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Berat Aktual Masing-Masing Wadah Longsong:
+                      </div>
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+                        gap: '8px',
+                      }}>
+                        {fryingRunForm.containers.map((c, idx) => (
+                          <div
+                            key={c.container_number}
+                            style={{
+                              padding: '8px',
+                              background: 'var(--bg-surface)',
+                              border: '1px solid var(--border-subtle)',
+                              borderRadius: 'var(--radius-sm)',
+                            }}
+                          >
+                            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                              Wadah #{c.container_number}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <Input
+                                type="number"
+                                step="0.05"
+                                min="0.1"
+                                value={c.weight_kg}
+                                onChange={(e) => handleContainerWeightChange(idx, e.target.value)}
+                                style={{ height: '30px', fontSize: '12px', padding: '2px 6px' }}
+                              />
+                              <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>kg</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'flex', justifyContent: 'space-between', paddingTop: '4px' }}>
+                        <span>Setiap wadah ini akan terdaftar di kartu stok WIP untuk diserap saat SPK Packing.</span>
+                        <span>Akumulasi: <strong>{fryingRunForm.containers.reduce((acc, c) => acc + (parseFloat(c.weight_kg) || 0), 0).toFixed(2)} kg</strong></span>
                       </div>
                     </div>
                   </div>
                 )}
 
-                <FormField label="Catatan Tambahan (Opsional)">
-                  <Textarea
-                    rows={2}
-                    value={fryingRunForm.notes}
-                    onChange={(e) => setFryingRunForm({ ...fryingRunForm, notes: e.target.value })}
-                    placeholder="Catatan kondisi minyak, api wajan, sisa adonan, dll..."
-                  />
-                </FormField>
+                {/* ── TAB 3: WAKTU BATCH PENGGORENGAN (HACCP) ── */}
+                {fryingRunTab === 'BATCH' && (() => {
+                  const validBatches = fryingRunForm.batches.filter(b => parseFloat(b.duration_minutes) > 0);
+                  const avgMinutes = validBatches.length > 0
+                    ? validBatches.reduce((s, b) => s + parseFloat(b.duration_minutes), 0) / validBatches.length
+                    : 15;
+                  const isHaccpOptimal = avgMinutes >= 13 && avgMinutes <= 17;
+                  const isHaccpOver = avgMinutes > 17;
+                  const isHaccpUnder = avgMinutes < 13;
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+                      {/* HACCP Summary Card */}
+                      <div style={{
+                        padding: '12px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        background: isHaccpOptimal ? 'var(--color-success-50)' : 'var(--color-warning-50)',
+                        border: `1px solid ${isHaccpOptimal ? 'var(--color-success-300)' : 'var(--color-warning-300)'}`,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
+                        gap: '12px',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '11px', color: isHaccpOptimal ? 'var(--color-success-800)' : 'var(--color-warning-900)', fontWeight: 600 }}>
+                            RATA-RATA WAKTU PENGGORENGAN PER BATCH (HACCP)
+                          </div>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: isHaccpOptimal ? 'var(--color-success-800)' : 'var(--color-warning-800)', fontFamily: 'monospace' }}>
+                            {avgMinutes.toFixed(1)} menit / batch
+                          </div>
+                          <div style={{ fontSize: '11px', color: isHaccpOptimal ? 'var(--color-success-700)' : 'var(--color-warning-800)', marginTop: '2px' }}>
+                            {isHaccpOptimal && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <Check className="w-3 h-3" /> Sesuai batas kritis CCP HACCP (Standar: 15 ± 2 menit / 13 - 17 menit)
+                              </span>
+                            )}
+                            {isHaccpOver && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <AlertTriangle className="w-3 h-3" /> Rata-rata melebihi 17 menit (Potensi overcook / jamur terlalu gelap)
+                              </span>
+                            )}
+                            {isHaccpUnder && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                                <AlertTriangle className="w-3 h-3" /> Rata-rata kurang dari 13 menit (Potensi undercook / jamur kurang renyah)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleSetAllBatchesStandard}
+                            title="Set semua batch ke 15.0 menit dan 170°C"
+                          >
+                            Set Standar 15 Mnt
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            leftIcon={<Plus size={14} />}
+                            onClick={handleAddBatch}
+                          >
+                            Tambah Batch
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Tabel Durasi Batch */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Daftar Batch dalam SPK Ini ({fryingRunForm.batches.length} Batch):
+                          </span>
+                          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                            Total Waktu: <strong>{validBatches.reduce((s, b) => s + parseFloat(b.duration_minutes), 0).toFixed(1)} menit</strong>
+                          </span>
+                        </div>
+
+                        {fryingRunForm.batches.length === 0 ? (
+                          <div style={{ textAlign: 'center', padding: 'var(--space-4)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
+                            Belum ada batch tercatat. Klik &quot;+ Tambah Batch&quot; untuk memasukkan durasi batch.
+                          </div>
+                        ) : (
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+                            gap: '10px',
+                            maxHeight: '260px',
+                            overflowY: 'auto',
+                            padding: '4px',
+                          }}>
+                            {fryingRunForm.batches.map((b, idx) => (
+                              <div
+                                key={idx}
+                                style={{
+                                  padding: '10px',
+                                  background: 'var(--bg-surface)',
+                                  border: '1px solid var(--border-default)',
+                                  borderRadius: 'var(--radius-sm)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '6px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-primary-800)' }}>
+                                    Batch #{b.wajan_number}
+                                  </span>
+                                  {fryingRunForm.batches.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveBatch(idx)}
+                                      style={{ background: 'none', border: 'none', color: 'var(--color-danger-600)', cursor: 'pointer', padding: '2px' }}
+                                      title="Hapus batch ini"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+                                  <div>
+                                    <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>
+                                      Waktu (mnt)
+                                    </label>
+                                    <Input
+                                      type="number"
+                                      step="0.5"
+                                      min="1"
+                                      value={b.duration_minutes}
+                                      onChange={(e) => handleBatchDurationChange(idx, e.target.value)}
+                                      style={{ height: '28px', fontSize: '12px', padding: '2px 6px' }}
+                                    />
+                                  </div>
+                                  <div>
+                                    <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>
+                                      Suhu (°C)
+                                    </label>
+                                    <Input
+                                      type="number"
+                                      step="5"
+                                      min="100"
+                                      max="250"
+                                      value={b.oil_temp_celsius}
+                                      onChange={(e) => handleBatchTempChange(idx, e.target.value)}
+                                      style={{ height: '28px', fontSize: '12px', padding: '2px 6px' }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </>
             );
           })()}
@@ -3357,529 +4610,531 @@ export default function ProductionPage() {
       {/* ═══════════════════════════════════════════════ */}
       {/* MODAL: INPUT PACKING RASA                      */}
       {/* ═══════════════════════════════════════════════ */}
+      {/* ═══════════════════════════════════════════════ */}
+      {/* MODAL: INPUT PACKING RASA & KEMASAN (2 NAV)     */}
+      {/* ═══════════════════════════════════════════════ */}
       <Modal
         isOpen={createPackingOpen}
         onClose={() => setCreatePackingOpen(false)}
-        title="Input Packing Rasa (Per Longsong)"
-        size="md"
+        title="Input Packing Rasa & Kemasan SPK"
+        size="lg"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
-            <Button variant="secondary" onClick={() => setCreatePackingOpen(false)} disabled={isSavingPacking}>
-              Batal
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleCreatePacking}
-              leftIcon={<Package className="w-4 h-4" aria-hidden="true" />}
-              disabled={isSavingPacking}
-            >
-              {isSavingPacking ? 'Sedang Menyimpan...' : 'Simpan Packing'}
-            </Button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <div>
+              {packingNavTab === 'BUMBU' ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => setPackingNavTab('PACKAGING')}
+                  leftIcon={<ArrowLeft className="w-4 h-4" aria-hidden="true" />}
+                  disabled={isSavingPacking}
+                >
+                  Kembali ke Kemasan
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={() => setCreatePackingOpen(false)} disabled={isSavingPacking}>
+                  Batal
+                </Button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+              {packingNavTab === 'BUMBU' && (
+                <Button variant="secondary" onClick={() => setCreatePackingOpen(false)} disabled={isSavingPacking}>
+                  Batal
+                </Button>
+              )}
+              {packingNavTab === 'PACKAGING' ? (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    const pcs = Number(packingForm.packaged_toples_count);
+                    if (!pcs || pcs <= 0) {
+                      toast.error('Masukkan jumlah kemasan minimal 1 pcs');
+                      return;
+                    }
+                    setPackingNavTab('BUMBU');
+                  }}
+                  rightIcon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
+                >
+                  Lanjut ke Alokasi Bumbu
+                </Button>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {!packingValidationStatus.isValid && (
+                    <span style={{ fontSize: '11px', color: 'var(--color-danger-700)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {packingValidationStatus.errorMessage}
+                    </span>
+                  )}
+                  <Button
+                    variant="primary"
+                    onClick={handleCreatePacking}
+                    leftIcon={<Package className="w-4 h-4" aria-hidden="true" />}
+                    disabled={isSavingPacking || !packingValidationStatus.isValid}
+                    title={!packingValidationStatus.isValid ? packingValidationStatus.errorMessage : undefined}
+                  >
+                    {isSavingPacking ? 'Sedang Menyimpan...' : 'Simpan & Proses Packing'}
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         }
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-          {friedOrdersData.length === 0 ? (
-            <div style={{
-              padding: 'var(--space-3)',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--color-warning-50)',
-              border: '1px solid var(--color-warning-300)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'var(--space-2)',
-              color: 'var(--color-warning-800)',
-              fontSize: 'var(--text-sm)',
-            }}>
-              <AlertTriangle className="w-5 h-5 text-[var(--color-warning-600)] shrink-0" aria-hidden="true" />
-              <div>
-                <strong>Belum Ada SPK Produksi Aktif</strong>
-                <div style={{ fontSize: 'var(--text-xs)', marginTop: '2px' }}>
-                  Silakan buat SPK baru terlebih dahulu untuk menentukan target varian rasa dan jumlah kemasan yang akan dipacking.
+        {(() => {
+          const targetSpk = friedOrdersData.find(d => d.order.id === packingForm.production_order_id) || friedOrdersData[0];
+          const spkTargetPcs = targetSpk?.order.target_quantity || 200;
+          const spkCompletedPcs = targetSpk?.totalPackagedPcs || 0;
+          const spkRemainingPcs = Math.max(0, spkTargetPcs - spkCompletedPcs);
+
+          const cleanPackGram = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
+          const pcsInput = Number(packingForm.packaged_toples_count) || 0;
+          const neededMushroomGram = pcsInput * cleanPackGram;
+          const neededMushroomKg = Number((neededMushroomGram / 1000).toFixed(2));
+
+          const activeContainers = longsongContainers.filter(
+            c => (c.status === 'AVAILABLE' || c.status === 'PARTIAL') && Number(c.current_weight_kg) > 0
+          );
+          const totalContainerKg = activeContainers.reduce((sum, c) => sum + (Number(c.current_weight_kg) || 0), 0);
+          const isMushroomSufficient = totalContainerKg >= neededMushroomKg;
+
+          const currentSeasoningRm = warehouseSeasoningMaterials.find(rm => rm.id === packingForm.seasoning_material_id) || matchedSeasoningInfo.matchedRm;
+          const isGramUom = currentSeasoningRm?.uom?.toLowerCase() === 'gram' || currentSeasoningRm?.uom?.toLowerCase() === 'gr';
+          const currentSeasoningStockGram = currentSeasoningRm
+            ? (isGramUom ? Number(currentSeasoningRm.available_stock || 0) : Number(currentSeasoningRm.available_stock || 0) * 1000)
+            : 0;
+
+
+          if (!targetSpk) {
+            return (
+              <div style={{
+                padding: 'var(--space-3)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--color-warning-50)',
+                border: '1px solid var(--color-warning-300)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-2)',
+                color: 'var(--color-warning-800)',
+                fontSize: 'var(--text-sm)',
+              }}>
+                <AlertTriangle className="w-5 h-5 text-[var(--color-warning-600)] shrink-0" aria-hidden="true" />
+                <div>
+                  <strong>Belum Ada SPK Produksi Aktif</strong>
+                  <div style={{ fontSize: 'var(--text-xs)', marginTop: '2px' }}>
+                    Silakan buat SPK baru terlebih dahulu untuk menentukan target varian rasa dan jumlah kemasan yang akan dipacking.
+                  </div>
                 </div>
               </div>
-            </div>
-          ) : (
-            <>
-              {availablePoolLongsong > 0 ? (
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'var(--color-success-50)',
-                  border: '1px solid var(--color-success-200)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: 'var(--text-xs)',
-                  color: 'var(--color-success-800)',
-                }}>
-                  <Sparkles className="w-4 h-4 text-[var(--color-success-600)] shrink-0" aria-hidden="true" />
-                  <span>
-                    Tersedia <strong>{availablePoolLongsong} longsong</strong> jamur matang curah dari wajan siap dibumbui &amp; dipacking.
-                  </span>
-                </div>
-              ) : (
-                <div style={{
-                  padding: '8px 12px',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'var(--color-warning-50)',
-                  border: '1px solid var(--color-warning-200)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  fontSize: 'var(--text-xs)',
-                  color: 'var(--color-warning-800)',
-                }}>
-                  <Info className="w-4 h-4 text-[var(--color-warning-600)] shrink-0" aria-hidden="true" />
-                  <span>
-                    Stok selongsong matang saat ini 0. Pastikan wajan di Tab 1 sudah menyelesaikan penggorengan jamur.
-                  </span>
-                </div>
-              )}
+            );
+          }
 
-              <FormField label="Pilih Target SPK Produksi (Tujuan Packing)" required>
-                <Select
-                  options={friedOrdersData.map(item => ({
-                    value: item.order.id,
-                    label: `${item.order.batch_number} — ${item.order.product_variant || 'Jamur Crispy'} (Target: ${item.order.target_quantity || 0} pcs | Selesai: ${item.totalPackagedPcs} pcs)`,
-                  }))}
-                  value={packingForm.production_order_id}
-                  onChange={(e) => {
-                    const spkId = e.target.value;
-                    const targetSpk = friedOrdersData.find(d => d.order.id === spkId);
-                    const nextLongsongNum = targetSpk ? targetSpk.packedCount + 1 : 1;
-                    const avgWeightNum = targetSpk && targetSpk.totalLongsongProduced > 0 && targetSpk.totalOutputGram > 0
-                      ? Math.round(targetSpk.totalOutputGram / targetSpk.totalLongsongProduced)
-                      : 500;
-                    const spkVar = targetSpk?.order.product_variant || '';
-                    const autoFlavor = FLAVOR_VARIANTS.find(f => spkVar.toLowerCase().includes(f.toLowerCase()));
-                    const autoWeight = PACKAGING_WEIGHTS.find(w => spkVar.toLowerCase().includes(w.value.toLowerCase()))?.value || '100g';
-                    const autoType = PACKAGING_TYPES.find(t => spkVar.toLowerCase().includes(t.toLowerCase()));
-                    const cleanPack = parseInt(autoWeight.replace(/\D/g, ''), 10) || 100;
-                    const autoPcs = Math.max(1, Math.floor(avgWeightNum / cleanPack));
-                    const autoSeasoning = Math.round(avgWeightNum * 0.054) || 25;
-
-                    setPackingForm(prev => ({
-                      ...prev,
-                      production_order_id: spkId,
-                      frying_batch_id: '',
-                      flavor_variant: autoFlavor || prev.flavor_variant,
-                      packaging_type: autoType || prev.packaging_type,
-                      packaging_weight_gram: autoWeight,
-                      longsong_number: String(nextLongsongNum),
-                      longsong_weight_gram: String(avgWeightNum),
-                      packaged_toples_count: String(autoPcs),
-                      seasoning_used_gram: String(autoSeasoning),
-                    }));
-                  }}
-                />
-              </FormField>
-            </>
-          )}
-
-          {/* Integrated Status Card */}
-          {selectedFriedOrder && (
-            <div style={{
-              padding: 'var(--space-3)',
-              borderRadius: 'var(--radius-md)',
-              background: 'var(--color-primary-50)',
-              border: '1px solid var(--color-primary-200)',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 'var(--space-2)',
-              textAlign: 'center',
-            }}>
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--color-primary-800)', fontWeight: 600 }}>Total Longsong Masak</span>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-primary-900)' }}>
-                  {selectedFriedOrder.totalLongsongProduced} <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500 }}>longsong</span>
-                </div>
-              </div>
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--color-primary-800)', fontWeight: 600 }}>Sudah Dipacking</span>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success-700)' }}>
-                  {selectedFriedOrder.packedCount} <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500 }}>longsong</span>
-                </div>
-              </div>
-              <div>
-                <span style={{ fontSize: '11px', color: 'var(--color-primary-800)', fontWeight: 600 }}>Sisa Siap Packing</span>
-                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: selectedFriedOrder.unpackedCount > 0 ? 'var(--color-danger-700)' : 'var(--text-tertiary)' }}>
-                  {selectedFriedOrder.unpackedCount} <span style={{ fontSize: 'var(--text-xs)', fontWeight: 500 }}>longsong</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Wajan Asal Selector */}
-          {selectedFriedOrder && selectedFriedOrder.batches.length > 0 && (
-            <FormField label="Pilih Wajan Asal (Frying Batch)">
-              <Select
-                options={[
-                  { value: '', label: 'Semua Wajan / Campuran SPK' },
-                  ...selectedFriedOrder.batches.map(b => ({
-                    value: b.id,
-                    label: `Wajan #${b.wajan_number} — ${b.longsong_count} Longsong (${b.output_weight_gram?.toLocaleString('id-ID')}g matang)`,
-                  })),
-                ]}
-                value={packingForm.frying_batch_id}
-                onChange={(e) => {
-                  const batchId = e.target.value;
-                  const targetBatch = selectedFriedOrder.batches.find(b => b.id === batchId);
-                  const estWeight = targetBatch && targetBatch.output_weight_gram && targetBatch.longsong_count
-                    ? Math.round(targetBatch.output_weight_gram / targetBatch.longsong_count)
-                    : (selectedFriedOrder.totalLongsongProduced > 0
-                        ? Math.round(selectedFriedOrder.totalOutputGram / selectedFriedOrder.totalLongsongProduced)
-                        : 500);
-                  const cleanPack = parseInt((packingForm.packaging_weight_gram || '100g').replace(/\D/g, ''), 10) || 100;
-                  const autoPcs = Math.max(1, Math.floor(estWeight / cleanPack));
-                  setPackingForm(prev => ({
-                    ...prev,
-                    frying_batch_id: batchId,
-                    longsong_weight_gram: String(estWeight),
-                    packaged_toples_count: String(autoPcs),
-                  }));
-                }}
-              />
-            </FormField>
-          )}
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-            <FormField label="Varian Rasa" required>
-              <Select
-                options={FLAVOR_VARIANTS.map(v => ({ value: v, label: v }))}
-                value={packingForm.flavor_variant}
-                onChange={(e) => {
-                  const newFlavor = e.target.value;
-                  const calcSeasoning = calculateRecipeSeasoningGram(
-                    newFlavor,
-                    packingForm.packaged_toples_count,
-                    packingForm.packaging_weight_gram,
-                    packingForm.longsong_weight_gram
-                  );
-                  setPackingForm(prev => ({
-                    ...prev,
-                    flavor_variant: newFlavor,
-                    seasoning_used_gram: String(calcSeasoning),
-                  }));
-                }}
-              />
-            </FormField>
-
-            <FormField label="No. Longsong">
-              <Input
-                type="number" min="1"
-                value={packingForm.longsong_number}
-                onChange={(e) => setPackingForm({ ...packingForm, longsong_number: e.target.value })}
-              />
-            </FormField>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-            <FormField label="Berat Longsong (gram)">
-              <Input
-                type="number" min="0"
-                value={packingForm.longsong_weight_gram}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const lsNum = Number(val) || 0;
-                  const cleanPack = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
-                  const autoPcs = lsNum > 0 ? Math.max(1, Math.floor(lsNum / cleanPack)) : '';
-                  const calcSeasoning = calculateRecipeSeasoningGram(
-                    packingForm.flavor_variant,
-                    String(autoPcs || '1'),
-                    packingForm.packaging_weight_gram,
-                    val
-                  );
-                  setPackingForm(prev => ({
-                    ...prev,
-                    longsong_weight_gram: val,
-                    ...(autoPcs ? { packaged_toples_count: String(autoPcs), seasoning_used_gram: String(calcSeasoning) } : {}),
-                  }));
-                }}
-                placeholder="500"
-              />
-            </FormField>
-
-            <FormField label="Bumbu Tabur (gram)" required>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <Input
-                  type="number" min="0" step="0.1"
-                  value={packingForm.seasoning_used_gram}
-                  onChange={(e) => setPackingForm({ ...packingForm, seasoning_used_gram: e.target.value })}
-                  placeholder="25"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const autoSeasoning = calculateRecipeSeasoningGram(
-                      packingForm.flavor_variant,
-                      packingForm.packaged_toples_count,
-                      packingForm.packaging_weight_gram,
-                      packingForm.longsong_weight_gram
-                    );
-                    setPackingForm(prev => ({ ...prev, seasoning_used_gram: String(autoSeasoning) }));
-                    toast.info(`Takaran bumbu disinkronkan ke resep standar (${autoSeasoning}g)`);
-                  }}
-                  style={{
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              {/* Locked SPK Information Header */}
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--color-primary-50)',
+                border: '1px solid var(--color-primary-200)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Sparkles className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
+                    <span style={{ fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--color-primary-950)' }}>
+                      Target SPK {targetSpk.order.batch_number} — {targetSpk.order.product?.name || targetSpk.order.product_variant || 'KhumKhum'}
+                    </span>
+                  </div>
+                  <span style={{
+                    fontSize: '11px',
+                    background: 'var(--color-primary-100)',
+                    color: 'var(--color-primary-800)',
+                    padding: '2px 8px',
+                    borderRadius: 'var(--radius-full)',
+                    fontWeight: 600,
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    padding: '0 10px',
-                    fontSize: '11px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-default)',
-                    background: 'var(--bg-default)',
-                    color: 'var(--color-primary-700)',
+                  }}>
+                    <Lock className="w-3 h-3" /> Terkunci dari SPK
+                  </span>
+                </div>
+
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(4, 1fr)',
+                  gap: '8px',
+                  fontSize: 'var(--text-xs)',
+                  borderTop: '1px solid var(--color-primary-200)',
+                  paddingTop: '8px',
+                }}>
+                  <div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: '10.5px' }}>Varian Rasa</div>
+                    <strong style={{ color: 'var(--color-primary-900)' }}>{packingForm.flavor_variant}</strong>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: '10.5px' }}>Kemasan &amp; Berat</div>
+                    <strong style={{ color: 'var(--color-primary-900)' }}>{packingForm.packaging_type} {packingForm.packaging_weight_gram}</strong>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: '10.5px' }}>Target SPK</div>
+                    <strong style={{ color: 'var(--color-primary-900)' }}>{spkTargetPcs} pcs</strong>
+                  </div>
+                  <div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: '10.5px' }}>Sisa Belum Dipacking</div>
+                    <strong style={{ color: spkRemainingPcs > 0 ? 'var(--color-primary-700)' : 'var(--color-success-700)' }}>
+                      {spkRemainingPcs} pcs
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2 Navigation Tabs */}
+              <div style={{
+                display: 'flex',
+                borderBottom: '1px solid var(--border-default)',
+                gap: '8px',
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setPackingNavTab('PACKAGING')}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: 'var(--text-sm)',
+                    fontWeight: 600,
+                    border: 'none',
+                    background: 'none',
+                    borderBottom: packingNavTab === 'PACKAGING' ? '2px solid var(--color-primary-600)' : '2px solid transparent',
+                    color: packingNavTab === 'PACKAGING' ? 'var(--color-primary-700)' : 'var(--text-secondary)',
                     cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                    fontWeight: 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
                   }}
-                  title="Reset ke takaran resep standar otomatis"
                 >
-                  <RotateCcw className="w-3 h-3" aria-hidden="true" />
-                  <span>Reset Resep</span>
+                  <Package className="w-4 h-4" aria-hidden="true" />
+                  <span>1. Kemasan Jadi &amp; Jamur Longsong</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const pcs = Number(packingForm.packaged_toples_count);
+                    if (!pcs || pcs <= 0) {
+                      toast.error('Masukkan jumlah kemasan minimal 1 pcs di Tab 1');
+                      return;
+                    }
+                    setPackingNavTab('BUMBU');
+                  }}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: 'var(--text-sm)',
+                    fontWeight: 600,
+                    border: 'none',
+                    background: 'none',
+                    borderBottom: packingNavTab === 'BUMBU' ? '2px solid var(--color-primary-600)' : '2px solid transparent',
+                    color: packingNavTab === 'BUMBU' ? 'var(--color-primary-700)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Sparkles className="w-4 h-4" aria-hidden="true" />
+                  <span>2. Alokasi Bumbu Tabur</span>
                 </button>
               </div>
-            </FormField>
-          </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-            <FormField label="Tipe Packaging" required>
-              <Select
-                options={PACKAGING_TYPES.map(t => ({ value: t, label: t }))}
-                value={packingForm.packaging_type}
-                onChange={(e) => setPackingForm({ ...packingForm, packaging_type: e.target.value })}
-              />
-            </FormField>
+              {/* TAB 1: KEMASAN JADI & JAMUR LONGSONG */}
+              {packingNavTab === 'PACKAGING' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {/* Auto-Matched Warehouse Packaging Card */}
+                  <div style={{
+                    padding: '12px',
+                    borderRadius: 'var(--radius-md)',
+                    background: '#fff',
+                    border: '1px solid var(--border-default)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Box className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
+                        <strong style={{ fontSize: 'var(--text-sm)' }}>Bahan Baku Kemasan (Gudang Warehouse)</strong>
+                      </div>
+                      {matchedPackagingInfo.isStockSufficient ? (
+                        <span style={{
+                          fontSize: '11px',
+                          color: 'var(--color-success-700)',
+                          background: 'var(--color-success-50)',
+                          padding: '2px 8px',
+                          borderRadius: 'var(--radius-full)',
+                          border: '1px solid var(--color-success-200)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontWeight: 600,
+                        }}>
+                          <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          Stok Warehouse Mencukupi
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontSize: '11px',
+                          color: 'var(--color-warning-700)',
+                          background: 'var(--color-warning-50)',
+                          padding: '2px 8px',
+                          borderRadius: 'var(--radius-full)',
+                          border: '1px solid var(--color-warning-200)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontWeight: 600,
+                        }}>
+                          <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
+                          Stok Gudang Kurang
+                        </span>
+                      )}
+                    </div>
 
-            <FormField label="Berat per Kemasan" required>
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '6px' }}>
-                {PACKAGING_WEIGHTS.map(w => (
-                  <button
-                    key={w.value}
-                    type="button"
-                    onClick={() => {
-                      const cleanPack = parseInt(w.value.replace(/\D/g, ''), 10) || 60;
-                      const lsNum = Number(packingForm.longsong_weight_gram) || 500;
-                      const autoPcs = Math.max(1, Math.floor(lsNum / cleanPack));
-                      const calcSeasoning = calculateRecipeSeasoningGram(
-                        packingForm.flavor_variant,
-                        String(autoPcs),
-                        w.value,
-                        packingForm.longsong_weight_gram
-                      );
-                      setPackingForm(prev => ({
-                        ...prev,
-                        packaging_weight_gram: w.value,
-                        packaged_toples_count: String(autoPcs),
-                        seasoning_used_gram: String(calcSeasoning),
-                      }));
-                    }}
-                    style={{
-                      padding: '2px 8px',
-                      fontSize: '11px',
-                      borderRadius: 'var(--radius-full)',
-                      border: packingForm.packaging_weight_gram === w.value ? '1px solid var(--color-primary-600)' : '1px solid var(--border-default)',
-                      background: packingForm.packaging_weight_gram === w.value ? 'var(--color-primary-600)' : 'var(--bg-default)',
-                      color: packingForm.packaging_weight_gram === w.value ? '#fff' : 'var(--text-secondary)',
-                      cursor: 'pointer',
-                      fontWeight: packingForm.packaging_weight_gram === w.value ? 600 : 400,
-                    }}
-                  >
-                    {w.value}
-                  </button>
-                ))}
-              </div>
-              <Select
-                options={PACKAGING_WEIGHTS.map(w => ({ value: w.value, label: w.label }))}
-                value={packingForm.packaging_weight_gram}
-                onChange={(e) => {
-                  const newWeight = e.target.value;
-                  const cleanPack = parseInt(newWeight.replace(/\D/g, ''), 10) || 60;
-                  const lsNum = Number(packingForm.longsong_weight_gram) || 500;
-                  const autoPcs = Math.max(1, Math.floor(lsNum / cleanPack));
-                  const calcSeasoning = calculateRecipeSeasoningGram(
-                    packingForm.flavor_variant,
-                    String(autoPcs),
-                    newWeight,
-                    packingForm.longsong_weight_gram
-                  );
-                  setPackingForm(prev => ({
-                    ...prev,
-                    packaging_weight_gram: newWeight,
-                    packaged_toples_count: String(autoPcs),
-                    seasoning_used_gram: String(calcSeasoning),
-                  }));
-                }}
-              />
-            </FormField>
-          </div>
+                    <div style={{
+                      padding: '8px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-subtle)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: 'var(--text-xs)',
+                    }}>
+                      <div>
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                          {matchedPackagingInfo.matchedRm?.name || `Packaging Standing Pouch ${packingForm.flavor_variant} ${packingForm.packaging_weight_gram}`}
+                        </strong>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px', marginTop: '2px' }}>
+                          Kode: <span style={{ fontFamily: 'monospace' }}>{matchedPackagingInfo.matchedRm?.code || 'PKG-AUTO'}</span> • Kategori: Packaging
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ color: 'var(--text-secondary)' }}>Stok Gudang: <strong>{matchedPackagingInfo.availableStock !== null ? `${matchedPackagingInfo.availableStock.toLocaleString('id-ID')} pcs` : 'Tersedia'}</strong></div>
+                        <div style={{ color: 'var(--color-primary-700)', fontWeight: 600 }}>Dibutuhkan: {matchedPackagingInfo.neededPcs} pcs</div>
+                      </div>
+                    </div>
+                  </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
-            <FormField label="Jumlah Kemasan Jadi (pcs)" required>
-              <Input
-                type="number" min="1"
-                value={packingForm.packaged_toples_count}
-                onChange={(e) => {
-                  const newPcs = e.target.value;
-                  const calcSeasoning = calculateRecipeSeasoningGram(
-                    packingForm.flavor_variant,
-                    newPcs,
-                    packingForm.packaging_weight_gram,
-                    packingForm.longsong_weight_gram
-                  );
-                  setPackingForm(prev => ({
-                    ...prev,
-                    packaged_toples_count: newPcs,
-                    seasoning_used_gram: String(calcSeasoning),
-                  }));
-                }}
-                placeholder="Contoh: 5"
-              />
-            </FormField>
-
-            <FormField label="Longsong Fisik Digunakan" required>
-              <Input
-                type="number" min="1"
-                value={packingForm.longsongs_used_count}
-                onChange={(e) => setPackingForm({ ...packingForm, longsongs_used_count: e.target.value })}
-                placeholder="1"
-              />
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-                Baskom jamur matang yang dihabiskan
-              </span>
-            </FormField>
-          </div>
-
-          <FormField label="Kemasan Rusak / Scrap Saat Seal (pcs)">
-            <Input
-              type="number" min="0"
-              value={packingForm.defect_packaging_count}
-              onChange={(e) => setPackingForm({ ...packingForm, defect_packaging_count: e.target.value })}
-              placeholder="0"
-            />
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-              Jumlah standing pouch / toples yang rusak saat pengisian/sealing (opsional)
-            </span>
-          </FormField>
-
-          {/* Live Kalkulasi & Integrasi Warehouse Box */}
-          <div style={{
-            padding: '12px 14px',
-            borderRadius: 'var(--radius-md)',
-            background: 'var(--color-primary-50)',
-            border: '1px solid var(--color-primary-200)',
-            fontSize: 'var(--text-xs)',
-            color: 'var(--color-primary-900)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '8px',
-          }}>
-            <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Sparkles className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                <span>Integrasi Resep Bumbu &amp; Stok Bahan Baku Warehouse:</span>
-              </div>
-              <span style={{
-                background: 'var(--color-primary-600)',
-                color: '#fff',
-                padding: '2px 8px',
-                borderRadius: 'var(--radius-full)',
-                fontSize: '11px',
-                fontWeight: 600,
-              }}>
-                Resep {packingForm.flavor_variant}: {(matchedSeasoningInfo.ratio * 100).toFixed(0)}% ({Math.round(matchedSeasoningInfo.ratio * 1000)}g/kg)
-              </span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '2px' }}>
-              {/* Kolom 1: Bumbu Tabur */}
-              <div style={{
-                background: '#fff',
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-primary-200)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, marginBottom: '2px' }}>
-                  <Scale className="w-3.5 h-3.5 text-[var(--color-primary-600)]" aria-hidden="true" />
-                  <span>Bumbu Tabur:</span>
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  {matchedSeasoningInfo.matchedRm?.name || matchedSeasoningInfo.recipeName}
-                </div>
-                <div style={{ marginTop: '4px', fontSize: '12px', fontWeight: 600 }}>
-                  Dibutuhkan: <span style={{ color: 'var(--color-primary-700)' }}>{packingForm.seasoning_used_gram || '0'} gram</span>
-                </div>
-                <div style={{ fontSize: '10px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  {matchedSeasoningInfo.isStockSufficient ? (
-                    <>
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" aria-hidden="true" />
-                      <span className="text-emerald-700">
-                        Stok Gudang: {matchedSeasoningInfo.availableStockInGram !== null ? `${matchedSeasoningInfo.availableStockInGram.toLocaleString('id-ID')}g` : 'Tersedia'}
+                  {/* Input Target Kemasan Pcs & Defect */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                    <FormField label="Jumlah Kemasan Jadi (pcs) *" required>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={packingForm.packaged_toples_count}
+                        onChange={(e) => {
+                          const newPcs = e.target.value;
+                          const numPcs = Number(newPcs) || 0;
+                          const newWeightGram = numPcs * cleanPackGram;
+                          setPackingForm(prev => ({
+                            ...prev,
+                            packaged_toples_count: newPcs,
+                            longsong_weight_gram: String(newWeightGram),
+                          }));
+                        }}
+                        placeholder="200"
+                      />
+                      <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                        Default sesuai target SPK ({spkRemainingPcs} pcs). Bisa diubah jika packing bertahap.
                       </span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="w-3 h-3 text-amber-600" aria-hidden="true" />
-                      <span className="text-amber-700 font-medium">
-                        Stok Gudang Kurang ({matchedSeasoningInfo.availableStockInGram?.toLocaleString('id-ID') || 0}g)
+                    </FormField>
+
+                    <FormField label="Kemasan Rusak / Scrap Saat Seal (pcs)">
+                      <Input
+                        type="number"
+                        min="0"
+                        value={packingForm.defect_packaging_count}
+                        onChange={(e) => setPackingForm({ ...packingForm, defect_packaging_count: e.target.value })}
+                        placeholder="0"
+                      />
+                      <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                        Pouch / toples rusak saat sealing (opsional).
                       </span>
-                    </>
+                    </FormField>
+                  </div>
+
+                  {/* Kalkulasi Kebutuhan Jamur Longsong (Buffer WIP) */}
+                  <div style={{
+                    padding: '12px 14px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--color-primary-50)',
+                    border: '1px solid var(--color-primary-200)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                    fontSize: 'var(--text-xs)',
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: 'var(--color-primary-950)' }}>
+                        <Scale className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
+                        <span>Kebutuhan Jamur Matang (Wadah Selongsong Buffer WIP)</span>
+                      </div>
+                      {isMushroomSufficient ? (
+                        <span style={{
+                          fontSize: '11px',
+                          color: 'var(--color-success-700)',
+                          background: 'var(--color-success-50)',
+                          padding: '2px 8px',
+                          borderRadius: 'var(--radius-full)',
+                          border: '1px solid var(--color-success-200)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontWeight: 600,
+                        }}>
+                          <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+                          Selongsong Cukup
+                        </span>
+                      ) : (
+                        <span style={{
+                          fontSize: '11px',
+                          color: 'var(--color-warning-700)',
+                          background: 'var(--color-warning-50)',
+                          padding: '2px 8px',
+                          borderRadius: 'var(--radius-full)',
+                          border: '1px solid var(--color-warning-200)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          fontWeight: 600,
+                        }}>
+                          <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
+                          Stok Wadah Kurang
+                        </span>
+                      )}
+                    </div>
+
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1fr 1fr',
+                      gap: '8px',
+                    }}>
+                      <div style={{ background: '#fff', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-primary-200)' }}>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Kalkulasi Kebutuhan Jamur:</div>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-primary-900)', marginTop: '2px' }}>
+                          {pcsInput} pcs × {cleanPackGram}g = <span style={{ color: 'var(--color-primary-700)' }}>{neededMushroomKg.toFixed(1)} kg</span> ({neededMushroomGram.toLocaleString('id-ID')}g)
+                        </div>
+                      </div>
+
+                      <div style={{ background: '#fff', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-primary-200)' }}>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Ketersediaan di Buffer Selongsong:</div>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: isMushroomSufficient ? 'var(--color-success-700)' : 'var(--color-warning-700)', marginTop: '2px' }}>
+                          {totalContainerKg.toFixed(1)} kg <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>({activeContainers.length} wadah aktif)</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ color: 'var(--color-primary-800)', fontSize: '11px', lineHeight: 1.4, borderTop: '1px dashed var(--color-primary-200)', paddingTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Zap className="w-3.5 h-3.5 text-primary-600 shrink-0" />
+                      <span>Saat disimpan, sistem secara otomatis memotong <strong>{neededMushroomKg.toFixed(1)} kg jamur matang</strong> dari wadah selongsong secara urut (FIFO) dan memotong <strong>{matchedPackagingInfo.neededPcs} pcs kemasan</strong> dari Warehouse.</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: ALOKASI BUMBU TABUR */}
+              {packingNavTab === 'BUMBU' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+                  {/* Dropdown Pemilihan Bumbu Tabur dari Warehouse */}
+                  <FormField label="Pilih Bahan Baku Bumbu Tabur (Gudang Warehouse)" required>
+                    <Select
+                      options={warehouseSeasoningMaterials.map(rm => ({
+                        value: rm.id,
+                        label: `[${rm.code || 'BUMBU'}] ${rm.name} (Stok: ${Number(rm.available_stock || 0).toLocaleString('id-ID')} ${rm.uom || 'g'})`,
+                      }))}
+                      value={packingForm.seasoning_material_id || currentSeasoningRm?.id || ''}
+                      onChange={(e) => {
+                        const rmId = e.target.value;
+                        setPackingForm(prev => ({
+                          ...prev,
+                          seasoning_material_id: rmId,
+                        }));
+                      }}
+                    />
+                  </FormField>
+
+                  {/* Stok Status Bumbu Card */}
+                  {currentSeasoningRm && (
+                    <div style={{
+                      padding: '10px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-subtle)',
+                      border: '1px solid var(--border-default)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      fontSize: 'var(--text-xs)',
+                    }}>
+                      <div>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Item Bumbu Terpilih:</div>
+                        <strong style={{ color: 'var(--text-primary)' }}>{currentSeasoningRm.name}</strong>
+                        <span style={{ color: 'var(--text-secondary)', marginLeft: '6px', fontFamily: 'monospace' }}>({currentSeasoningRm.code})</span>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ color: 'var(--text-secondary)' }}>Stok Tersedia di Warehouse:</div>
+                        <strong style={{ color: currentSeasoningStockGram > 0 ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>
+                          {currentSeasoningStockGram.toLocaleString('id-ID')} gram ({(currentSeasoningStockGram / 1000).toFixed(1)} kg)
+                        </strong>
+                      </div>
+                    </div>
                   )}
-                </div>
-              </div>
 
-              {/* Kolom 2: Kemasan Fisik */}
-              <div style={{
-                background: '#fff',
-                padding: '8px 10px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--color-primary-200)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 600, marginBottom: '2px' }}>
-                  <Package className="w-3.5 h-3.5 text-[var(--color-primary-600)]" aria-hidden="true" />
-                  <span>Kemasan Fisik:</span>
+                  {/* Input Timbangan Riil Bumbu Tabur (Manual) */}
+                  <FormField label="Timbangan Riil Bumbu Tabur (gram) *" required>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.1"
+                      value={packingForm.seasoning_used_gram}
+                      onChange={(e) => setPackingForm({ ...packingForm, seasoning_used_gram: e.target.value })}
+                      placeholder="Masukkan timbangan bumbu riil (gram)..."
+                    />
+                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Info className="w-3.5 h-3.5 shrink-0" />
+                      <span>Masukkan timbangan riil bumbu tabur dalam gram sesuai hasil penimbangan aktual di lapangan.</span>
+                    </div>
+                    {currentSeasoningRm && Number(packingForm.seasoning_used_gram) > currentSeasoningStockGram && (
+                      <div style={{
+                        marginTop: '6px',
+                        padding: '6px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--color-danger-50)',
+                        border: '1px solid var(--color-danger-200)',
+                        color: 'var(--color-danger-800)',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        fontWeight: 600,
+                      }}>
+                        <AlertTriangle className="w-3.5 h-3.5 text-[var(--color-danger-600)] shrink-0" aria-hidden="true" />
+                        <span>Stok bumbu di warehouse kurang ({currentSeasoningStockGram.toLocaleString('id-ID')}g tersedia, dibutuhkan {packingForm.seasoning_used_gram}g). Packing tidak dapat disimpan sebelum stok gudang mencukupi.</span>
+                      </div>
+                    )}
+                  </FormField>
+
+                  {/* Catatan Packing */}
+                  <FormField label="Catatan Packing (Opsional)">
+                    <Textarea
+                      rows={2}
+                      value={packingForm.notes}
+                      onChange={(e) => setPackingForm({ ...packingForm, notes: e.target.value })}
+                      placeholder="Catatan batch packing..."
+                    />
+                  </FormField>
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                  {matchedPackagingInfo.matchedRm?.name || `${packingForm.packaging_type} ${packingForm.packaging_weight_gram}`}
-                </div>
-                <div style={{ marginTop: '4px', fontSize: '12px', fontWeight: 600 }}>
-                  Dibutuhkan: <span style={{ color: 'var(--color-primary-700)' }}>{matchedPackagingInfo.neededPcs} pcs</span>
-                </div>
-                <div style={{ fontSize: '10px', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  {matchedPackagingInfo.isStockSufficient ? (
-                    <>
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" aria-hidden="true" />
-                      <span className="text-emerald-700">
-                        Stok Gudang: {matchedPackagingInfo.availableStock !== null ? `${matchedPackagingInfo.availableStock.toLocaleString('id-ID')} pcs` : 'Tersedia'}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="w-3 h-3 text-amber-600" aria-hidden="true" />
-                      <span className="text-amber-700 font-medium">
-                        Stok Kemasan Kurang ({matchedPackagingInfo.availableStock || 0} pcs)
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
+              )}
             </div>
-
-            <div style={{ color: 'var(--color-primary-800)', fontSize: '11px', lineHeight: 1.4, borderTop: '1px dashed var(--color-primary-200)', paddingTop: '6px' }}>
-              Saat disimpan, sistem secara otomatis memotong <strong>{packingForm.seasoning_used_gram || '0'}g bumbu {packingForm.flavor_variant}</strong> dan <strong>{matchedPackagingInfo.neededPcs} pcs kemasan</strong> dari warehouse bahan baku, serta meneruskan hasil packing ke antrean inspeksi Quality Control (QC).
-            </div>
-          </div>
-
-          <FormField label="Catatan">
-            <Textarea
-              rows={2}
-              value={packingForm.notes}
-              onChange={(e) => setPackingForm({ ...packingForm, notes: e.target.value })}
-              placeholder="Catatan packing..."
-            />
-          </FormField>
-        </div>
+          );
+        })()}
       </Modal>
 
       {/* ═══════════════════════════════════════════════ */}
@@ -4146,6 +5401,111 @@ export default function ProductionPage() {
               value={spkForm.notes}
               onChange={(e) => setSpkForm({ ...spkForm, notes: e.target.value })}
               placeholder={spkType === 'FRYING' ? 'Instruksi khusus untuk tim penggorengan...' : 'Instruksi khusus untuk tim packing...'}
+            />
+          </FormField>
+        </div>
+      </Modal>
+
+      {/* Modal: Edit SPK Penggorengan */}
+      <Modal
+        isOpen={editSpkOpen}
+        onClose={() => setEditSpkOpen(false)}
+        title={`Edit SPK ${selectedSpkForEdit?.batch_number || ''}`}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+            <Button variant="ghost" onClick={() => setEditSpkOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSaveEditSpk}
+              loading={isUpdatingSpk}
+            >
+              Simpan Perubahan
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <FormField label="Target Jamur Segar (Kg)" required>
+            <Input
+              type="number"
+              step="0.1"
+              value={editSpkForm.target_quantity}
+              onChange={(e) => setEditSpkForm({ ...editSpkForm, target_quantity: e.target.value })}
+              placeholder="Misal: 100"
+            />
+          </FormField>
+          <FormField label="Tanggal Mulai Produksi" required>
+            <Input
+              type="date"
+              value={editSpkForm.start_date}
+              onChange={(e) => setEditSpkForm({ ...editSpkForm, start_date: e.target.value })}
+            />
+          </FormField>
+          <FormField label="Catatan Tambahan (Opsional)">
+            <Textarea
+              rows={3}
+              value={editSpkForm.notes}
+              onChange={(e) => setEditSpkForm({ ...editSpkForm, notes: e.target.value })}
+              placeholder="Catatan SPK..."
+            />
+          </FormField>
+        </div>
+      </Modal>
+
+      {/* Modal: Edit Wadah Longsong */}
+      <Modal
+        isOpen={editLongsongOpen}
+        onClose={() => setEditLongsongOpen(false)}
+        title={`Edit Wadah #${selectedLongsongForEdit?.container_number || ''}`}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+            <Button variant="ghost" onClick={() => setEditLongsongOpen(false)}>
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSaveEditLongsong}
+              loading={isUpdatingLongsong}
+            >
+              Simpan Perubahan
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <FormField label="Sisa Berat Jamur Matang Saat Ini (Kg)" required>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={editLongsongForm.current_weight_kg}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value) || 0;
+                setEditLongsongForm({
+                  ...editLongsongForm,
+                  current_weight_kg: e.target.value,
+                  status: val <= 0 ? 'EMPTY' : val < (selectedLongsongForEdit?.initial_weight_kg || 0) ? 'PARTIAL' : 'AVAILABLE',
+                });
+              }}
+            />
+          </FormField>
+          <FormField label="Status Wadah" required>
+            <Select
+              options={[
+                { value: 'AVAILABLE', label: 'Tersedia (Penuh / Siap Packing)' },
+                { value: 'PARTIAL', label: 'Sebagian (Sudah Terpakai Sebagian)' },
+                { value: 'EMPTY', label: 'Kosong (Habis Terpakai)' },
+              ]}
+              value={editLongsongForm.status}
+              onChange={(e) => setEditLongsongForm({ ...editLongsongForm, status: e.target.value as 'AVAILABLE' | 'PARTIAL' | 'EMPTY' })}
+            />
+          </FormField>
+          <FormField label="Catatan Wadah (Opsional)">
+            <Input
+              value={editLongsongForm.notes}
+              onChange={(e) => setEditLongsongForm({ ...editLongsongForm, notes: e.target.value })}
             />
           </FormField>
         </div>

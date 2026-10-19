@@ -85,6 +85,7 @@ export function DataTable<TData extends { id?: string | number }>({
   const table = useReactTable({
     data,
     columns: allColumns as typeof columns,
+    getRowId: (row: any, index: number) => (row?.id != null ? String(row.id) : String(index)),
     state: {
       sorting,
       rowSelection,

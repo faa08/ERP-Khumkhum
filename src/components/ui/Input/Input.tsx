@@ -69,6 +69,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
               disabled && styles['input--disabled'],
               className
             )}
+            onWheel={(e) => {
+              if (props.type === 'number') {
+                (e.target as HTMLElement).blur();
+              }
+              props.onWheel?.(e);
+            }}
             {...props}
           />
           {rightElement ? (

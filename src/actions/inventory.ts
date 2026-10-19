@@ -116,6 +116,194 @@ export async function getStockMovements(inventoryId?: string): Promise<{
   }
 }
 
+export async function updateStockMovement(
+  movementId: string,
+  input: {
+    movement_date?: string;
+    quantity?: number;
+    movement_type?: 'IN' | 'OUT' | 'ADJUSTMENT' | 'TRANSFER';
+    notes?: string;
+  }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+
+    const { data: oldMv, error: fetchErr } = await supabaseAdmin
+      .from('stock_movements')
+      .select('*, inventory:inventory(id, quantity)')
+      .eq('id', movementId)
+      .single();
+
+    if (fetchErr || !oldMv) {
+      return { success: false, error: 'Data mutasi tidak ditemukan' };
+    }
+
+    const updates: Record<string, any> = {};
+    if (input.movement_date !== undefined) updates.movement_date = input.movement_date;
+    if (input.notes !== undefined) updates.notes = input.notes;
+    if (input.movement_type !== undefined) updates.movement_type = input.movement_type;
+    if (input.quantity !== undefined) updates.quantity = input.quantity;
+
+    const oldQty = Number(oldMv.quantity) || 0;
+    const oldType = oldMv.movement_type;
+    const newQty = input.quantity !== undefined ? Number(input.quantity) : oldQty;
+    const newType = input.movement_type !== undefined ? input.movement_type : oldType;
+
+    if (oldMv.inventory_id && (oldQty !== newQty || oldType !== newType)) {
+      let oldEffect = 0;
+      if (oldType === 'IN') oldEffect = oldQty;
+      else if (oldType === 'OUT') oldEffect = -oldQty;
+      else if (oldType === 'ADJUSTMENT') oldEffect = oldQty;
+
+      let newEffect = 0;
+      if (newType === 'IN') newEffect = newQty;
+      else if (newType === 'OUT') newEffect = -newQty;
+      else if (newType === 'ADJUSTMENT') newEffect = newQty;
+
+      const delta = newEffect - oldEffect;
+      const currentInvQty = Number(oldMv.inventory?.quantity) || 0;
+      const finalInvQty = Math.max(0, currentInvQty + delta);
+
+      await supabaseAdmin
+        .from('inventory')
+        .update({ quantity: finalInvQty, last_updated_at: new Date().toISOString() })
+        .eq('id', oldMv.inventory_id);
+    }
+
+    const { error: updErr } = await supabaseAdmin
+      .from('stock_movements')
+      .update(updates)
+      .eq('id', movementId);
+
+    if (updErr) throw updErr;
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteStockMovement(
+  movementId: string,
+  options?: { revertStock?: boolean }
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+
+    const { data: oldMv, error: fetchErr } = await supabaseAdmin
+      .from('stock_movements')
+      .select('*, inventory:inventory(id, quantity)')
+      .eq('id', movementId)
+      .single();
+
+    if (fetchErr || !oldMv) {
+      return { success: false, error: 'Data mutasi tidak ditemukan' };
+    }
+
+    const shouldRevert = options?.revertStock !== false;
+
+    if (shouldRevert && oldMv.inventory_id) {
+      const oldQty = Number(oldMv.quantity) || 0;
+      let oldEffect = 0;
+      if (oldMv.movement_type === 'IN') oldEffect = oldQty;
+      else if (oldMv.movement_type === 'OUT') oldEffect = -oldQty;
+      else if (oldMv.movement_type === 'ADJUSTMENT') oldEffect = oldQty;
+
+      const currentInvQty = Number(oldMv.inventory?.quantity) || 0;
+      const finalInvQty = Math.max(0, currentInvQty - oldEffect);
+
+      await supabaseAdmin
+        .from('inventory')
+        .update({ quantity: finalInvQty, last_updated_at: new Date().toISOString() })
+        .eq('id', oldMv.inventory_id);
+    }
+
+    const { error: delErr } = await supabaseAdmin
+      .from('stock_movements')
+      .delete()
+      .eq('id', movementId);
+
+    if (delErr) throw delErr;
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteMultipleStockMovements(
+  movementIds: string[],
+  options?: { revertStock?: boolean }
+): Promise<{ success: boolean; count?: number; error?: string }> {
+  try {
+    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+
+    if (!movementIds || movementIds.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    const { data: movements, error: fetchErr } = await supabaseAdmin
+      .from('stock_movements')
+      .select('id, inventory_id, movement_type, quantity, inventory:inventory(id, quantity)')
+      .in('id', movementIds);
+
+    if (fetchErr || !movements) {
+      return { success: false, error: 'Data mutasi tidak ditemukan' };
+    }
+
+    const shouldRevert = options?.revertStock !== false;
+
+    if (shouldRevert) {
+      const effectsByInv = new Map<string, { currentQty: number; totalEffect: number }>();
+
+      for (const m of movements) {
+        if (!m.inventory_id) continue;
+        const invId = m.inventory_id;
+        if (!effectsByInv.has(invId)) {
+          const curQty = Number((m as any).inventory?.quantity) || 0;
+          effectsByInv.set(invId, { currentQty: curQty, totalEffect: 0 });
+        }
+
+        const qty = Number(m.quantity) || 0;
+        let effect = 0;
+        if (m.movement_type === 'IN') effect = qty;
+        else if (m.movement_type === 'OUT') effect = -qty;
+        else if (m.movement_type === 'ADJUSTMENT') effect = qty;
+
+        effectsByInv.get(invId)!.totalEffect += effect;
+      }
+
+      for (const [invId, { currentQty, totalEffect }] of effectsByInv.entries()) {
+        const finalInvQty = Math.max(0, currentQty - totalEffect);
+        await supabaseAdmin
+          .from('inventory')
+          .update({ quantity: finalInvQty, last_updated_at: new Date().toISOString() })
+          .eq('id', invId);
+      }
+    }
+
+    const { error: delErr } = await supabaseAdmin
+      .from('stock_movements')
+      .delete()
+      .in('id', movementIds);
+
+    if (delErr) throw delErr;
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+
+    return { success: true, count: movements.length };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
 import { subDays, format, addDays } from 'date-fns';
 
 export async function getInventoryForecasting(inventoryId: string): Promise<{
@@ -243,69 +431,102 @@ export async function getInventoryForecasting(inventoryId: string): Promise<{
   }
 }
 
-export async function receiveNonMushroomItem(payload: { item_name: string, uom: string, quantity: number, notes?: string, item_type?: string }): Promise<{ success: boolean; error?: string }> {
+export async function receiveNonMushroomItem(payload: { 
+  item_name: string; 
+  uom: string; 
+  quantity: number; 
+  notes?: string; 
+  item_type?: string;
+  item_id?: string;
+}): Promise<{ success: boolean; error?: string }> {
   try {
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PRODUCTION']);
     const itemType = payload.item_type || 'RAW_MATERIAL';
 
     // 1. Find or create master item
-    let masterItemId = '';
+    let masterItemId = payload.item_id || '';
     
-    if (itemType === 'PRODUCT') {
-      const { data: existingProd } = await supabaseAdmin.from('products').select('id').ilike('name', payload.item_name).maybeSingle();
-      if (existingProd) {
-        masterItemId = existingProd.id;
+    if (!masterItemId) {
+      if (itemType === 'PRODUCT') {
+        const { data: existingProds } = await supabaseAdmin
+          .from('products')
+          .select('id')
+          .is('deleted_at', null)
+          .ilike('name', payload.item_name.trim())
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        if (existingProds && existingProds.length > 0) {
+          masterItemId = existingProds[0].id;
+        } else {
+          const sku = `PROD-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
+          const { data: newProd, error: prodError } = await supabaseAdmin.from('products').insert({
+            sku,
+            name: payload.item_name.trim(),
+          }).select('id').single();
+          if (prodError) throw prodError;
+          masterItemId = newProd.id;
+        }
       } else {
-        const sku = `PROD-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
-        const { data: newProd, error: prodError } = await supabaseAdmin.from('products').insert({
-          sku,
-          name: payload.item_name,
-        }).select('id').single();
-        if (prodError) throw prodError;
-        masterItemId = newProd.id;
-      }
-    } else {
-      const { data: existingRm } = await supabaseAdmin.from('raw_materials').select('id').ilike('name', payload.item_name).maybeSingle();
-      if (existingRm) {
-        masterItemId = existingRm.id;
-      } else {
-        const code = `RM-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
-        const { data: newRm, error: rmError } = await supabaseAdmin.from('raw_materials').insert({
-          code,
-          name: payload.item_name,
-          uom: payload.uom || 'kg',
-          min_stock: 0,
-          rop: 0
-        }).select('id').single();
-        if (rmError) throw rmError;
-        masterItemId = newRm.id;
+        const { data: existingRms } = await supabaseAdmin
+          .from('raw_materials')
+          .select('id')
+          .is('deleted_at', null)
+          .ilike('name', payload.item_name.trim())
+          .order('created_at', { ascending: true })
+          .limit(1);
+
+        if (existingRms && existingRms.length > 0) {
+          masterItemId = existingRms[0].id;
+        } else {
+          const code = `RM-${payload.item_name.substring(0,3).toUpperCase()}-${Math.floor(Math.random()*1000)}`;
+          const { data: newRm, error: rmError } = await supabaseAdmin.from('raw_materials').insert({
+            code,
+            name: payload.item_name.trim(),
+            uom: payload.uom || 'kg',
+            min_stock: 0,
+            rop: 0
+          }).select('id').single();
+          if (rmError) throw rmError;
+          masterItemId = newRm.id;
+        }
       }
     }
 
     // 2. Find or create inventory
     let inventoryId = '';
     let currentQty = 0;
-    const { data: existingInv } = await supabaseAdmin.from('inventory')
-      .select('id, quantity')
+
+    // Pick target warehouse (Gudang Utama)
+    const { data: whList } = await supabaseAdmin
+      .from('warehouses')
+      .select('id, name')
+      .is('deleted_at', null);
+
+    const mainWarehouse = whList?.find(w => w.name.toLowerCase().includes('utama') || w.name.toLowerCase().includes('pabrik'))
+      || whList?.[0];
+    const targetWarehouseId = mainWarehouse?.id;
+    if (!targetWarehouseId) throw new Error('No warehouse found');
+
+    const { data: existingInvs } = await supabaseAdmin.from('inventory')
+      .select('id, quantity, warehouse_id')
       .eq('item_type', itemType)
       .eq('item_id', masterItemId)
-      .maybeSingle();
+      .is('deleted_at', null);
+
+    // Prefer inventory in main warehouse, otherwise pick the first existing
+    const existingInv = existingInvs?.find(inv => inv.warehouse_id === targetWarehouseId) || existingInvs?.[0];
 
     if (existingInv) {
       inventoryId = existingInv.id;
-      currentQty = existingInv.quantity;
+      currentQty = Number(existingInv.quantity || 0);
       await supabaseAdmin.from('inventory').update({ 
         quantity: currentQty + payload.quantity, 
         last_updated_at: new Date().toISOString() 
       }).eq('id', inventoryId);
     } else {
-      // Find a warehouse
-      const { data: wh } = await supabaseAdmin.from('warehouses').select('id').limit(1).single();
-      const warehouseId = wh?.id;
-      if (!warehouseId) throw new Error('No warehouse found');
-
       const { data: newInv, error: invError } = await supabaseAdmin.from('inventory').insert({
-        warehouse_id: warehouseId,
+        warehouse_id: targetWarehouseId,
         item_type: itemType,
         item_id: masterItemId,
         quantity: payload.quantity,
@@ -325,6 +546,9 @@ export async function receiveNonMushroomItem(payload: { item_name: string, uom: 
       notes: payload.notes || 'Inbound Manual',
       created_by: user.userId
     });
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
 
     return { success: true };
   } catch (err: any) {
@@ -513,21 +737,12 @@ export async function deleteInventoryItem(id: string): Promise<{ success: boolea
     // 2. Hapus riwayat pergerakan stok terkait
     await supabaseAdmin.from('stock_movements').delete().eq('inventory_id', id);
     
-    // 3. Hapus baris inventory
+    // 3. Hapus baris inventory (HANYA menghapus stok di gudang ini, TIDAK menghapus Data Induk master)
     const { error } = await supabaseAdmin.from('inventory').delete().eq('id', id);
     if (error) throw error;
-
-    // 4. Sinkronkan ke Master Data: Soft-delete item master agar konsisten dan tidak muncul kembali saat auto-sync
-    if (inv?.item_type === 'RAW_MATERIAL' && inv.item_id) {
-      await supabaseAdmin.from('raw_materials').update({ deleted_at: new Date().toISOString() }).eq('id', inv.item_id);
-    } else if (inv?.item_type === 'PRODUCT' && inv.item_id) {
-      await supabaseAdmin.from('products').update({ deleted_at: new Date().toISOString() }).eq('id', inv.item_id);
-    }
     
     revalidatePath('/inventory');
     revalidatePath('/warehouse');
-    revalidatePath('/master/raw-materials');
-    revalidatePath('/master/products');
 
     return { success: true };
   } catch (err: any) {

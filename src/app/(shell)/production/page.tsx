@@ -2165,8 +2165,9 @@ export default function ProductionPage() {
                                 </Button>
                               ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                  <span style={{ fontSize: '11px', color: 'var(--color-success-700)', fontWeight: 700 }}>
-                                    ✓ Selesai ({longsongTotal} Longsong)
+                                  <span style={{ fontSize: '11px', color: 'var(--color-success-700)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" aria-hidden="true" />
+                                    <span>Selesai ({longsongTotal} Longsong)</span>
                                   </span>
                                   <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
                                     Output: {outputKg.toFixed(1)} kg • Rendemen {order.yield_percentage ? `${order.yield_percentage}%` : `${((outputKg / (realizedKg || 1)) * 100).toFixed(0)}%`}

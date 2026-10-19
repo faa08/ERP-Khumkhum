@@ -26,6 +26,8 @@ import {
   Layers,
   Activity,
   Zap,
+  ShoppingCart,
+  Coins,
 } from 'lucide-react';
 import { getMaterialForecast, getOperationalInsights } from '@/actions/forecast';
 import type {
@@ -602,7 +604,21 @@ export default function AiForecastPage() {
                 }}
               />
               <Legend
-                formatter={(value: string) => value === 'historis' ? '📊 Data Historis (Aktual)' : '🔮 Proyeksi AI'}
+                formatter={(value: string) => (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', verticalAlign: 'middle' }}>
+                    {value === 'historis' ? (
+                      <>
+                        <BarChart3 className="w-3.5 h-3.5 text-current inline" aria-hidden="true" />
+                        <span>Data Historis (Aktual)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-3.5 h-3.5 text-current inline" aria-hidden="true" />
+                        <span>Proyeksi AI</span>
+                      </>
+                    )}
+                  </span>
+                )}
               />
               <Area
                 type="monotone"
@@ -834,8 +850,9 @@ export default function AiForecastPage() {
                     </div>
                   </div>
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block', marginBottom: '2px' }}>
-                      📦 Stok Gudang
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                      <Package className="w-3.5 h-3.5 text-current" aria-hidden="true" />
+                      <span>Stok Gudang</span>
                     </span>
                     <strong style={{ fontSize: 'var(--text-md)', color: m.current_stock > 0 ? 'var(--color-success-600)' : 'var(--color-danger-600)' }}>
                       {m.current_stock.toLocaleString('id-ID')} {m.uom}
@@ -862,8 +879,9 @@ export default function AiForecastPage() {
                     </strong>
                   </div>
                   <div>
-                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block', marginBottom: '2px' }}>
-                      🛒 Total Pengadaan
+                    <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                      <ShoppingCart className="w-3.5 h-3.5 text-current" aria-hidden="true" />
+                      <span>Total Pengadaan</span>
                     </span>
                     <strong style={{ fontSize: 'var(--text-lg)', color: 'var(--color-primary-600)' }}>
                       {m.total_procurement_needed.toLocaleString('id-ID')} {m.uom}
@@ -871,8 +889,9 @@ export default function AiForecastPage() {
                   </div>
                   {m.estimated_total_cost !== undefined && (
                     <div style={{ paddingLeft: '12px', borderLeft: '2px solid var(--border-color)' }}>
-                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block', marginBottom: '2px' }}>
-                        💰 Estimasi Budget
+                      <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+                        <Coins className="w-3.5 h-3.5 text-current" aria-hidden="true" />
+                        <span>Estimasi Budget</span>
                       </span>
                       <strong style={{ fontSize: 'var(--text-lg)', color: 'var(--text-primary)' }}>
                         Rp {m.estimated_total_cost.toLocaleString('id-ID')}

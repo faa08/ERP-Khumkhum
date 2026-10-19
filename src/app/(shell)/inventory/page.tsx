@@ -13,7 +13,7 @@ import { Select } from '@/components/ui/Select';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info, Filter, Layers, Tag } from 'lucide-react';
+import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info, Filter, Layers, Tag, Lock } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { getInventorySummary, getStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment, updateInventoryItem, deleteInventoryItem, syncInventoryWithMaster } from '@/actions/inventory';
@@ -1057,7 +1057,8 @@ export default function InventoryPage() {
                 fontSize: 'var(--text-xs)', fontWeight: 600, 
                 border: `1px solid ${isProduction ? 'var(--color-warning-200)' : 'var(--color-primary-200)'}` 
               }}>
-                {isProduction ? '🔒 Produksi / Hanya Lihat' : 'Investor / Read-Only Mode'}
+                <Lock className="w-3.5 h-3.5 text-current" aria-hidden="true" />
+                <span>{isProduction ? 'Produksi / Hanya Lihat' : 'Investor / Read-Only Mode'}</span>
               </span>
             )}
             {!isReadOnly && (

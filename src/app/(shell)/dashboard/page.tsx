@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Tabs } from '@/components/ui/Tabs';
-import { Factory, Package, ShieldCheck, ShoppingCart, TrendingUp, AlertTriangle, RefreshCw, BarChart3, Settings, AlertCircle } from 'lucide-react';
+import { Factory, Package, ShieldCheck, ShoppingCart, TrendingUp, AlertTriangle, RefreshCw, BarChart3, Settings, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { getKpiMetrics, getKpiTrend, type KpiFilter, type KpiTrendData } from '@/actions/management';
@@ -147,12 +147,12 @@ function ExecutiveDashboard() {
 
   // Tentukan warna status keseluruhan
   const getStatusColor = () => {
-    if (!metrics || !trendData) return { bg: 'var(--bg-subtle)', border: 'var(--border-default)', label: '—', color: 'var(--text-tertiary)' };
+    if (!metrics || !trendData) return { bg: 'var(--bg-subtle)', border: 'var(--border-default)', label: '—', color: 'var(--text-tertiary)', icon: null };
     const yieldOk = metrics.avg_yield_percentage >= (trendData.targets.yield || 80);
     const defectOk = metrics.overall_defect_rate <= (trendData.targets.defectRate || 5);
-    if (yieldOk && defectOk) return { bg: 'var(--color-success-50)', border: 'var(--color-success-500)', label: '✅ Baik', color: 'var(--color-success-700)' };
-    if (!yieldOk && !defectOk) return { bg: 'var(--color-warning-50)', border: 'var(--color-warning-500)', label: '⚠️ Perlu Perhatian', color: 'var(--color-danger-700)' };
-    return { bg: 'var(--color-warning-50)', border: 'var(--color-warning-500)', label: '🔶 Sebagian Tercapai', color: 'var(--color-warning-700)' };
+    if (yieldOk && defectOk) return { bg: 'var(--color-success-50)', border: 'var(--color-success-500)', label: 'Baik', color: 'var(--color-success-700)', icon: <CheckCircle2 className="w-4 h-4 text-emerald-600" aria-hidden="true" /> };
+    if (!yieldOk && !defectOk) return { bg: 'var(--color-warning-50)', border: 'var(--color-warning-500)', label: 'Perlu Perhatian', color: 'var(--color-danger-700)', icon: <AlertTriangle className="w-4 h-4 text-rose-600" aria-hidden="true" /> };
+    return { bg: 'var(--color-warning-50)', border: 'var(--color-warning-500)', label: 'Sebagian Tercapai', color: 'var(--color-warning-700)', icon: <AlertCircle className="w-4 h-4 text-amber-600" aria-hidden="true" /> };
   };
 
   // Transform trendData for Recharts
@@ -233,8 +233,12 @@ function ExecutiveDashboard() {
                 color: status.color,
                 background: 'rgba(255,255,255,0.7)',
                 border: `1px solid ${status.border}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
               }}>
-                {status.label}
+                {status.icon}
+                <span>{status.label}</span>
               </span>
             </div>
             <p style={{ margin: 0, fontSize: 'var(--text-md)', lineHeight: 1.7, color: 'var(--text-secondary)' }}>

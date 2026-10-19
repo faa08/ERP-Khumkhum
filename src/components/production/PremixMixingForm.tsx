@@ -449,13 +449,20 @@ export function PremixMixingForm() {
                               style={{
                                 fontSize: '10px',
                                 color: isShortage ? 'var(--color-danger-700)' : 'var(--text-tertiary)',
-                                display: 'block',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
                                 marginTop: '2px',
                               }}
                             >
-                              {isShortage
-                                ? `⚠️ Kurang! Stok: ${ing.available_qty} ${ing.uom}`
-                                : `Stok gudang: ${ing.available_qty} ${ing.uom}`}
+                              {isShortage ? (
+                                <>
+                                  <AlertTriangle className="w-3 h-3 text-rose-600 inline" aria-hidden="true" />
+                                  <span>Kurang! Stok: {ing.available_qty} {ing.uom}</span>
+                                </>
+                              ) : (
+                                <span>Stok gudang: {ing.available_qty} {ing.uom}</span>
+                              )}
                             </span>
                           </div>
 

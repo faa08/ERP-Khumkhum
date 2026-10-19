@@ -1131,7 +1131,7 @@ export default function ProductionStandardsPage() {
                             : `-- Pilih Bahan Baku Bumbu (${rawMaterials.length} bahan) --`}
                         </option>
                         {seasoningMaterials.length > 0 && (
-                          <optgroup label="🧂 Bumbu Tabur & Seasoning Gudang">
+                          <optgroup label="Bumbu Tabur & Seasoning Gudang">
                             {seasoningMaterials.map(rm => {
                               const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
                               return (
@@ -1205,7 +1205,7 @@ export default function ProductionStandardsPage() {
                             : `-- Pilih Bahan Baku Kemasan (${packagingMaterials.length || rawMaterials.length} bahan) --`}
                         </option>
                         {packagingMaterials.length > 0 && (
-                          <optgroup label="📦 Bahan Kemasan / Packaging Gudang">
+                          <optgroup label="Bahan Kemasan / Packaging Gudang">
                             {packagingMaterials.map(rm => {
                               const stock = (rm as any).available_stock ?? rm.stock_quantity ?? 0;
                               return (
@@ -1291,7 +1291,7 @@ export default function ProductionStandardsPage() {
                     >
                       <option value="">-- Pilih Bahan Kemasan Gudang --</option>
                       {packagingMaterials.length > 0 && (
-                        <optgroup label="📦 Bahan Kemasan / Packaging Gudang">
+                        <optgroup label="Bahan Kemasan / Packaging Gudang">
                           {packagingMaterials.map(rm => (
                             <option key={rm.id} value={rm.id}>
                               {rm.code ? `[${rm.code}] ` : ''}{rm.name} ({rm.uom})

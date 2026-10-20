@@ -31,7 +31,7 @@ export default function Navbar() {
           {/* Logo */}
           <a href="#hero" className="flex items-center gap-2">
             <Image
-              src="/95856209_353744725599963_5721628317879107584_n.jpg"
+              src="/khumkhum-logo.jpg"
               alt="KhumKhum Logo"
               width={40}
               height={40}

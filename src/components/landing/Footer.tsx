@@ -103,7 +103,7 @@ export default function Footer() {
           <div className="lg:col-span-4 flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <Image
-                src="/95856209_353744725599963_5721628317879107584_n.jpg"
+                src="/khumkhum-logo.jpg"
                 alt="KhumKhum Logo"
                 width={52}
                 height={52}

@@ -40,12 +40,25 @@ export const metadata: Metadata = {
   },
   description: `${COMPANY_NAME} Enterprise Resource Planning System`,
   robots: { index: false, follow: false },
+  icons: {
+    icon: [
+      { url: '/khumkhum-logo.jpg' },
+      { url: '/khumkhum-logo.jpg', sizes: '32x32' },
+      { url: '/khumkhum-logo.jpg', sizes: '16x16' },
+    ],
+    shortcut: '/khumkhum-logo.jpg',
+    apple: [
+      { url: '/khumkhum-logo.jpg', sizes: '180x180' },
+    ],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" data-theme="light" className={`${baloo2.variable} ${caveat.variable} ${jakartaSans.variable}`}>
       <head>
+        <link rel="icon" href="/khumkhum-logo.jpg" type="image/jpeg" />
+        <link rel="apple-touch-icon" href="/khumkhum-logo.jpg" />
       </head>
       <body suppressHydrationWarning>
         <AuthProvider>

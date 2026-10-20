@@ -14,6 +14,15 @@ export const metadata: Metadata = {
     "snack jamur tiram",
     "reseller jamur crispy",
   ],
+  icons: {
+    icon: [
+      { url: '/khumkhum-logo.jpg' },
+      { url: '/khumkhum-logo.jpg', sizes: '32x32' },
+      { url: '/khumkhum-logo.jpg', sizes: '16x16' },
+    ],
+    shortcut: '/khumkhum-logo.jpg',
+    apple: '/khumkhum-logo.jpg',
+  },
   openGraph: {
     title: "KhumKhum Jamur Crispy – Lokal Jamurnya, Nasional Rasanya",
     description:

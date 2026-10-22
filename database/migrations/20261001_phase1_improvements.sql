@@ -52,14 +52,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Hapus trigger jika sudah ada
-DROP TRIGGER IF EXISTS trigger_stock_movement_update ON stock_movements;
-
--- Pasang trigger pada tabel stock_movements
-CREATE TRIGGER trigger_stock_movement_update
-AFTER INSERT ON stock_movements
-FOR EACH ROW
-EXECUTE FUNCTION update_inventory_on_stock_movement();
+-- NONAKTIFKAN TRIGGER KARENA SISTEM SUDAH MENGELOLA STOK LEWAT SERVER ACTIONS
+-- DROP TRIGGER IF EXISTS trigger_stock_movement_update ON stock_movements;
+-- CREATE TRIGGER trigger_stock_movement_update
+-- AFTER INSERT ON stock_movements
+-- FOR EACH ROW
+-- EXECUTE FUNCTION update_inventory_on_stock_movement();
 
 
 -- FASE 1.1b: UPDATABLE VIEWS UNTUK SOFT DELETE (CARA A)

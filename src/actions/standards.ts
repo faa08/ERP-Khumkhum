@@ -38,7 +38,7 @@ const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
     },
   ],
   seasoning_per_variant: [
-    { variant: 'Original', seasoning_ratio_per_kg: 0.05, seasoning_name: 'Bumbu Gurih Original' },
+    { variant: 'Original', seasoning_ratio_per_kg: 0.0, seasoning_name: 'Tanpa Bumbu (Original)' },
     { variant: 'Balado', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Balado Pedas' },
     { variant: 'BBQ', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur BBQ Smoked' },
     { variant: 'Pedas Manis', seasoning_ratio_per_kg: 0.08, seasoning_name: 'Bumbu Tabur Pedas Manis' },

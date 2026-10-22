@@ -2189,12 +2189,13 @@ async function deductPackingMaterials(
     const defectCount = Number(input.defect_packaging_count) || 0;
 
     // 1. Hitung Takaran Bumbu Tabur Sesuai Resep Standar Varian Rasa
+    const isOriginalFlavor = flavor.toLowerCase().includes('ori') || flavor.toLowerCase() === 'original';
     const seasoningConfig = standards?.seasoning_per_variant?.find(
       (s) => s.variant.toLowerCase() === flavor.toLowerCase()
     );
 
-    let seasoningGrams = Number(input.seasoning_used_gram) || 0;
-    if (seasoningGrams <= 0 && packCount > 0) {
+    let seasoningGrams = isOriginalFlavor ? 0 : (Number(input.seasoning_used_gram) || 0);
+    if (!isOriginalFlavor && seasoningGrams <= 0 && packCount > 0) {
       const totalWeightKg = (packCount * weightGramPerPack) / 1000;
       const ratioPerKg = Number(seasoningConfig?.seasoning_ratio_per_kg) || 0.08;
       seasoningGrams = Math.round(totalWeightKg * ratioPerKg * 1000);

@@ -368,6 +368,8 @@ export default function ProductionPage() {
 
   // ── Standar Resep Bumbu Tabur & Kemasan Packing ──
   const getSeasoningRatioForVariant = useCallback((variantName: string): { ratio: number; name: string } => {
+    const vLower = variantName.toLowerCase();
+    if (vLower.includes('original') || vLower.includes('ori')) return { ratio: 0.0, name: 'Tanpa Bumbu (Original)' };
     const standardList = productionStandards?.seasoning_per_variant;
     const matched = standardList?.find(s => s.variant.toLowerCase() === variantName.toLowerCase());
     if (matched) {
@@ -376,8 +378,6 @@ export default function ProductionPage() {
         name: matched.seasoning_name || `Bumbu Tabur ${variantName}`,
       };
     }
-    const vLower = variantName.toLowerCase();
-    if (vLower.includes('original')) return { ratio: 0.05, name: 'Bumbu Gurih Original' };
     if (vLower.includes('super pedas')) return { ratio: 0.10, name: 'Bumbu Tabur Super Pedas' };
     return { ratio: 0.08, name: `Bumbu Tabur ${variantName}` };
   }, [productionStandards]);
@@ -388,6 +388,7 @@ export default function ProductionPage() {
     packWeightStr: string,
     longsongWeightStr?: string
   ): number => {
+    if (flavor.toLowerCase().includes('ori') || flavor.toLowerCase() === 'original') return 0;
     const { ratio } = getSeasoningRatioForVariant(flavor);
     const pcs = Number(packCountStr) || 0;
     const cleanWeight = parseInt((packWeightStr || '60g').replace(/\D/g, ''), 10) || 60;
@@ -451,6 +452,19 @@ export default function ProductionPage() {
 
   const matchedSeasoningInfo = useMemo(() => {
     const flavor = (packingForm.flavor_variant || 'Original').trim();
+    const isOri = flavor.toLowerCase().includes('ori') || flavor.toLowerCase() === 'original';
+    if (isOri) {
+      return {
+        ratio: 0,
+        recipeName: 'Tanpa Bumbu (Original)',
+        matchedRm: undefined,
+        availableStockInGram: null,
+        isStockSufficient: true,
+        neededGrams: 0,
+        stdRecommended: 0,
+      };
+    }
+
     const { ratio, name: recipeName } = getSeasoningRatioForVariant(flavor);
     const sLower = flavor.toLowerCase();
 
@@ -460,7 +474,6 @@ export default function ProductionPage() {
       if (sLower.includes('bbq')) return rmName.includes('bbq') || rmName.includes('barbeque');
       if (sLower.includes('super pedas')) return rmName.includes('super pedas');
       if (sLower.includes('pedas manis')) return rmName.includes('pedas manis') || rmName.includes('manis pedas');
-      if (sLower.includes('original')) return rmName.includes('gurih') || rmName.includes('original') || rmName.includes('asin');
       if (sLower.includes('keju')) return rmName.includes('keju') || rmName.includes('cheese');
       if (sLower.includes('jagung')) return rmName.includes('jagung');
       return rmName.includes(sLower);
@@ -542,21 +555,22 @@ export default function ProductionPage() {
     const cleanPackGram = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
     const neededKg = Number(((pcs * cleanPackGram) / 1000).toFixed(2));
     const seasoningGramsInput = Number(packingForm.seasoning_used_gram) || 0;
+    const isOriginalVariant = (packingForm.flavor_variant || '').toLowerCase().includes('ori') || (packingForm.flavor_variant || '').toLowerCase() === 'original';
 
     // 1. Stok Kemasan di Warehouse
     const isPackagingSufficient = matchedPackagingInfo.availableStock !== null
       ? matchedPackagingInfo.availableStock >= matchedPackagingInfo.neededPcs && matchedPackagingInfo.neededPcs > 0
       : true;
 
-    // 2. Stok Bumbu Tabur di Warehouse
-    const currentSeasoningRm = warehouseSeasoningMaterials.find(rm => rm.id === packingForm.seasoning_material_id) || matchedSeasoningInfo.matchedRm;
+    // 2. Stok Bumbu Tabur di Warehouse (diabaikan jika Original)
+    const currentSeasoningRm = isOriginalVariant ? null : (warehouseSeasoningMaterials.find(rm => rm.id === packingForm.seasoning_material_id) || matchedSeasoningInfo.matchedRm);
     const isGramUom = currentSeasoningRm?.uom?.toLowerCase() === 'gram' || currentSeasoningRm?.uom?.toLowerCase() === 'gr';
     const currentSeasoningStockGram = currentSeasoningRm
       ? (isGramUom ? Number(currentSeasoningRm.available_stock || 0) : Number(currentSeasoningRm.available_stock || 0) * 1000)
       : 0;
-    const isSeasoningSufficient = currentSeasoningRm
-      ? currentSeasoningStockGram >= seasoningGramsInput && seasoningGramsInput > 0
-      : seasoningGramsInput > 0;
+    const isSeasoningSufficient = isOriginalVariant
+      ? true
+      : (currentSeasoningRm ? currentSeasoningStockGram >= seasoningGramsInput && seasoningGramsInput > 0 : seasoningGramsInput > 0);
 
     // 3. Stok Wadah Jamur Selongsong di Buffer WIP
     const activeContainers = longsongContainers.filter(
@@ -565,13 +579,13 @@ export default function ProductionPage() {
     const totalContainerKg = activeContainers.reduce((sum, c) => sum + (Number(c.current_weight_kg) || 0), 0);
     const isLongsongSufficient = totalContainerKg >= neededKg && neededKg > 0;
 
-    const isValid = pcs > 0 && seasoningGramsInput > 0 && isPackagingSufficient && isSeasoningSufficient && isLongsongSufficient;
+    const isValid = pcs > 0 && isPackagingSufficient && isLongsongSufficient && (isOriginalVariant || (seasoningGramsInput > 0 && isSeasoningSufficient));
 
     let errorMessage = '';
     if (pcs <= 0) errorMessage = 'Jumlah kemasan wajib diisi minimal 1 pcs';
     else if (!isPackagingSufficient) errorMessage = `Stok kemasan di warehouse kurang (${matchedPackagingInfo.availableStock || 0}/${matchedPackagingInfo.neededPcs} pcs)`;
-    else if (seasoningGramsInput <= 0) errorMessage = 'Timbangan bumbu tabur riil belum diisi';
-    else if (!isSeasoningSufficient) errorMessage = `Stok bumbu di warehouse kurang (${currentSeasoningStockGram}g/${seasoningGramsInput}g)`;
+    else if (!isOriginalVariant && seasoningGramsInput <= 0) errorMessage = 'Timbangan bumbu tabur riil belum diisi';
+    else if (!isOriginalVariant && !isSeasoningSufficient) errorMessage = `Stok bumbu di warehouse kurang (${currentSeasoningStockGram}g/${seasoningGramsInput}g)`;
     else if (!isLongsongSufficient) errorMessage = `Stok selongsong di buffer kurang (${totalContainerKg.toFixed(1)}kg/${neededKg.toFixed(1)}kg)`;
 
     return {
@@ -579,6 +593,7 @@ export default function ProductionPage() {
       isPackagingSufficient,
       isSeasoningSufficient,
       isLongsongSufficient,
+      isOriginalVariant,
       seasoningGramsInput,
       currentSeasoningStockGram,
       currentSeasoningRm,
@@ -1937,9 +1952,11 @@ export default function ProductionPage() {
       return rmName.includes(sLower);
     });
 
+    const isOri = detected.flavor.toLowerCase().includes('ori') || detected.flavor.toLowerCase() === 'original';
+
     setPackingForm({
       production_order_id: spkId,
-      seasoning_material_id: matchedSeasoningRm?.id || '',
+      seasoning_material_id: isOri ? '' : (matchedSeasoningRm?.id || ''),
       frying_batch_id: '',
       flavor_variant: detected.flavor,
       longsong_number: String(nextLongsong),
@@ -1947,7 +1964,7 @@ export default function ProductionPage() {
       packaged_toples_count: String(remainingPcs),
       packaging_type: detected.packagingType,
       packaging_weight_gram: detected.weight,
-      seasoning_used_gram: '', // Diisi manual riil hasil timbangan
+      seasoning_used_gram: isOri ? '0' : '', // Untuk Original default 0g (tidak butuh bumbu tabur)
       longsongs_used_count: '1',
       defect_packaging_count: '0',
       notes: '',
@@ -4643,20 +4660,39 @@ export default function ProductionPage() {
                 </Button>
               )}
               {packingNavTab === 'PACKAGING' ? (
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    const pcs = Number(packingForm.packaged_toples_count);
-                    if (!pcs || pcs <= 0) {
-                      toast.error('Masukkan jumlah kemasan minimal 1 pcs');
-                      return;
-                    }
-                    setPackingNavTab('BUMBU');
-                  }}
-                  rightIcon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
-                >
-                  Lanjut ke Alokasi Bumbu
-                </Button>
+                packingValidationStatus.isOriginalVariant ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {!packingValidationStatus.isValid && (
+                      <span style={{ fontSize: '11px', color: 'var(--color-danger-700)', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {packingValidationStatus.errorMessage}
+                      </span>
+                    )}
+                    <Button
+                      variant="primary"
+                      onClick={handleCreatePacking}
+                      leftIcon={<Package className="w-4 h-4" aria-hidden="true" />}
+                      disabled={isSavingPacking || !packingValidationStatus.isValid}
+                      title={!packingValidationStatus.isValid ? packingValidationStatus.errorMessage : undefined}
+                    >
+                      {isSavingPacking ? 'Sedang Menyimpan...' : 'Simpan & Proses Packing (Original)'}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      const pcs = Number(packingForm.packaged_toples_count);
+                      if (!pcs || pcs <= 0) {
+                        toast.error('Masukkan jumlah kemasan minimal 1 pcs');
+                        return;
+                      }
+                      setPackingNavTab('BUMBU');
+                    }}
+                    rightIcon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
+                  >
+                    Lanjut ke Alokasi Bumbu
+                  </Button>
+                )
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   {!packingValidationStatus.isValid && (
@@ -4842,7 +4878,7 @@ export default function ProductionPage() {
                   }}
                 >
                   <Sparkles className="w-4 h-4" aria-hidden="true" />
-                  <span>2. Alokasi Bumbu Tabur</span>
+                  <span>2. Alokasi Bumbu Tabur {packingValidationStatus.isOriginalVariant ? '(Tidak Diperlukan)' : ''}</span>
                 </button>
               </div>
 
@@ -5043,83 +5079,105 @@ export default function ProductionPage() {
               {/* TAB 2: ALOKASI BUMBU TABUR */}
               {packingNavTab === 'BUMBU' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-                  {/* Dropdown Pemilihan Bumbu Tabur dari Warehouse */}
-                  <FormField label="Pilih Bahan Baku Bumbu Tabur (Gudang Warehouse)" required>
-                    <Select
-                      options={warehouseSeasoningMaterials.map(rm => ({
-                        value: rm.id,
-                        label: `[${rm.code || 'BUMBU'}] ${rm.name} (Stok: ${Number(rm.available_stock || 0).toLocaleString('id-ID')} ${rm.uom || 'g'})`,
-                      }))}
-                      value={packingForm.seasoning_material_id || currentSeasoningRm?.id || ''}
-                      onChange={(e) => {
-                        const rmId = e.target.value;
-                        setPackingForm(prev => ({
-                          ...prev,
-                          seasoning_material_id: rmId,
-                        }));
-                      }}
-                    />
-                  </FormField>
-
-                  {/* Stok Status Bumbu Card */}
-                  {currentSeasoningRm && (
+                  {packingValidationStatus.isOriginalVariant ? (
                     <div style={{
-                      padding: '10px 12px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--bg-subtle)',
-                      border: '1px solid var(--border-default)',
+                      padding: '16px',
+                      borderRadius: 'var(--radius-md)',
+                      background: 'var(--color-success-50)',
+                      border: '1px solid var(--color-success-200)',
                       display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      fontSize: 'var(--text-xs)',
+                      flexDirection: 'column',
+                      gap: '8px',
                     }}>
-                      <div>
-                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Item Bumbu Terpilih:</div>
-                        <strong style={{ color: 'var(--text-primary)' }}>{currentSeasoningRm.name}</strong>
-                        <span style={{ color: 'var(--text-secondary)', marginLeft: '6px', fontFamily: 'monospace' }}>({currentSeasoningRm.code})</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600, color: 'var(--color-success-900)' }}>
+                        <CheckCircle2 className="w-5 h-5 text-[var(--color-success-600)]" aria-hidden="true" />
+                        <span>Varian Original Tidak Menggunakan Bumbu Tabur</span>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ color: 'var(--text-secondary)' }}>Stok Tersedia di Warehouse:</div>
-                        <strong style={{ color: currentSeasoningStockGram > 0 ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>
-                          {currentSeasoningStockGram.toLocaleString('id-ID')} gram ({(currentSeasoningStockGram / 1000).toFixed(1)} kg)
-                        </strong>
-                      </div>
+                      <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--color-success-800)', lineHeight: 1.5 }}>
+                        Produk jamur crispy rasa <strong>Original</strong> mengandalkan gurih alami dari adonan tepung premix saat penggorengan. Tidak ada bumbu tabur yang dibutuhkan dan tidak ada stok bumbu yang akan dipotong dari gudang.
+                      </p>
                     </div>
-                  )}
+                  ) : (
+                    <>
+                      {/* Dropdown Pemilihan Bumbu Tabur dari Warehouse */}
+                      <FormField label="Pilih Bahan Baku Bumbu Tabur (Gudang Warehouse)" required>
+                        <Select
+                          options={warehouseSeasoningMaterials.map(rm => ({
+                            value: rm.id,
+                            label: `[${rm.code || 'BUMBU'}] ${rm.name} (Stok: ${Number(rm.available_stock || 0).toLocaleString('id-ID')} ${rm.uom || 'g'})`,
+                          }))}
+                          value={packingForm.seasoning_material_id || currentSeasoningRm?.id || ''}
+                          onChange={(e) => {
+                            const rmId = e.target.value;
+                            setPackingForm(prev => ({
+                              ...prev,
+                              seasoning_material_id: rmId,
+                            }));
+                          }}
+                        />
+                      </FormField>
 
-                  {/* Input Timbangan Riil Bumbu Tabur (Manual) */}
-                  <FormField label="Timbangan Riil Bumbu Tabur (gram) *" required>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={packingForm.seasoning_used_gram}
-                      onChange={(e) => setPackingForm({ ...packingForm, seasoning_used_gram: e.target.value })}
-                      placeholder="Masukkan timbangan bumbu riil (gram)..."
-                    />
-                    <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <Info className="w-3.5 h-3.5 shrink-0" />
-                      <span>Masukkan timbangan riil bumbu tabur dalam gram sesuai hasil penimbangan aktual di lapangan.</span>
-                    </div>
-                    {currentSeasoningRm && Number(packingForm.seasoning_used_gram) > currentSeasoningStockGram && (
-                      <div style={{
-                        marginTop: '6px',
-                        padding: '6px 10px',
-                        borderRadius: 'var(--radius-sm)',
-                        background: 'var(--color-danger-50)',
-                        border: '1px solid var(--color-danger-200)',
-                        color: 'var(--color-danger-800)',
-                        fontSize: '11px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontWeight: 600,
-                      }}>
-                        <AlertTriangle className="w-3.5 h-3.5 text-[var(--color-danger-600)] shrink-0" aria-hidden="true" />
-                        <span>Stok bumbu di warehouse kurang ({currentSeasoningStockGram.toLocaleString('id-ID')}g tersedia, dibutuhkan {packingForm.seasoning_used_gram}g). Packing tidak dapat disimpan sebelum stok gudang mencukupi.</span>
-                      </div>
-                    )}
-                  </FormField>
+                      {/* Stok Status Bumbu Card */}
+                      {currentSeasoningRm && (
+                        <div style={{
+                          padding: '10px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--bg-subtle)',
+                          border: '1px solid var(--border-default)',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: 'var(--text-xs)',
+                        }}>
+                          <div>
+                            <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Item Bumbu Terpilih:</div>
+                            <strong style={{ color: 'var(--text-primary)' }}>{currentSeasoningRm.name}</strong>
+                            <span style={{ color: 'var(--text-secondary)', marginLeft: '6px', fontFamily: 'monospace' }}>({currentSeasoningRm.code})</span>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ color: 'var(--text-secondary)' }}>Stok Tersedia di Warehouse:</div>
+                            <strong style={{ color: currentSeasoningStockGram > 0 ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>
+                              {currentSeasoningStockGram.toLocaleString('id-ID')} gram ({(currentSeasoningStockGram / 1000).toFixed(1)} kg)
+                            </strong>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Input Timbangan Riil Bumbu Tabur (Manual) */}
+                      <FormField label="Timbangan Riil Bumbu Tabur (gram) *" required>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={packingForm.seasoning_used_gram}
+                          onChange={(e) => setPackingForm({ ...packingForm, seasoning_used_gram: e.target.value })}
+                          placeholder="Masukkan timbangan bumbu riil (gram)..."
+                        />
+                        <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Info className="w-3.5 h-3.5 shrink-0" />
+                          <span>Masukkan timbangan riil bumbu tabur dalam gram sesuai hasil penimbangan aktual di lapangan.</span>
+                        </div>
+                        {currentSeasoningRm && Number(packingForm.seasoning_used_gram) > currentSeasoningStockGram && (
+                          <div style={{
+                            marginTop: '6px',
+                            padding: '6px 10px',
+                            borderRadius: 'var(--radius-sm)',
+                            background: 'var(--color-danger-50)',
+                            border: '1px solid var(--color-danger-200)',
+                            color: 'var(--color-danger-800)',
+                            fontSize: '11px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            fontWeight: 600,
+                          }}>
+                            <AlertTriangle className="w-3.5 h-3.5 text-[var(--color-danger-600)] shrink-0" aria-hidden="true" />
+                            <span>Stok bumbu di warehouse kurang ({currentSeasoningStockGram.toLocaleString('id-ID')}g tersedia, dibutuhkan {packingForm.seasoning_used_gram}g). Packing tidak dapat disimpan sebelum stok gudang mencukupi.</span>
+                          </div>
+                        )}
+                      </FormField>
+                    </>
+                  )}
 
                   {/* Catatan Packing */}
                   <FormField label="Catatan Packing (Opsional)">

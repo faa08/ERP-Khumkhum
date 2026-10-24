@@ -2075,13 +2075,27 @@ export async function updateLongsongContainer(
       } catch (_) {}
     }
 
-    const memIdx = memoryLongsongContainers.findIndex(c => c.id === id);
-    if (memIdx !== -1) {
-      memoryLongsongContainers[memIdx] = {
-        ...memoryLongsongContainers[memIdx],
+    let persisted = await getPersistedContainers();
+    if (persisted.length === 0 && memoryLongsongContainers.length > 0) {
+      persisted = [...memoryLongsongContainers];
+    }
+    const idx = persisted.findIndex(c => c.id === id);
+    if (idx !== -1) {
+      persisted[idx] = {
+        ...persisted[idx],
         ...updatePayload,
       };
-      await savePersistedContainers(memoryLongsongContainers);
+      memoryLongsongContainers = persisted;
+      await savePersistedContainers(persisted);
+    } else {
+      const memIdx = memoryLongsongContainers.findIndex(c => c.id === id);
+      if (memIdx !== -1) {
+        memoryLongsongContainers[memIdx] = {
+          ...memoryLongsongContainers[memIdx],
+          ...updatePayload,
+        };
+        await savePersistedContainers(memoryLongsongContainers);
+      }
     }
 
     await logAuditEvent({
@@ -2233,12 +2247,19 @@ export async function revertLongsongForPacking(
     } else {
       // 2. Fallback LIFO reverse restoration ke wadah yang EMPTY / PARTIAL
       let remainingToRestore = Math.max(0, requiredKg);
-      const eligible = containers
+      let eligible = containers
         .filter(c => {
-          const matchOrder = !productionOrderId || c.production_order_id === productionOrderId;
+          const matchOrder = productionOrderId ? c.production_order_id === productionOrderId : false;
           return matchOrder && (c.status === 'EMPTY' || c.status === 'PARTIAL' || Number(c.current_weight_kg) < Number(c.initial_weight_kg || 2.6));
         })
         .sort((a, b) => (b.container_number || 0) - (a.container_number || 0));
+
+      // Jika tidak ada wadah khusus dengan orderId tersebut (karena wadah dibuat oleh SPK Goreng Curah dan dipakai oleh SPK Retail)
+      if (eligible.length === 0) {
+        eligible = containers
+          .filter(c => c.status === 'EMPTY' || c.status === 'PARTIAL' || Number(c.current_weight_kg) < Number(c.initial_weight_kg || 2.6))
+          .sort((a, b) => (b.container_number || 0) - (a.container_number || 0));
+      }
 
       for (const c of eligible) {
         if (remainingToRestore <= 0) break;

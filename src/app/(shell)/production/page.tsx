@@ -2551,12 +2551,20 @@ export default function ProductionPage() {
 
   const handleOpenCreatePacking = (targetOrderId?: string) => {
     const saved = getFormDraft<typeof packingForm>('draft_prod_packing');
-    if (saved && (saved.packaged_toples_count || saved.notes || (saved.seasoning_used_gram && saved.seasoning_used_gram !== '0'))) {
+    if (
+      saved &&
+      (!targetOrderId || saved.production_order_id === targetOrderId) &&
+      (saved.packaged_toples_count || saved.notes || (saved.seasoning_used_gram && saved.seasoning_used_gram !== '0'))
+    ) {
       setPackingForm(saved);
       toast.info('Draft input packing sebelumnya berhasil dipulihkan');
       setPackingNavTab('PACKAGING');
       setCreatePackingOpen(true);
       return;
+    }
+
+    if (targetOrderId && saved && saved.production_order_id !== targetOrderId) {
+      clearFormDraft('draft_prod_packing');
     }
 
     // Cari target SPK yang diminta secara langsung atau SPK yang masih butuh packing
@@ -3205,7 +3213,7 @@ export default function ProductionPage() {
               {order?.batch_number || 'SPK Terintegrasi'}
             </strong>
             <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-              {wajanNum ? `Batch #${wajanNum}` : 'Campuran SPK'}
+              {order?.product_variant || (wajanNum ? `Batch #${wajanNum}` : 'Selongsong WIP')}
             </div>
           </div>
         );
@@ -4010,6 +4018,7 @@ export default function ProductionPage() {
                     {friedOrdersData.map((item) => {
                       const s = item.order.status;
                       const hasPackaged = item.totalPackagedPcs > 0 || item.packedCount > 0;
+                      const isPackingComplete = s === 'COMPLETED' || (item.totalPackagedPcs >= (item.order.target_quantity || 1) && item.totalPackagedPcs > 0);
                       return (
                         <tr key={item.order.id} style={{ borderBottom: '1px solid var(--border-default)' }}>
                           <td style={{ padding: '10px 12px' }}>
@@ -4066,6 +4075,8 @@ export default function ProductionPage() {
                               <StatusBadge status="cancelled" label="REJECTED (Afkir)" />
                             ) : s === 'QC_PENDING' ? (
                               <StatusBadge status="info" label="Menunggu Uji QC" />
+                            ) : isPackingComplete ? (
+                              <StatusBadge status="completed" label="Selesai Dipacking" />
                             ) : hasPackaged ? (
                               <StatusBadge status="active" label="Sedang Dipacking" />
                             ) : (
@@ -4091,13 +4102,13 @@ export default function ProductionPage() {
                               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
                                 {s !== 'RELEASED' && s !== 'REJECTED' && (
                                   <Button
-                                    variant="primary"
+                                    variant={isPackingComplete ? 'secondary' : 'primary'}
                                     size="sm"
                                     leftIcon={<Box className="w-3.5 h-3.5" aria-hidden="true" />}
                                     onClick={() => handleOpenCreatePacking(item.order.id)}
                                     title="Buka form input packing rasa untuk SPK ini"
                                   >
-                                    Packing SPK Ini
+                                    {isPackingComplete ? 'Packing Tambahan' : 'Packing SPK Ini'}
                                   </Button>
                                 )}
                                 {s === 'RELEASED' ? (
@@ -4123,7 +4134,7 @@ export default function ProductionPage() {
                                   </Button>
                                 ) : (
                                   <Button
-                                    variant="secondary"
+                                    variant={isPackingComplete ? 'primary' : 'secondary'}
                                     size="sm"
                                     leftIcon={<ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />}
                                     onClick={() => handleOpenSubmitQc(item)}

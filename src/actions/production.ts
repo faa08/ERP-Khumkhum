@@ -3500,9 +3500,10 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
           .maybeSingle();
 
         if (currOrder) {
-          const nextStatus = currOrder.status === 'DRAFT'
-            ? 'IN_PROGRESS'
-            : currOrder.status;
+          const isTargetReached = totalPackagedPcs >= (currOrder.target_quantity || 0);
+          const nextStatus = isTargetReached
+            ? 'COMPLETED'
+            : (currOrder.status === 'DRAFT' ? 'IN_PROGRESS' : currOrder.status);
 
           await supabaseAdmin
             .from('production_orders')
@@ -3525,9 +3526,10 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
       const memOrderIdx = memoryProductionOrders.findIndex(o => o.id === input.production_order_id);
       if (memOrderIdx !== -1) {
         const o = memoryProductionOrders[memOrderIdx];
+        const isTargetReached = totalPackagedPcs >= (o.target_quantity || 0);
         memoryProductionOrders[memOrderIdx] = {
           ...o,
-          status: o.status === 'DRAFT' ? 'IN_PROGRESS' : o.status,
+          status: isTargetReached ? 'COMPLETED' : (o.status === 'DRAFT' ? 'IN_PROGRESS' : o.status),
           target_quantity: o.target_quantity,
         };
       }

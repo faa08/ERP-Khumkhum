@@ -17,6 +17,7 @@ import type {
   DbPackingEntry,
   DbLongsongContainer,
   DbTimeStudySample,
+  ProductionStandardConfig,
   isFryingSpk,
 } from '@/types/database';
 
@@ -4839,6 +4840,82 @@ export async function getPremixData(): Promise<{
   } catch (err: any) {
     console.error('getPremixData error:', err);
     return { success: false, error: err.message };
+  }
+}
+
+// ─────────────────────────────────────────────
+// CONSOLIDATED PRODUCTION DASHBOARD DATA (HIGH PERFORMANCE)
+// ─────────────────────────────────────────────
+
+export interface ProductionDashboardData {
+  orders: DbProductionOrder[];
+  products: DbProduct[];
+  rawMaterials: (DbRawMaterial & { available_stock?: number })[];
+  fryingBatches: DbFryingBatch[];
+  packingEntries: DbPackingEntry[];
+  metrics: {
+    activeFryingBatchesToday: number;
+    avgYieldToday: number;
+    totalOutputGramToday: number;
+    totalKremesanGramToday: number;
+    unpackedLongsongCount: number;
+    packedToplesToday: number;
+    totalSeasoningGramToday: number;
+  };
+  standards: ProductionStandardConfig | null;
+  containers: DbLongsongContainer[];
+}
+
+export async function getProductionDashboardData(): Promise<{
+  success: boolean;
+  data?: ProductionDashboardData;
+  error?: string;
+}> {
+  try {
+    await requireAuth(['PRODUCTION', 'QC', 'WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX', 'SALES']);
+
+    const [
+      ordersRes,
+      optionsRes,
+      fryingRes,
+      packingRes,
+      metricsRes,
+      standardsRes,
+      containersRes,
+    ] = await Promise.all([
+      getProductionOrders(),
+      getProductionFormOptions(),
+      getAllFryingBatches(),
+      getAllPackingEntries(),
+      getFryingPackingMetrics(),
+      getProductionStandards(),
+      getLongsongContainers(),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        orders: ordersRes.success && ordersRes.data ? ordersRes.data : [],
+        products: optionsRes.success && optionsRes.products ? optionsRes.products : [],
+        rawMaterials: optionsRes.success && optionsRes.rawMaterials ? optionsRes.rawMaterials : [],
+        fryingBatches: fryingRes.success && fryingRes.data ? fryingRes.data : [],
+        packingEntries: packingRes.success && packingRes.data ? packingRes.data : [],
+        metrics: metricsRes.success && metricsRes.data ? metricsRes.data : {
+          activeFryingBatchesToday: 0,
+          avgYieldToday: 0,
+          totalOutputGramToday: 0,
+          totalKremesanGramToday: 0,
+          unpackedLongsongCount: 0,
+          packedToplesToday: 0,
+          totalSeasoningGramToday: 0,
+        },
+        standards: standardsRes?.success && standardsRes.data ? standardsRes.data : null,
+        containers: containersRes?.success && containersRes.data ? containersRes.data : [],
+      },
+    };
+  } catch (err: any) {
+    console.error('getProductionDashboardData error:', err);
+    return { success: false, error: err.message || 'Gagal memuat data dashboard produksi' };
   }
 }
 

@@ -59,6 +59,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { format, isToday, isThisMonth, isThisYear, startOfDay, endOfDay } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import {
+  getProductionDashboardData,
   getProductionOrders,
   createProductionOrder,
   completeProductionOrder,
@@ -1163,57 +1164,55 @@ export default function ProductionPage() {
   // DATA LOADING
   // ─────────────────────────────────────────────
 
-  const loadData = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const [ordersRes, optionsRes, fryingRes, packingRes, metricsRes, standardsRes, containersRes] = await Promise.all([
-        getProductionOrders(),
-        getProductionFormOptions(),
-        getAllFryingBatches(),
-        getAllPackingEntries(),
-        getFryingPackingMetrics(),
-        getProductionStandards(),
-        getLongsongContainers(),
-      ]);
+  const isFirstLoadRef = useRef(true);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-      if (ordersRes.success && ordersRes.data) setOrders(ordersRes.data);
-      if (optionsRes.success) {
-        if (optionsRes.products) setProducts(optionsRes.products);
-        if (optionsRes.rawMaterials) setRawMaterials(optionsRes.rawMaterials);
+  const loadData = useCallback(async () => {
+    if (isFirstLoadRef.current) {
+      setIsLoading(true);
+    }
+    try {
+      const res = await getProductionDashboardData();
+
+      if (res.success && res.data) {
+        setOrders(res.data.orders);
+        if (res.data.products && res.data.products.length > 0) setProducts(res.data.products);
+        if (res.data.rawMaterials && res.data.rawMaterials.length > 0) setRawMaterials(res.data.rawMaterials);
+        setFryingBatches(res.data.fryingBatches);
+        setPackingEntries(res.data.packingEntries);
+        setFryingMetrics(res.data.metrics);
+        if (res.data.standards) setProductionStandards(res.data.standards);
+        setLongsongContainers(res.data.containers);
       }
-      if (fryingRes.success && fryingRes.data) setFryingBatches(fryingRes.data);
-      if (packingRes.success && packingRes.data) setPackingEntries(packingRes.data);
-      if (metricsRes.success && metricsRes.data) setFryingMetrics(metricsRes.data);
-      if (standardsRes?.success && standardsRes.data) setProductionStandards(standardsRes.data);
-      if (containersRes?.success && containersRes.data) setLongsongContainers(containersRes.data);
     } catch (err: any) {
       console.error('Gagal memuat data produksi:', err);
     } finally {
       setIsLoading(false);
+      isFirstLoadRef.current = false;
     }
   }, []);
 
   useEffect(() => {
     loadData();
 
+    const handleDebouncedReload = () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        loadData();
+      }, 300);
+    };
+
     // Supabase Realtime Subscription
     const channel = supabase
       .channel('production_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_orders' }, () => {
-        loadData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'frying_batches' }, () => {
-        loadData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'packing_entries' }, () => {
-        loadData();
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_longsong_containers' }, () => {
-        loadData();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_orders' }, handleDebouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_frying_batches' }, handleDebouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_packing_entries' }, handleDebouncedReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production_longsong_containers' }, handleDebouncedReload)
       .subscribe();
 
     return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       supabase.removeChannel(channel);
     };
   }, [loadData]);

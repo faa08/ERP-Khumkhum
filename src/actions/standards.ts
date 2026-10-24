@@ -72,12 +72,19 @@ const DEFAULT_QC_STANDARDS: QcStandardConfig = {
 // PRODUCTION STANDARDS
 // ─────────────────────────────────────────────
 
+let cachedProductionStandards: { data: ProductionStandardConfig; timestamp: number } | null = null;
+const STANDARDS_CACHE_TTL_MS = 60 * 1000;
+
 export async function getProductionStandards(): Promise<{
   success: boolean;
   data: ProductionStandardConfig;
   error?: string;
 }> {
   try {
+    if (cachedProductionStandards && Date.now() - cachedProductionStandards.timestamp < STANDARDS_CACHE_TTL_MS) {
+      return { success: true, data: cachedProductionStandards.data };
+    }
+
     await requireAuth(['PRODUCTION', 'QC', 'SUPER_ADMIN', 'MANAGEMENT']);
 
     const { data, error } = await supabaseAdmin
@@ -192,6 +199,7 @@ export async function getProductionStandards(): Promise<{
       console.warn('Auto-match raw materials warning:', enrichErr);
     }
 
+    cachedProductionStandards = { data: mergedConfig, timestamp: Date.now() };
     return { success: true, data: mergedConfig };
   } catch (err: any) {
     console.error('getProductionStandards error:', err);
@@ -203,6 +211,7 @@ export async function saveProductionStandards(
   config: ProductionStandardConfig
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    cachedProductionStandards = null;
     const { user } = await requireAuth(['SUPER_ADMIN', 'PRODUCTION', 'QC', 'MANAGEMENT']);
 
     const { error } = await supabaseAdmin.from('settings').upsert(

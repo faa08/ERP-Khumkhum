@@ -459,10 +459,13 @@ export default function ProductionPage() {
   }, [regularFryingForm]);
 
   const isHaccpFryingValid = useMemo(() => {
+    const duration = calculateTimeDifferenceMinutes(haccpFryingForm.start_time, haccpFryingForm.end_time);
     return (
       !!haccpFryingForm.oil_temp_celsius &&
       !!haccpFryingForm.start_time &&
       !!haccpFryingForm.end_time &&
+      duration > 0 &&
+      duration <= 30 &&
       !!haccpFryingForm.output_weight_gram &&
       Number(haccpFryingForm.output_weight_gram) > 0 &&
       !!haccpFryingForm.longsong_count &&
@@ -998,6 +1001,7 @@ export default function ProductionPage() {
     if (isNaN(batchCount) || batchCount <= 0) missing.push('Jumlah Batch');
 
     // Tab 2: Wadah Longsong
+    const totalContainersKg = fryingRunForm.containers.reduce((acc, c) => acc + (parseFloat(c.weight_kg) || 0), 0);
     if (isNaN(longsongCount) || longsongCount <= 0) {
       missing.push('Jumlah Wadah Longsong (Tab 2)');
     } else if (
@@ -1005,6 +1009,13 @@ export default function ProductionPage() {
       fryingRunForm.containers.some(c => !c.weight_kg || isNaN(parseFloat(c.weight_kg)) || parseFloat(c.weight_kg) <= 0)
     ) {
       missing.push('Bobot Wadah Longsong (Tab 2)');
+    } else if (!isNaN(output) && output > 0 && Math.abs(totalContainersKg - output) > 0.05) {
+      const diff = Number((output - totalContainersKg).toFixed(2));
+      if (diff > 0) {
+        missing.push(`Alokasi Wadah Kurang ${diff} kg dari Total Output (${output} kg)`);
+      } else {
+        missing.push(`Alokasi Wadah Melebihi ${Math.abs(diff)} kg dari Total Output (${output} kg)`);
+      }
     }
 
     // Tab 3: Rincian Batch Wajan
@@ -1012,11 +1023,16 @@ export default function ProductionPage() {
       !isNaN(batchCount) && batchCount > 0 &&
       (fryingRunForm.batches.length !== batchCount ||
         fryingRunForm.batches.some(
-          b => !b.duration_minutes || isNaN(parseFloat(b.duration_minutes)) || parseFloat(b.duration_minutes) <= 0 ||
+          b => !b.duration_minutes || isNaN(parseFloat(b.duration_minutes)) || parseFloat(b.duration_minutes) <= 0 || parseFloat(b.duration_minutes) > 30 ||
                !b.oil_temp_celsius || isNaN(parseFloat(b.oil_temp_celsius)) || parseFloat(b.oil_temp_celsius) <= 0
         ))
     ) {
-      missing.push('Durasi/Suhu Tiap Batch (Tab 3)');
+      const hasOver30 = fryingRunForm.batches.some(b => parseFloat(b.duration_minutes) > 30);
+      if (hasOver30) {
+        missing.push('Durasi Batch Melebihi 30 Menit (Tab 3)');
+      } else {
+        missing.push('Durasi/Suhu Tiap Batch (Tab 3)');
+      }
     }
 
     // Rendemen wajar BOM
@@ -1863,9 +1879,49 @@ export default function ProductionPage() {
 
   const handleContainerWeightChange = (index: number, weightStr: string) => {
     setFryingRunForm(f => {
+      const totalOutput = parseFloat(f.output_finished_kg) || 0;
+      const otherContainersSum = f.containers.reduce((acc, c, i) => {
+        if (i === index) return acc;
+        return acc + (parseFloat(c.weight_kg) || 0);
+      }, 0);
+
+      const maxForThis = Math.max(0, Number((totalOutput - otherContainersSum).toFixed(2)));
+      let finalStr = weightStr;
+      const inputNum = parseFloat(weightStr);
+
+      if (totalOutput > 0 && !isNaN(inputNum) && inputNum > maxForThis) {
+        finalStr = String(maxForThis);
+        toast.warning(
+          `Bobot Wadah #${f.containers[index]?.container_number || index + 1} dipatok maksimal ${maxForThis.toFixed(2)} kg sesuai sisa total output (${totalOutput.toFixed(2)} kg).`
+        );
+      }
+
       const updated = [...f.containers];
       if (updated[index]) {
-        updated[index] = { ...updated[index], weight_kg: weightStr };
+        updated[index] = { ...updated[index], weight_kg: finalStr };
+      }
+      return {
+        ...f,
+        containers: updated,
+      };
+    });
+  };
+
+  const handleFillRemainingContainerWeight = (index: number) => {
+    setFryingRunForm(f => {
+      const totalOutput = parseFloat(f.output_finished_kg) || 0;
+      if (totalOutput <= 0) {
+        toast.warning('Isi total berat jamur matang terlebih dahulu di Tab 1');
+        return f;
+      }
+      const otherContainersSum = f.containers.reduce((acc, c, i) => {
+        if (i === index) return acc;
+        return acc + (parseFloat(c.weight_kg) || 0);
+      }, 0);
+      const remaining = Math.max(0, Number((totalOutput - otherContainersSum).toFixed(2)));
+      const updated = [...f.containers];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], weight_kg: String(remaining) };
       }
       return {
         ...f,
@@ -1905,9 +1961,15 @@ export default function ProductionPage() {
 
   const handleBatchDurationChange = (index: number, val: string) => {
     setFryingRunForm(f => {
+      let finalVal = val;
+      const numVal = parseFloat(val);
+      if (!isNaN(numVal) && numVal > 30) {
+        finalVal = '30';
+        toast.warning('Durasi penggorengan per batch dibatasi maksimal 30 menit sesuai kontrol proses.');
+      }
       const updated = [...f.batches];
       if (updated[index]) {
-        updated[index] = { ...updated[index], duration_minutes: val };
+        updated[index] = { ...updated[index], duration_minutes: finalVal };
       }
       return { ...f, batches: updated };
     });
@@ -1953,7 +2015,8 @@ export default function ProductionPage() {
   };
 
   const handleSetAllBatchesStandard = () => {
-    const stdDur = Number(productionStandards?.frying_duration_minutes) || 15;
+    const rawStd = Number(productionStandards?.frying_duration_minutes) || 15;
+    const stdDur = Math.min(30, Math.max(1, rawStd));
     const oilMin = Number(productionStandards?.oil_temp_min) || 150;
     const oilMax = Number(productionStandards?.oil_temp_max) || 180;
     const stdTemp = Math.round((oilMin + oilMax) / 2) || 165;
@@ -2295,6 +2358,11 @@ export default function ProductionPage() {
     const startedAtIso = timeStringToIso(haccpFryingForm.start_time);
     const finishedAtIso = timeStringToIso(haccpFryingForm.end_time);
     const durationMinutes = calculateTimeDifferenceMinutes(haccpFryingForm.start_time, haccpFryingForm.end_time);
+
+    if (durationMinutes > 30) {
+      toast.error('Durasi masak HACCP dibatasi maksimal 30 menit. Periksa kembali jam mulai dan jam selesai.');
+      return;
+    }
 
     const res = await createFryingBatch({
       production_order_id: haccpFryingForm.production_order_id || undefined,
@@ -4137,7 +4205,7 @@ export default function ProductionPage() {
           <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: 'var(--space-2)' }}>
             {!isHaccpFryingValid && (
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-danger-600)', textAlign: 'right', fontWeight: 500 }}>
-                * Wajib mengisi waktu mulai, waktu selesai, output matang (&gt; 0g), dan jumlah longsong (&gt; 0)
+                * Wajib mengisi waktu mulai, waktu selesai (maks 30 menit), output matang (&gt; 0g), dan jumlah longsong (&gt; 0)
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
@@ -5198,121 +5266,207 @@ export default function ProductionPage() {
                 )}
 
                 {/* ── TAB 2: RINCIAN WADAH LONGSONG ── */}
-                {fryingRunTab === 'LONGSONG' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-                    <div style={{
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      background: 'var(--color-primary-50)',
-                      border: '1px solid var(--color-primary-200)',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      flexWrap: 'wrap',
-                      gap: '8px',
-                    }}>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 'var(--text-sm)', color: 'var(--color-primary-900)' }}>
-                          Total Output: {outputFinished.toFixed(2)} kg
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--color-primary-700)', marginTop: '2px' }}>
-                          Terbagi ke dalam {fryingRunForm.containers.length} wadah longsong tertutup
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          size="sm"
-                          onClick={handleAutoBalanceContainers}
-                          title="Bagi rata total berat output ke setiap wadah"
-                        >
-                          Bagi Rata Otomatis
-                        </Button>
-                      </div>
-                    </div>
+                {fryingRunTab === 'LONGSONG' && (() => {
+                  const accumulatedContainersKg = fryingRunForm.containers.reduce((acc, c) => acc + (parseFloat(c.weight_kg) || 0), 0);
+                  const remainingUnallocatedKg = Number((outputFinished - accumulatedContainersKg).toFixed(2));
+                  const isFullyAllocated = Math.abs(remainingUnallocatedKg) <= 0.01;
+                  const isOverAllocated = remainingUnallocatedKg < -0.01;
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', alignItems: 'center' }}>
-                      <FormField label="Jumlah Wadah Longsong yang Terisi" required>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={fryingRunForm.output_longsong_count}
-                          onChange={(e) => handleFryingRunLongsongChange(e.target.value)}
-                          placeholder={`Misal: ${Math.max(1, Math.round((actualMushroom * 0.67) / 2.5))}`}
-                        />
-                        <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-                          Input manual bobot wadah, atau klik &quot;Bagi Rata Otomatis&quot; di atas.
-                        </span>
-                      </FormField>
-
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                       <div style={{
-                        padding: '10px 12px',
+                        padding: '10px 14px',
                         borderRadius: 'var(--radius-md)',
-                        background: 'var(--bg-subtle)',
-                        border: '1px solid var(--border-default)',
-                        fontSize: '11px',
-                        color: 'var(--text-secondary)',
-                      }}>
-                        <div>Rata-rata per Longsong: <strong>{(outputFinished / (longsongCount || 1)).toFixed(2)} kg</strong></div>
-                        <div style={{ marginTop: '2px', color: 'var(--text-tertiary)' }}>
-                          Standar wadah fisik longsong di pabrik: ~2.4 kg - 2.6 kg per wadah.
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Grid Input Berat Wadah */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          Berat Aktual Masing-Masing Wadah Longsong:
-                        </span>
-                        {fryingRunForm.containers.length > 0 && (
-                          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                            {fryingRunForm.containers.filter(c => parseFloat(c.weight_kg) > 0).length} dari {fryingRunForm.containers.length} wadah terisi
-                          </span>
-                        )}
-                      </div>
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
+                        background: isFullyAllocated ? 'var(--color-success-50)' : isOverAllocated ? 'var(--color-danger-50)' : 'var(--color-primary-50)',
+                        border: `1px solid ${isFullyAllocated ? 'var(--color-success-300)' : isOverAllocated ? 'var(--color-danger-300)' : 'var(--color-primary-200)'}`,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        flexWrap: 'wrap',
                         gap: '8px',
                       }}>
-                        {fryingRunForm.containers.map((c, idx) => (
-                          <div
-                            key={c.container_number}
-                            style={{
-                              padding: '8px',
-                              background: 'var(--bg-surface)',
-                              border: '1px solid var(--border-subtle)',
-                              borderRadius: 'var(--radius-sm)',
-                            }}
-                          >
-                            <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                              Wadah #{c.container_number}
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <Input
-                                type="number"
-                                step="0.05"
-                                min="0.1"
-                                value={c.weight_kg}
-                                onChange={(e) => handleContainerWeightChange(idx, e.target.value)}
-                                placeholder="0.0"
-                                style={{ height: '30px', fontSize: '12px', padding: '2px 6px' }}
-                              />
-                              <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>kg</span>
-                            </div>
+                        <div>
+                          <div style={{
+                            fontWeight: 700,
+                            fontSize: 'var(--text-sm)',
+                            color: isFullyAllocated ? 'var(--color-success-900)' : isOverAllocated ? 'var(--color-danger-900)' : 'var(--color-primary-900)',
+                          }}>
+                            Total Output: {outputFinished.toFixed(2)} kg
                           </div>
-                        ))}
+                          <div style={{
+                            fontSize: '11px',
+                            color: isFullyAllocated ? 'var(--color-success-700)' : isOverAllocated ? 'var(--color-danger-700)' : 'var(--color-primary-700)',
+                            marginTop: '2px',
+                            display: 'flex',
+                            gap: '8px',
+                            flexWrap: 'wrap',
+                          }}>
+                            <span>Terbagi ke dalam {fryingRunForm.containers.length} wadah</span>
+                            <span>•</span>
+                            <span>Teralokasi: <strong>{accumulatedContainersKg.toFixed(2)} kg</strong></span>
+                            <span>•</span>
+                            <span>
+                              {isFullyAllocated ? (
+                                <strong style={{ color: 'var(--color-success-700)' }}>Semua Wadah Pas 100%</strong>
+                              ) : isOverAllocated ? (
+                                <strong style={{ color: 'var(--color-danger-700)' }}>Kelebihan {Math.abs(remainingUnallocatedKg).toFixed(2)} kg!</strong>
+                              ) : (
+                                <strong>Sisa Belum Teralokasi: {remainingUnallocatedKg.toFixed(2)} kg</strong>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={handleAutoBalanceContainers}
+                            title="Bagi rata total berat output ke setiap wadah"
+                          >
+                            Bagi Rata Otomatis
+                          </Button>
+                        </div>
                       </div>
-                      <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'flex', justifyContent: 'space-between', paddingTop: '4px' }}>
-                        <span>Setiap wadah ini akan terdaftar di kartu stok WIP untuk diserap saat SPK Packing.</span>
-                        <span>Akumulasi: <strong>{fryingRunForm.containers.reduce((acc, c) => acc + (parseFloat(c.weight_kg) || 0), 0).toFixed(2)} kg</strong></span>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', alignItems: 'center' }}>
+                        <FormField label="Jumlah Wadah Longsong yang Terisi" required>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={fryingRunForm.output_longsong_count}
+                            onChange={(e) => handleFryingRunLongsongChange(e.target.value)}
+                            placeholder={`Misal: ${Math.max(1, Math.round((actualMushroom * 0.67) / 2.5))}`}
+                          />
+                          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                            Input manual bobot wadah, atau klik &quot;Bagi Rata Otomatis&quot; di atas.
+                          </span>
+                        </FormField>
+
+                        <div style={{
+                          padding: '10px 12px',
+                          borderRadius: 'var(--radius-md)',
+                          background: 'var(--bg-subtle)',
+                          border: '1px solid var(--border-default)',
+                          fontSize: '11px',
+                          color: 'var(--text-secondary)',
+                        }}>
+                          <div>Rata-rata per Longsong: <strong>{(outputFinished / (longsongCount || 1)).toFixed(2)} kg</strong></div>
+                          <div style={{ marginTop: '2px', color: 'var(--text-tertiary)' }}>
+                            Standar wadah fisik longsong di pabrik: ~2.4 kg - 2.6 kg per wadah.
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Grid Input Berat Wadah */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Berat Aktual Masing-Masing Wadah Longsong:
+                          </span>
+                          {fryingRunForm.containers.length > 0 && (
+                            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                              {fryingRunForm.containers.filter(c => parseFloat(c.weight_kg) > 0).length} dari {fryingRunForm.containers.length} wadah terisi
+                            </span>
+                          )}
+                        </div>
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                          gap: '8px',
+                        }}>
+                          {fryingRunForm.containers.map((c, idx) => {
+                            const otherSum = fryingRunForm.containers.reduce((acc, otherC, i) => i !== idx ? acc + (parseFloat(otherC.weight_kg) || 0) : acc, 0);
+                            const maxForThis = Math.max(0, Number((outputFinished - otherSum).toFixed(2)));
+                            const currentVal = parseFloat(c.weight_kg) || 0;
+                            const canTakeMore = remainingUnallocatedKg > 0.01;
+
+                            return (
+                              <div
+                                key={c.container_number}
+                                style={{
+                                  padding: '8px',
+                                  background: 'var(--bg-surface)',
+                                  border: `1px solid ${currentVal > 0 ? 'var(--color-primary-300)' : 'var(--border-subtle)'}`,
+                                  borderRadius: 'var(--radius-sm)',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '4px',
+                                }}
+                              >
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                    Wadah #{c.container_number}
+                                  </div>
+                                  {canTakeMore && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleFillRemainingContainerWeight(idx)}
+                                      style={{
+                                        background: 'var(--color-primary-50)',
+                                        border: '1px solid var(--color-primary-200)',
+                                        color: 'var(--color-primary-700)',
+                                        fontSize: '10px',
+                                        padding: '1px 5px',
+                                        borderRadius: 'var(--radius-sm)',
+                                        cursor: 'pointer',
+                                        fontWeight: 600,
+                                      }}
+                                      title={`Isi otomatis wadah #${c.container_number} dengan sisa ${remainingUnallocatedKg.toFixed(2)} kg`}
+                                    >
+                                      + Sisa ({remainingUnallocatedKg.toFixed(2)})
+                                    </button>
+                                  )}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <Input
+                                    type="number"
+                                    step="0.05"
+                                    min="0.1"
+                                    max={maxForThis > 0 ? maxForThis : undefined}
+                                    value={c.weight_kg}
+                                    onChange={(e) => handleContainerWeightChange(idx, e.target.value)}
+                                    placeholder="0.0"
+                                    style={{ height: '30px', fontSize: '12px', padding: '2px 6px' }}
+                                  />
+                                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>kg</span>
+                                </div>
+                                <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', textAlign: 'right' }}>
+                                  Maks: {maxForThis.toFixed(2)} kg
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{
+                          fontSize: '11px',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '6px 10px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: isFullyAllocated ? 'var(--color-success-50)' : isOverAllocated ? 'var(--color-danger-50)' : 'var(--bg-subtle)',
+                          border: `1px solid ${isFullyAllocated ? 'var(--color-success-200)' : isOverAllocated ? 'var(--color-danger-200)' : 'var(--border-default)'}`,
+                          color: isFullyAllocated ? 'var(--color-success-800)' : isOverAllocated ? 'var(--color-danger-800)' : 'var(--text-secondary)',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                        }}>
+                          <span>Total Target Output: <strong>{outputFinished.toFixed(2)} kg</strong></span>
+                          <span>Akumulasi Wadah: <strong>{accumulatedContainersKg.toFixed(2)} kg</strong></span>
+                          <span>
+                            {isFullyAllocated ? (
+                              <strong style={{ color: 'var(--color-success-700)' }}>Alokasi Sempurna (100%)</strong>
+                            ) : isOverAllocated ? (
+                              <strong style={{ color: 'var(--color-danger-700)' }}>Kelebihan {Math.abs(remainingUnallocatedKg).toFixed(2)} kg</strong>
+                            ) : (
+                              <strong style={{ color: 'var(--color-warning-700)' }}>Kurang {remainingUnallocatedKg.toFixed(2)} kg</strong>
+                            )}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* ── TAB 3: WAKTU BATCH PENGGORENGAN (HACCP) ── */}
                 {fryingRunTab === 'BATCH' && (() => {
@@ -5453,12 +5607,13 @@ export default function ProductionPage() {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
                                   <div>
                                     <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>
-                                      Waktu (mnt)
+                                      Waktu (Maks 30 mnt)
                                     </label>
                                     <Input
                                       type="number"
                                       step="0.5"
                                       min="1"
+                                      max="30"
                                       value={b.duration_minutes}
                                       onChange={(e) => handleBatchDurationChange(idx, e.target.value)}
                                       placeholder={String(stdDuration)}

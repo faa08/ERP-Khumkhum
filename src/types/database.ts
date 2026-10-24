@@ -308,6 +308,8 @@ export interface DbPackingEntry {
   packaging_type?: string | null;
   packaging_weight_gram?: string | null;
   seasoning_used_gram: number;
+  longsongs_used_count?: number | null;
+  defect_packaging_count?: number | null;
   is_packed: boolean;
   packed_at?: string | null;
   notes?: string | null;

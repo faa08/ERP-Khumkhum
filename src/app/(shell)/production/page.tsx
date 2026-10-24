@@ -1425,10 +1425,33 @@ export default function ProductionPage() {
       }
     });
 
-    const packingByOrder: Record<string, number> = {};
-    packingEntries.forEach(p => {
-      if (p.is_packed) {
-        packingByOrder[p.production_order_id] = (packingByOrder[p.production_order_id] || 0) + 1;
+    // Hitung riil wadah longsong yang terpakai per SPK retail:
+    // 1. Utamakan dari wadah fisik yang statusnya EMPTY (penuh) atau PARTIAL (sebagian)
+    // 2. Fallback ke kalkulasi berat jamur matang kemasan yang sudah dipacking (asumsi ~2.6 kg/longsong)
+    const packingLongsongsByOrder: Record<string, { fullCount: number; partialCount: number }> = {};
+    orders.forEach(o => {
+      const linked = longsongContainers.filter(c => c.production_order_id === o.id);
+      if (linked.length > 0) {
+        const fullCount = linked.filter(c => c.status === 'EMPTY').length;
+        const partialCount = linked.filter(c => c.status === 'PARTIAL').length;
+        packingLongsongsByOrder[o.id] = { fullCount, partialCount };
+      } else {
+        const orderPackings = packingEntries.filter(
+          p => (p.production_order_id === o.id || (o.batch_number && p.production_order_id === o.batch_number)) && p.is_packed
+        );
+        if (orderPackings.length > 0) {
+          const totalPackedGram = orderPackings.reduce((sum, p) => {
+            const cleanPackGram = parseInt((p.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
+            const grams = Number(p.longsong_weight_gram) || (Number(p.packaged_toples_count || 0) * cleanPackGram);
+            return sum + grams;
+          }, 0);
+          const fullCount = Math.floor(totalPackedGram / 2600);
+          const remainder = totalPackedGram % 2600;
+          const partialCount = remainder >= 100 ? 1 : 0;
+          packingLongsongsByOrder[o.id] = { fullCount, partialCount };
+        } else {
+          packingLongsongsByOrder[o.id] = { fullCount: 0, partialCount: 0 };
+        }
       }
     });
 
@@ -1438,6 +1461,7 @@ export default function ProductionPage() {
       totalLongsongProduced: number;
       totalOutputGram: number;
       packedCount: number;
+      partialCount: number;
       unpackedCount: number;
       totalPackagedPcs: number;
     }[] = [];
@@ -1446,16 +1470,18 @@ export default function ProductionPage() {
     const retailOrders = orders.filter(o => !isFryingSpk(o));
     retailOrders.forEach(o => {
       const frying = fryingByOrder[o.id];
-      const packedCount = packingByOrder[o.id] || 0;
+      const lsUsage = packingLongsongsByOrder[o.id] || { fullCount: 0, partialCount: 0 };
+      const packedCount = lsUsage.fullCount;
+      const partialCount = lsUsage.partialCount;
       const packagedPcs = packingEntries
-        .filter(p => p.production_order_id === o.id && p.is_packed)
+        .filter(p => (p.production_order_id === o.id || (o.batch_number && p.production_order_id === o.batch_number)) && p.is_packed)
         .reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
 
-      const totalLongsongProduced = frying ? frying.totalLongsongProduced : (availablePoolLongsong + packedCount);
+      const totalLongsongProduced = frying ? frying.totalLongsongProduced : (availablePoolLongsong + packedCount + partialCount);
       const totalOutputGram = frying ? frying.totalOutputGram : 0;
       const unpackedCount = frying
-        ? Math.max(0, frying.totalLongsongProduced - packedCount)
-        : availablePoolLongsong;
+        ? Math.max(0, frying.totalLongsongProduced - packedCount - partialCount)
+        : Math.max(0, availablePoolLongsong);
 
       result.push({
         order: o,
@@ -1463,6 +1489,7 @@ export default function ProductionPage() {
         totalLongsongProduced,
         totalOutputGram,
         packedCount,
+        partialCount,
         unpackedCount,
         totalPackagedPcs: packagedPcs,
       });
@@ -1472,7 +1499,7 @@ export default function ProductionPage() {
       if (b.unpackedCount !== a.unpackedCount) return b.unpackedCount - a.unpackedCount;
       return new Date(b.order.created_at || '').getTime() - new Date(a.order.created_at || '').getTime();
     });
-  }, [orders, fryingBatches, packingEntries, availablePoolLongsong]);
+  }, [orders, fryingBatches, packingEntries, longsongContainers, availablePoolLongsong]);
 
   const selectedFriedOrder = useMemo(() => {
     return friedOrdersData.find(d => d.order.id === packingForm.production_order_id) || null;
@@ -2580,6 +2607,7 @@ export default function ProductionPage() {
         totalLongsongProduced: availablePoolLongsong,
         totalOutputGram: 0,
         packedCount: 0,
+        partialCount: 0,
         unpackedCount: availablePoolLongsong,
         totalPackagedPcs: 0,
       };
@@ -2655,6 +2683,9 @@ export default function ProductionPage() {
 
     const cleanPackGram = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
     const neededKg = Number(((pcs * cleanPackGram) / 1000).toFixed(2));
+    const fullLongsongs = Math.floor((pcs * cleanPackGram) / 2600);
+    const hasPartial = ((pcs * cleanPackGram) % 2600) >= 100 ? 1 : 0;
+    const calcLongsongsCount = (fullLongsongs + hasPartial) || 1;
     const seasoningGram = Number(packingForm.seasoning_used_gram) || 0;
 
     setIsSavingPacking(true);
@@ -2669,7 +2700,7 @@ export default function ProductionPage() {
         packaging_type: packingForm.packaging_type,
         packaging_weight_gram: packingForm.packaging_weight_gram,
         seasoning_used_gram: seasoningGram,
-        longsongs_used_count: Number(packingForm.longsongs_used_count) || 1,
+        longsongs_used_count: calcLongsongsCount,
         defect_packaging_count: Number(packingForm.defect_packaging_count) || 0,
         notes: packingForm.notes,
         is_packed: true,
@@ -2677,10 +2708,10 @@ export default function ProductionPage() {
 
       if (res.success) {
         clearFormDraft('draft_prod_packing');
-        // Otomatis potong wadah selongsong di Buffer WIP (FIFO)
+        // Otomatis potong wadah selongsong di Buffer WIP (FIFO prioritaskan wadah SPK ini)
         if (neededKg > 0) {
           try {
-            await consumeLongsongForPacking(neededKg);
+            await consumeLongsongForPacking(neededKg, packingForm.production_order_id);
           } catch (cErr) {
             console.warn('Longsong container deduction notice:', cErr);
           }
@@ -4033,13 +4064,21 @@ export default function ProductionPage() {
                             {item.order.product_variant || 'Jamur Crispy'}
                           </td>
                           <td style={{ padding: '10px 12px' }}>
-                            {item.packedCount > 0 ? (
+                            {item.packedCount > 0 || item.partialCount > 0 ? (
                               <div>
                                 <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-800)' }}>
-                                  {item.packedCount} Longsong
+                                  {item.packedCount > 0 ? `${item.packedCount} Longsong` : '1 Longsong'}
                                 </strong>
-                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
-                                  Sudah dipacking
+                                <div style={{
+                                  fontSize: '11px',
+                                  color: item.partialCount > 0 ? 'var(--color-warning-800)' : 'var(--text-secondary)',
+                                  fontWeight: item.partialCount > 0 ? 500 : 400,
+                                }}>
+                                  {item.packedCount > 0 && item.partialCount > 0
+                                    ? `+ ${item.partialCount} sebagian terpakai`
+                                    : item.partialCount > 0
+                                    ? 'Sebagian terpakai'
+                                    : 'Sudah dipacking'}
                                 </div>
                               </div>
                             ) : (

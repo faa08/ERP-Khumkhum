@@ -2133,7 +2133,8 @@ export async function deleteLongsongContainer(id: string): Promise<{
 }
 
 export async function consumeLongsongForPacking(
-  requiredKg: number
+  requiredKg: number,
+  productionOrderId?: string
 ): Promise<{
   success: boolean;
   consumedKg: number;
@@ -2145,9 +2146,17 @@ export async function consumeLongsongForPacking(
 
     const res = await getLongsongContainers();
     const containers = res.data || [];
+    // Prioritaskan wadah milik SPK yang bersangkutan jika ada, lalu wadah aktif lainnya (FIFO)
     const active = containers
       .filter(c => (c.status === 'AVAILABLE' || c.status === 'PARTIAL') && Number(c.current_weight_kg) > 0)
-      .sort((a, b) => (a.container_number || 0) - (b.container_number || 0));
+      .sort((a, b) => {
+        if (productionOrderId) {
+          const aMatch = a.production_order_id === productionOrderId ? 0 : 1;
+          const bMatch = b.production_order_id === productionOrderId ? 0 : 1;
+          if (aMatch !== bMatch) return aMatch - bMatch;
+        }
+        return (a.container_number || 0) - (b.container_number || 0);
+      });
 
     let remainingNeeded = Math.max(0, requiredKg);
     let totalConsumed = 0;
@@ -2188,6 +2197,76 @@ export async function consumeLongsongForPacking(
   } catch (err: any) {
     console.error('consumeLongsongForPacking error:', err);
     return { success: false, consumedKg: 0, deductedContainers: [], error: err.message };
+  }
+}
+
+export async function revertLongsongForPacking(
+  requiredKg: number,
+  deductedContainers?: { id: string; container_number: number; deductedKg: number }[],
+  productionOrderId?: string
+): Promise<{ success: boolean; restoredKg: number; error?: string }> {
+  try {
+    await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'WAREHOUSE']);
+
+    const res = await getLongsongContainers();
+    const containers = res.data || [];
+
+    let totalRestored = 0;
+
+    // 1. Jika ada daftar wadah eksplisit yang sebelumnya dipotong
+    if (deductedContainers && deductedContainers.length > 0) {
+      for (const d of deductedContainers) {
+        const c = containers.find(item => item.id === d.id);
+        if (c) {
+          const current = Number(c.current_weight_kg) || 0;
+          const initial = Number(c.initial_weight_kg) || 2.6;
+          const restored = Math.min(initial, Number((current + d.deductedKg).toFixed(2)));
+          const status = restored >= initial ? 'AVAILABLE' : 'PARTIAL';
+          await updateLongsongContainer(c.id, {
+            current_weight_kg: restored,
+            status: status as any,
+            notes: `Stok dikembalikan dari pembatalan packing (+${d.deductedKg} kg)`,
+          });
+          totalRestored += d.deductedKg;
+        }
+      }
+    } else {
+      // 2. Fallback LIFO reverse restoration ke wadah yang EMPTY / PARTIAL
+      let remainingToRestore = Math.max(0, requiredKg);
+      const eligible = containers
+        .filter(c => {
+          const matchOrder = !productionOrderId || c.production_order_id === productionOrderId;
+          return matchOrder && (c.status === 'EMPTY' || c.status === 'PARTIAL' || Number(c.current_weight_kg) < Number(c.initial_weight_kg || 2.6));
+        })
+        .sort((a, b) => (b.container_number || 0) - (a.container_number || 0));
+
+      for (const c of eligible) {
+        if (remainingToRestore <= 0) break;
+        const current = Number(c.current_weight_kg) || 0;
+        const initial = Number(c.initial_weight_kg) || 2.6;
+        const capacity = Math.max(0, initial - current);
+        if (capacity <= 0) continue;
+
+        const toRestore = Math.min(capacity, remainingToRestore);
+        const newWeight = Number((current + toRestore).toFixed(2));
+        const newStatus = newWeight >= initial ? 'AVAILABLE' : 'PARTIAL';
+
+        await updateLongsongContainer(c.id, {
+          current_weight_kg: newWeight,
+          status: newStatus as any,
+          notes: `Stok dikembalikan dari pembatalan packing (+${toRestore.toFixed(2)} kg)`,
+        });
+
+        remainingToRestore = Math.max(0, Number((remainingToRestore - toRestore).toFixed(2)));
+        totalRestored += toRestore;
+      }
+    }
+
+    revalidatePath('/production');
+    return { success: true, restoredKg: totalRestored };
+  } catch (err: any) {
+    console.error('revertLongsongForPacking error:', err);
+    return { success: false, restoredKg: 0, error: err.message };
   }
 }
 
@@ -3666,8 +3745,14 @@ export async function deletePackingEntry(packingEntryId: string): Promise<{
     if (!targetEntry) {
       targetEntry = memoryPackingEntries.find(p => p.id === packingEntryId);
     }
+    if (!targetEntry) {
+      const persisted = await getPersistedPackingEntries();
+      targetEntry = persisted.find(p => p.id === packingEntryId);
+    }
 
-    // 1. Revert stock movements (kembalikan stok bumbu tabur & kemasan, kurangi stok produk jadi jika ada)
+    const currentUserId = (session.user as any).userId || session.user.id;
+
+    // 1. Revert stock movements & pulihkan bahan baku (kemasan & bumbu tabur)
     if (isEntryUuid) {
       const { data: movements } = await supabaseAdmin
         .from('stock_movements')
@@ -3709,7 +3794,128 @@ export async function deletePackingEntry(packingEntryId: string): Promise<{
         .eq('id', packingEntryId);
     }
 
-    // 2. Remove from memory store & persistence
+    // 2. Pulihkan Bahan Kemasan & Bumbu Tabur dari detail targetEntry jika stock_movements tidak terhubung via UUID
+    if (targetEntry) {
+      const packCount = Number(targetEntry.packaged_toples_count) || 0;
+      const defectCount = Number(targetEntry.defect_packaging_count) || 0;
+      const totalPkg = packCount + defectCount;
+      const pkgType = targetEntry.packaging_type || 'Standing Pouch';
+      const targetWeight = targetEntry.packaging_weight_gram || '60g';
+      const flavor = targetEntry.flavor_variant || 'Original';
+      const seasoningGram = Number(targetEntry.seasoning_used_gram) || 0;
+
+      // A. Pulihkan Kemasan Fisik
+      if (totalPkg > 0) {
+        try {
+          const { data: pkgRm } = await supabaseAdmin
+            .from('raw_materials')
+            .select('id')
+            .is('deleted_at', null)
+            .eq('material_category', 'Packaging')
+            .ilike('packaging_type', `%${pkgType}%`)
+            .limit(1)
+            .maybeSingle();
+
+          if (pkgRm?.id) {
+            const { data: pkgInv } = await supabaseAdmin
+              .from('inventory')
+              .select('id, quantity')
+              .eq('item_type', 'RAW_MATERIAL')
+              .eq('item_id', pkgRm.id)
+              .limit(1)
+              .maybeSingle();
+
+            if (pkgInv) {
+              const restoredQty = (Number(pkgInv.quantity) || 0) + totalPkg;
+              await supabaseAdmin
+                .from('inventory')
+                .update({ quantity: restoredQty, last_updated_at: new Date().toISOString() })
+                .eq('id', pkgInv.id);
+
+              await supabaseAdmin.from('stock_movements').insert({
+                inventory_id: pkgInv.id,
+                movement_type: 'IN',
+                quantity: totalPkg,
+                reference_id: isEntryUuid ? packingEntryId : null,
+                reference_type: 'PRODUCTION_PACKING_MATERIAL_REVERT',
+                notes: `Pengembalian kemasan ${pkgType} ${targetWeight} (+${totalPkg} pcs) dari pembatalan packing`,
+                created_by: currentUserId,
+              });
+            }
+          }
+        } catch (pkgErr) {
+          console.warn('Rollback packaging error:', pkgErr);
+        }
+      }
+
+      // B. Pulihkan Bumbu Tabur
+      if (seasoningGram > 0) {
+        try {
+          const flavorKey = flavor.toLowerCase();
+          const keywords = FLAVOR_SEASONING_KEYWORDS[flavorKey] || [flavorKey];
+          const { data: allSeasonings } = await supabaseAdmin
+            .from('raw_materials')
+            .select('id, name, material_category, uom')
+            .is('deleted_at', null);
+
+          const matchedSeasoning = (allSeasonings || []).find((rm: any) => {
+            const nameL = rm.name.toLowerCase();
+            return keywords.some(k => nameL.includes(k));
+          });
+
+          if (matchedSeasoning?.id) {
+            const { data: sInv } = await supabaseAdmin
+              .from('inventory')
+              .select('id, quantity')
+              .eq('item_type', 'RAW_MATERIAL')
+              .eq('item_id', matchedSeasoning.id)
+              .limit(1)
+              .maybeSingle();
+
+            if (sInv) {
+              const isGramUom = matchedSeasoning.uom?.toLowerCase() === 'gram' || matchedSeasoning.uom?.toLowerCase() === 'gr';
+              const returnQty = isGramUom ? seasoningGram : Math.round((seasoningGram / 1000) * 1000) / 1000;
+              const restoredQty = (Number(sInv.quantity) || 0) + returnQty;
+
+              await supabaseAdmin
+                .from('inventory')
+                .update({ quantity: restoredQty, last_updated_at: new Date().toISOString() })
+                .eq('id', sInv.id);
+
+              await supabaseAdmin.from('stock_movements').insert({
+                inventory_id: sInv.id,
+                movement_type: 'IN',
+                quantity: returnQty,
+                reference_id: isEntryUuid ? packingEntryId : null,
+                reference_type: 'PRODUCTION_PACKING_SEASONING_REVERT',
+                notes: `Pengembalian bumbu tabur ${flavor} (+${returnQty} ${matchedSeasoning.uom || 'g'}) dari pembatalan packing`,
+                created_by: currentUserId,
+              });
+            }
+          }
+        } catch (seasoningErr) {
+          console.warn('Rollback seasoning error:', seasoningErr);
+        }
+      }
+
+      // C. Pulihkan Wadah Longsong (Buffer Selongsong)
+      const cleanWeightGram = parseInt(targetWeight.replace(/\D/g, ''), 10) || 60;
+      const consumedKg = (Number(targetEntry.longsong_weight_gram) || (packCount * cleanWeightGram)) / 1000;
+      
+      let deductedParsed: any = undefined;
+      if (targetEntry.notes) {
+        const match = targetEntry.notes.match(/\[Containers:\s*(\[.*?\])\]/);
+        if (match) {
+          try {
+            deductedParsed = JSON.parse(match[1]);
+          } catch (_) {}
+        }
+      }
+
+      await revertLongsongForPacking(consumedKg, deductedParsed, targetEntry.production_order_id);
+    }
+
+    // 3. Remove from memory store & persistence
     memoryPackingEntries = memoryPackingEntries.filter(p => p.id !== packingEntryId);
     const currentPersisted = await getPersistedPackingEntries();
     await savePersistedPackingEntries(currentPersisted.filter(p => p.id !== packingEntryId));

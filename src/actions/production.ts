@@ -791,23 +791,25 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
         const baseWithInput = input.notes ? (cleanBaseNotes ? `${cleanBaseNotes} | ${input.notes}` : input.notes) : cleanBaseNotes;
         const appendedNotes = `${baseWithInput} [Longsongs: ${containerJson}]`.trim();
 
-        await supabaseAdmin
+        const updatePayload: Record<string, any> = {
+          status: isPartial ? 'IN_PROGRESS' : 'COMPLETED',
+          input_weight: totalInputWeight,
+          output_weight: totalOutputWeight,
+          yield_percentage: accumulatedYieldPct,
+          is_yield_compliant: accumulatedIsCompliant,
+          end_date: isPartial ? null : nowIso,
+          notes: appendedNotes,
+          updated_at: nowIso,
+        };
+
+        const { error: updateErr } = await supabaseAdmin
           .from('production_orders')
-          .update({
-            status: isPartial ? 'IN_PROGRESS' : 'COMPLETED',
-            input_weight: totalInputWeight,
-            output_weight: totalOutputWeight,
-            yield_percentage: accumulatedYieldPct,
-            is_yield_compliant: accumulatedIsCompliant,
-            total_longsong_count: totalLongsongs,
-            unpacked_longsong_count: totalUnpackedLongsongs,
-            cycle_time_avg_seconds: cycleTimeAvgSec,
-            standard_time_seconds: 15 * 60,
-            end_date: isPartial ? null : nowIso,
-            notes: appendedNotes,
-            updated_at: nowIso,
-          })
+          .update(updatePayload)
           .eq('id', orderId);
+
+        if (updateErr) {
+          console.error('Update production_orders error:', updateErr);
+        }
       }
     }
 

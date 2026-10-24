@@ -3541,11 +3541,6 @@ export default function ProductionPage() {
                               </span>
                             )}
                           </div>
-                          {rawMushroomKg > 0 && (
-                            <div style={{ fontSize: '10.5px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                              Bahan: {rawMushroomKg.toFixed(1)} kg jamur segar
-                            </div>
-                          )}
                           {avgDurationMinutes > 0 ? (
                             <div style={{ fontSize: '11px', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                               <Clock size={11} className="text-secondary" />

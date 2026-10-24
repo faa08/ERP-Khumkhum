@@ -1304,8 +1304,23 @@ export default function ProductionPage() {
       }
       const batches = Array.from(batchesMap.values()).sort((a, b) => a.wajan_number - b.wajan_number);
       const batchCount = batches.length;
-      let realizedKg = batches.reduce((sum, b) => sum + (Number(b.batch_weight_gram) || 800), 0) / 1000;
-      let outputKg = batches.reduce((sum, b) => sum + (Number(b.output_weight_gram) || 0), 0) / 1000;
+      // Output jamur matang riil
+      let outputKg = Number(order.output_weight) || 0;
+      if (outputKg <= 0 && linkedContainers.length > 0) {
+        outputKg = linkedContainers.reduce((sum, c) => sum + (Number(c.initial_weight_kg || c.current_weight_kg) || 0), 0);
+      }
+      if (outputKg <= 0) {
+        outputKg = batches.reduce((sum, b) => sum + (Number(b.output_weight_gram) || 0), 0) / 1000;
+      }
+
+      // Jamur segar aktual yang dimasak / dikonsumsi
+      let rawMushroomKg = Number(order.input_weight) || 0;
+      if (rawMushroomKg <= 0) {
+        rawMushroomKg = batches.reduce((sum, b) => sum + (Number(b.batch_weight_gram) || 800), 0) / 1000;
+      }
+
+      // Realisasi hasil goreng berpatokan pada Hasil Jamur Matang (outputKg), fallback ke jamur segar
+      let realizedKg = outputKg > 0 ? outputKg : (order.status === 'COMPLETED' ? targetKg : rawMushroomKg);
 
       // Longsong Total: Utamakan wadah fisik terdaftar jika ada, lalu order.total_longsong_count, baru fallback batches
       let longsongTotal = linkedContainers.length > 0
@@ -1314,11 +1329,12 @@ export default function ProductionPage() {
 
       // Jika SPK sudah COMPLETED via rekap langsung
       if (order.status === 'COMPLETED') {
-        if (order.input_weight && order.input_weight > realizedKg) {
-          realizedKg = order.input_weight;
+        if (order.input_weight && order.input_weight > rawMushroomKg) {
+          rawMushroomKg = order.input_weight;
         }
         if (order.output_weight && order.output_weight > outputKg) {
           outputKg = order.output_weight;
+          realizedKg = outputKg;
         }
         if (order.total_longsong_count && order.total_longsong_count > longsongTotal && linkedContainers.length === 0) {
           longsongTotal = order.total_longsong_count;
@@ -1358,6 +1374,7 @@ export default function ProductionPage() {
         batchCount,
         realizedBatchesCount: batchCount || (order.status === 'COMPLETED' ? Math.round(realizedKg / 0.8) : 0),
         realizedKg,
+        rawMushroomKg,
         outputKg,
         longsongTotal,
         remainingKg,
@@ -3484,7 +3501,7 @@ export default function ProductionPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {fryingOrdersWithProgress.map(({ order, targetKg, realizedKg, realizedBatchesCount, batchCount, remainingKg, progressPercent, outputKg, longsongTotal, avgDurationMinutes, haccpCompliance, readyContainers, availableWeightKg }) => (
+                    {fryingOrdersWithProgress.map(({ order, targetKg, realizedKg, rawMushroomKg, realizedBatchesCount, batchCount, remainingKg, progressPercent, outputKg, longsongTotal, avgDurationMinutes, haccpCompliance, readyContainers, availableWeightKg }) => (
                       <tr key={order.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                         <td style={{ padding: '10px 12px' }}>
                           <strong style={{ fontFamily: 'monospace', color: 'var(--color-primary-800)' }}>
@@ -3524,6 +3541,11 @@ export default function ProductionPage() {
                               </span>
                             )}
                           </div>
+                          {rawMushroomKg > 0 && (
+                            <div style={{ fontSize: '10.5px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                              Bahan: {rawMushroomKg.toFixed(1)} kg jamur segar
+                            </div>
+                          )}
                           {avgDurationMinutes > 0 ? (
                             <div style={{ fontSize: '11px', marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
                               <Clock size={11} className="text-secondary" />

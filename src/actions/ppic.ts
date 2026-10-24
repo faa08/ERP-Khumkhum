@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
+import { logAuditEvent } from '@/actions/audit';
 import { format } from 'date-fns';
 import type { DbFarmerHarvestEstimate } from '@/types/database';
 
@@ -161,6 +162,18 @@ export async function addManualHistoricalSorting(date: string, weight: number, f
 
     if (sortErr) throw sortErr;
 
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'ppic_historical_sorting',
+      details: {
+        date,
+        weight,
+        farmer_id: farmerId,
+        quality_grade: grade,
+      },
+    });
+
     return { success: true };
   } catch (err: any) {
     console.error('addManualHistoricalSorting error:', err);
@@ -284,6 +297,20 @@ export async function addManualCookedMushroomEntry(payload: {
     });
 
     if (error) throw error;
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'ppic_cooked_mushroom',
+      entityId: batchNumber,
+      details: {
+        date: payload.date,
+        input_weight: payload.input_weight,
+        output_weight: payload.output_weight,
+        yield_percentage: yieldPct,
+      },
+    });
+
     return { success: true };
   } catch (err: any) {
     console.error('addManualCookedMushroomEntry error:', err);

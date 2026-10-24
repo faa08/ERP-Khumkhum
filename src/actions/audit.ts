@@ -6,7 +6,7 @@ import type { DbAuditLog } from '@/types/database';
 
 export interface LogAuditParams {
   userId?: string | null;
-  action: 'LOGIN' | 'LOGOUT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT';
+  action: 'LOGIN' | 'LOGOUT' | 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'REJECT' | 'VOID';
   entityType?: string;
   entityId?: string;
   details?: Record<string, any>;

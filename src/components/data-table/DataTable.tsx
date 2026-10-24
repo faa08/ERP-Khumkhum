@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   useReactTable,
   getCoreRowModel,
@@ -13,7 +13,7 @@ import {
   type VisibilityState,
   type ColumnFiltersState,
 } from '@tanstack/react-table';
-import type { DataTableProps } from '@/types/table';
+import type { DataTableProps, DateFilterOption, DateSortOption } from '@/types/table';
 import { DEFAULT_PAGE_SIZE, PAGE_SIZE_OPTIONS } from '@/lib/constants';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -21,7 +21,56 @@ import { Checkbox } from '@/components/ui/Checkbox';
 import { Pagination } from '@/components/ui/Pagination';
 import { DataTableToolbar } from './DataTableToolbar';
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import {
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  subMonths,
+} from 'date-fns';
 import styles from './DataTable.module.css';
+
+function extractDateFromItem(item: any, specifiedField?: string): Date | null {
+  if (!item || typeof item !== 'object') return null;
+  if (specifiedField && item[specifiedField]) {
+    const d = new Date(item[specifiedField]);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const dateKeys = [
+    'packed_at',
+    'created_at',
+    'date',
+    'movement_date',
+    'inspection_date',
+    'entry_date',
+    'order_date',
+    'sorting_date',
+    'timestamp',
+    'updated_at',
+  ];
+  for (const k of dateKeys) {
+    if (item[k]) {
+      const d = new Date(item[k]);
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+  if (item.order?.created_at) {
+    const d = new Date(item.order.created_at);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (item.production_order?.created_at) {
+    const d = new Date(item.production_order.created_at);
+    if (!isNaN(d.getTime())) return d;
+  }
+  if (item.batch?.created_at) {
+    const d = new Date(item.batch.created_at);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return null;
+}
 
 export function DataTable<TData extends { id?: string | number }>({
   columns,
@@ -39,6 +88,10 @@ export function DataTable<TData extends { id?: string | number }>({
   enableGlobalFilter = true,
   enableColumnVisibility = true,
   enableSorting = true,
+  enableDateFilter,
+  dateField,
+  defaultDateFilter,
+  defaultDateSort,
   bulkActions,
   emptyStateTitle = 'Tidak ada data ditemukan',
   emptyStateDescription = 'Tidak ada rekam jejak yang cocok dengan kriteria pencarian Anda.',
@@ -50,10 +103,70 @@ export function DataTable<TData extends { id?: string | number }>({
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [globalFilter, setGlobalFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState<DateFilterOption>(defaultDateFilter ?? 'ALL');
+  const [dateSort, setDateSort] = useState<DateSortOption>(defaultDateSort ?? 'NEWEST');
   const [pagination, setPagination] = useState({
     pageIndex: controlledPageIndex ?? 0,
     pageSize: controlledPageSize ?? DEFAULT_PAGE_SIZE,
   });
+
+  const pathname = usePathname();
+  const isMasterPage = pathname?.includes('/master') ?? false;
+
+  // Cek apakah tabel ini mendukung date filter (halaman operasional & transaksi otomatis dapat, master data dilewati)
+  const shouldEnableDateFilter = useMemo(() => {
+    if (enableDateFilter !== undefined) return enableDateFilter;
+    if (isMasterPage) return false;
+    return true;
+  }, [enableDateFilter, isMasterPage]);
+
+  // Filter & Sort Data berdasarkan Waktu
+  const processedData = useMemo(() => {
+    if (!shouldEnableDateFilter) return data;
+
+    let result = [...data];
+
+    // Filter Periode
+    if (dateFilter !== 'ALL') {
+      const now = new Date();
+      let startDate: Date;
+      let endDate: Date;
+
+      if (dateFilter === 'TODAY') {
+        startDate = startOfDay(now);
+        endDate = endOfDay(now);
+      } else if (dateFilter === 'THIS_WEEK') {
+        startDate = startOfWeek(now, { weekStartsOn: 1 });
+        endDate = endOfWeek(now, { weekStartsOn: 1 });
+      } else if (dateFilter === 'THIS_MONTH') {
+        startDate = startOfMonth(now);
+        endDate = endOfMonth(now);
+      } else if (dateFilter === 'LAST_MONTH') {
+        const lastMonth = subMonths(now, 1);
+        startDate = startOfMonth(lastMonth);
+        endDate = endOfMonth(lastMonth);
+      }
+
+      result = result.filter((item) => {
+        const itemDate = extractDateFromItem(item, dateField);
+        if (!itemDate) return true;
+        return itemDate >= startDate && itemDate <= endDate;
+      });
+    }
+
+    // Sorting Waktu
+    if (dateSort) {
+      result.sort((a, b) => {
+        const dateA = extractDateFromItem(a, dateField);
+        const dateB = extractDateFromItem(b, dateField);
+        if (!dateA || !dateB) return 0;
+        const diff = dateB.getTime() - dateA.getTime();
+        return dateSort === 'NEWEST' ? diff : -diff;
+      });
+    }
+
+    return result;
+  }, [data, shouldEnableDateFilter, dateFilter, dateSort, dateField]);
 
   const allColumns = enableRowSelection
     ? [
@@ -83,7 +196,7 @@ export function DataTable<TData extends { id?: string | number }>({
     : columns;
 
   const table = useReactTable({
-    data,
+    data: processedData,
     columns: allColumns as typeof columns,
     getRowId: (row: any, index: number) => (row?.id != null ? String(row.id) : String(index)),
     state: {
@@ -123,7 +236,7 @@ export function DataTable<TData extends { id?: string | number }>({
   });
 
   const selectedCount = Object.keys(rowSelection).length;
-  const effectiveTotal = totalCount ?? data.length;
+  const effectiveTotal = totalCount ?? processedData.length;
 
   // Skeleton rows during loading
   const skeletonRows = Array.from({ length: pagination.pageSize > 10 ? 10 : pagination.pageSize });
@@ -138,7 +251,12 @@ export function DataTable<TData extends { id?: string | number }>({
         }}
         table={table}
         enableGlobalFilter={enableGlobalFilter}
-        enableColumnVisibility={enableColumnVisibility}
+        enableColumnVisibility={enableColumnVisibility && !shouldEnableDateFilter}
+        enableDateFilter={shouldEnableDateFilter}
+        dateFilter={dateFilter}
+        onDateFilterChange={setDateFilter}
+        dateSort={dateSort}
+        onDateSortChange={setDateSort}
         selectedCount={selectedCount}
         bulkActions={bulkActions}
         rowSelection={rowSelection}

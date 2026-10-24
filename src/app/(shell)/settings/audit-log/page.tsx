@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/useToast';
 
 interface AuditRow {
   id: string;
+  created_at: string;
   timestamp: string;
   user: string;
   userRole: string;
@@ -33,10 +34,11 @@ export default function AuditLogPage() {
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getAuditLogsAction({ limit: 150 });
+      const res = await getAuditLogsAction({ limit: 500 });
       if (res.success && res.data) {
         const mapped: AuditRow[] = res.data.map((l) => ({
           id: l.id,
+          created_at: l.created_at,
           timestamp: formatDateTime(l.created_at),
           user: l.user?.name || l.user?.email || 'Sistem / Anonim',
           userRole: l.user?.role || '-',
@@ -448,6 +450,7 @@ export default function AuditLogPage() {
       <DataTable
         columns={columns}
         data={logs}
+        dateField="created_at"
         isLoading={loading}
       />
     </div>

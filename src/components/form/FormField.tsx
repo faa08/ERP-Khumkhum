@@ -48,7 +48,7 @@ export function FormMessage({ type = 'helper', children, id }: FormMessageProps)
 // ─────────────────────────────────────────────
 
 export interface FormFieldProps {
-  label?: string;
+  label?: React.ReactNode;
   required?: boolean;
   optional?: boolean;
   error?: string;

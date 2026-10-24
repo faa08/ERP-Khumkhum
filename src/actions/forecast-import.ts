@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
+import { logAuditEvent } from '@/actions/audit';
 import ExcelJS from 'exceljs';
 import { revalidatePath } from 'next/cache';
 
@@ -192,6 +193,16 @@ export async function importHistoricalData(formData: FormData): Promise<{ succes
         }
       }
     }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'forecast_data_import',
+      details: {
+        success_count: successCount,
+        has_errors: errors.length > 0,
+      },
+    });
 
     revalidatePath('/master/historical-import');
     

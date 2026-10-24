@@ -50,6 +50,7 @@ export default function ProductionStandardsPage() {
   const [config, setConfig] = useState<ProductionStandardConfig>({
     min_yield_percentage: 80.0,
     warning_yield_percentage: 75.0,
+    max_yield_percentage: 85.0,
     oil_temp_min: 160,
     oil_temp_max: 180,
     frying_duration_minutes: 15,
@@ -285,7 +286,7 @@ export default function ProductionStandardsPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       <PageHeader
         title="Standar Manufaktur & Resep Formula (BOM)"
-        description="Konfigurasi integrasi alur pabrik: Resep wajan curah serta parameter efisiensi rendemen mesin."
+        description="Konfigurasi integrasi alur pabrik: Resep wajan penggorengan serta parameter efisiensi rendemen mesin."
         breadcrumbs={[{ label: 'Data Induk' }, { label: 'Standar Produksi' }]}
         actions={
           !isManagement ? (
@@ -327,7 +328,7 @@ export default function ProductionStandardsPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-warning-100)', color: 'var(--color-warning-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>1</div>
               <div>
-                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Resep Wajan Curah</strong>
+                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Resep Wajan Penggorengan</strong>
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Bahan Baku Gudang Dipilih Bebas (Goreng Polos)</span>
               </div>
             </div>
@@ -350,7 +351,7 @@ export default function ProductionStandardsPage() {
           onClick={() => setActiveTab('FRYING')}
           leftIcon={<Flame className="w-4 h-4" aria-hidden="true" />}
         >
-          Resep Wajan Curah (Goreng Polos)
+          Resep Wajan (Goreng Polos)
         </Button>
         <Button
           variant={activeTab === 'MACHINERY' ? 'primary' : 'ghost'}
@@ -717,7 +718,7 @@ export default function ProductionStandardsPage() {
                 })}
 
                 <div style={{ padding: '8px 12px', borderRadius: '6px', background: 'var(--bg-default)', border: '1px solid var(--border-subtle)' }}>
-                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Estimasi Jamur Curah (Longsong):</span>
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Estimasi Jamur Matang (Longsong):</span>
                   <strong style={{ fontSize: '13.5px', color: 'var(--color-success-700)' }}>
                     ~{Math.round(simOutputMinKg * 1000)} - {Math.round(simOutputMaxKg * 1000)} gr
                   </strong>
@@ -759,6 +760,19 @@ export default function ProductionStandardsPage() {
                 />
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
                   Rendemen di bawah nilai ini wajib mengisi alasan anomali produksi.
+                </span>
+              </FormField>
+
+              <FormField label="Batas Maksimal Rendemen Wajar / Toleransi Output (%)" required>
+                <Input
+                  disabled={isManagement}
+                  type="number"
+                  step="0.5"
+                  value={config.max_yield_percentage ?? 85.0}
+                  onChange={(e) => setConfig({ ...config, max_yield_percentage: Number(e.target.value) })}
+                />
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                  Batas atas toleransi hasil matang. Output melebihi angka ini akan ditahan/ditolak karena tidak masuk akal.
                 </span>
               </FormField>
 

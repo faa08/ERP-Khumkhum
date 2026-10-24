@@ -234,6 +234,13 @@ export default function ProductionPage() {
   const [createHaccpFryingOpen, setCreateHaccpFryingOpen] = useState(false);
   const [completeFryingOpen, setCompleteFryingOpen] = useState(false);
   const [selectedFryingBatch, setSelectedFryingBatch] = useState<DbFryingBatch | null>(null);
+  const [spkBatchesModalOpen, setSpkBatchesModalOpen] = useState(false);
+  const [selectedSpkForBatches, setSelectedSpkForBatches] = useState<DbProductionOrder | null>(null);
+
+  const handleOpenSpkBatches = (order: DbProductionOrder) => {
+    setSelectedSpkForBatches(order);
+    setSpkBatchesModalOpen(true);
+  };
 
   // 1. Regular Frying Form (Standar Persiapan Wajan & Real-time Stopwatch)
   const [regularFryingForm, setRegularFryingForm] = useState({
@@ -276,6 +283,7 @@ export default function ProductionPage() {
     actual_cooking_oil_liter: string;
     output_finished_kg: string;
     output_longsong_count: string;
+    batch_count: string;
     notes: string;
     containers: { container_number: number; weight_kg: string }[];
     batches: {
@@ -290,11 +298,21 @@ export default function ProductionPage() {
     actual_cooking_oil_liter: '',
     output_finished_kg: '',
     output_longsong_count: '',
+    batch_count: '',
     notes: '',
     containers: [],
     batches: [],
   });
   const [isSubmittingFryingRun, setIsSubmittingFryingRun] = useState(false);
+  const [underTargetConfirmOpen, setUnderTargetConfirmOpen] = useState(false);
+  const [underTargetData, setUnderTargetData] = useState<{
+    targetKg: number;
+    prevInputKg: number;
+    currentMushroomKg: number;
+    totalInputKg: number;
+    shortageKg: number;
+    pct: number;
+  } | null>(null);
 
   const isRegularFryingValid = useMemo(() => {
     return (
@@ -697,6 +715,72 @@ export default function ProductionPage() {
     };
   }, [rawMaterials, fryingRunForm.actual_mushroom_kg, fryingRunForm.actual_premix_kg, fryingRunForm.actual_cooking_oil_liter]);
 
+  // Validasi apakah seluruh formulir (Bahan, Wadah Longsong, dan Batch Wajan) sudah terisi lengkap & valid
+  const fryingRunValidation = useMemo(() => {
+    const mushroom = parseFloat(fryingRunForm.actual_mushroom_kg);
+    const premix = parseFloat(fryingRunForm.actual_premix_kg);
+    const oil = parseFloat(fryingRunForm.actual_cooking_oil_liter);
+    const output = parseFloat(fryingRunForm.output_finished_kg);
+    const longsongCount = parseInt(fryingRunForm.output_longsong_count, 10);
+    const batchCount = parseInt(fryingRunForm.batch_count, 10);
+
+    const missing: string[] = [];
+
+    // Tab 1: Bahan & Hasil
+    if (isNaN(mushroom) || mushroom <= 0) missing.push('Jamur Segar');
+    if (isNaN(premix) || premix < 0 || fryingRunForm.actual_premix_kg.trim() === '') missing.push('Tepung Premix');
+    if (isNaN(oil) || oil < 0 || fryingRunForm.actual_cooking_oil_liter.trim() === '') missing.push('Minyak Goreng');
+    if (isNaN(output) || output <= 0) missing.push('Hasil Jamur Matang');
+    if (isNaN(batchCount) || batchCount <= 0) missing.push('Jumlah Batch');
+
+    // Tab 2: Wadah Longsong
+    if (isNaN(longsongCount) || longsongCount <= 0) {
+      missing.push('Jumlah Wadah Longsong (Tab 2)');
+    } else if (
+      fryingRunForm.containers.length !== longsongCount ||
+      fryingRunForm.containers.some(c => !c.weight_kg || isNaN(parseFloat(c.weight_kg)) || parseFloat(c.weight_kg) <= 0)
+    ) {
+      missing.push('Bobot Wadah Longsong (Tab 2)');
+    }
+
+    // Tab 3: Rincian Batch Wajan
+    if (
+      !isNaN(batchCount) && batchCount > 0 &&
+      (fryingRunForm.batches.length !== batchCount ||
+        fryingRunForm.batches.some(
+          b => !b.duration_minutes || isNaN(parseFloat(b.duration_minutes)) || parseFloat(b.duration_minutes) <= 0 ||
+               !b.oil_temp_celsius || isNaN(parseFloat(b.oil_temp_celsius)) || parseFloat(b.oil_temp_celsius) <= 0
+        ))
+    ) {
+      missing.push('Durasi/Suhu Tiap Batch (Tab 3)');
+    }
+
+    // Rendemen wajar BOM
+    const maxYieldPct = productionStandards?.max_yield_percentage || 85.0;
+    const maxOutputWajarKg = mushroom > 0 ? Number(((mushroom * maxYieldPct) / 100).toFixed(2)) : 0;
+    if (mushroom > 0 && output > 0 && output > maxOutputWajarKg) {
+      missing.push(`Output melebihi batas wajar BOM (${maxOutputWajarKg} kg / ${maxYieldPct}%)`);
+    }
+
+    // Stok gudang
+    if (fryingStockStatus.hasAnyShortage) {
+      missing.push('Stok Bahan di Gudang Kurang');
+    }
+
+    return {
+      isComplete: missing.length === 0,
+      missing,
+      message: missing.length > 0 ? `Belum lengkap: ${missing.join(', ')}` : '',
+    };
+  }, [
+    fryingRunForm,
+    fryingStockStatus.hasAnyShortage,
+    productionStandards?.max_yield_percentage,
+  ]);
+
+  const isFryingRunFormFullyComplete = fryingRunValidation.isComplete;
+  const fryingRunMissingMessage = fryingRunValidation.message;
+
   // ── Batch Stopwatch state (Per-batch inline timer: Running, Pause, Resume, Reset) ──
   interface BatchTimerState {
     status: 'RUNNING' | 'PAUSED' | 'IDLE';
@@ -741,7 +825,7 @@ export default function ProductionPage() {
     setIsCreatingSpk(true);
     const { createProductionOrder } = await import('@/actions/production');
     
-    let variantName = 'Jamur Crispy Polos (Curah)';
+    let variantName = 'Jamur Crispy Polos';
     let productId: string | undefined = undefined;
 
     if (spkType === 'PACKING') {
@@ -763,7 +847,7 @@ export default function ProductionPage() {
     if (res.success) {
       toast.success(
         spkType === 'FRYING'
-          ? 'SPK Penggorengan Jamur Curah berhasil dibuat!'
+          ? 'SPK Penggorengan Jamur berhasil dibuat!'
           : 'SPK Packing Rasa berhasil dibuat!'
       );
       setCreateSpkOpen(false);
@@ -1273,11 +1357,13 @@ export default function ProductionPage() {
   // HANDLERS — FRYING
   // ─────────────────────────────────────────────
 
-  // Handler: Buka & Buat Batch Goreng Curah (Khusus Tanpa SPK)
-  const handleOpenCreateRegularFrying = () => {
+  // Handler: Buka & Buat Batch Goreng Curah (Dapat terhubung ke SPK atau Tanpa SPK)
+  const handleOpenCreateRegularFrying = (order?: DbProductionOrder) => {
+    const spkBatches = order ? fryingBatches.filter(b => b.production_order_id === order.id) : fryingBatches;
+    const nextWajan = (spkBatches.length > 0 ? Math.max(...spkBatches.map(b => b.wajan_number)) : 0) + 1;
     setRegularFryingForm({
-      production_order_id: '',
-      wajan_number: String((fryingBatches.length > 0 ? Math.max(...fryingBatches.map(b => b.wajan_number)) : 0) + 1),
+      production_order_id: order?.id || '',
+      wajan_number: String(nextWajan),
       batch_weight_gram: '800',
       oil_temp_celsius: '170',
       notes: '',
@@ -1296,7 +1382,7 @@ export default function ProductionPage() {
     }
 
     const res = await createFryingBatch({
-      production_order_id: undefined,
+      production_order_id: regularFryingForm.production_order_id || undefined,
       wajan_number: Number(regularFryingForm.wajan_number),
       batch_weight_gram: Number(regularFryingForm.batch_weight_gram) || 800,
       oil_temp_celsius: Number(regularFryingForm.oil_temp_celsius) || 170,
@@ -1320,69 +1406,59 @@ export default function ProductionPage() {
 
   // Handler: Buka Modal Rekap Selesai Masak SPK (Bahan Aktual & Output Longsong & Waktu Batch)
   const handleOpenRecordFryingRun = (order: DbProductionOrder) => {
-    const targetKg = Number(order.target_quantity) || 50;
-    const estOutputKg = Number((targetKg * 0.67).toFixed(1));
-    const autoLongsong = Math.max(1, Math.round(estOutputKg / 2.5));
-
-    const initialContainers: { container_number: number; weight_kg: string }[] = [];
-    const perWadah = Number((estOutputKg / autoLongsong).toFixed(2));
-    let rem = estOutputKg;
-    for (let i = 1; i <= autoLongsong; i++) {
-      const w = i === autoLongsong ? Number(rem.toFixed(2)) : perWadah;
-      initialContainers.push({ container_number: i, weight_kg: String(w) });
-      rem -= perWadah;
-    }
-
-    // Inisialisasi daftar batch wajan dari data wajan SPK ini
-    const existingOrderBatches = fryingBatches.filter(b => b.production_order_id === order.id);
-    let initialBatches: { wajan_number: number; duration_minutes: string; oil_temp_celsius: string; notes?: string }[] = [];
-    if (existingOrderBatches.length > 0) {
-      initialBatches = existingOrderBatches
-        .sort((a, b) => a.wajan_number - b.wajan_number)
-        .map(b => ({
-          wajan_number: b.wajan_number,
-          duration_minutes: String(b.frying_duration_minutes || 15),
-          oil_temp_celsius: String(b.oil_temp_celsius || 170),
-          notes: b.notes || '',
-        }));
-    } else {
-      const estBatchCount = Math.max(1, Math.round(targetKg / 0.8));
-      for (let i = 1; i <= estBatchCount; i++) {
-        initialBatches.push({
-          wajan_number: i,
-          duration_minutes: '15.0',
-          oil_temp_celsius: '170',
-          notes: '',
-        });
-      }
-    }
-
     setFryingRunTab('BAHAN');
     setSelectedFryingOrder(order);
     setFryingRunForm({
-      actual_mushroom_kg: String(targetKg),
-      actual_premix_kg: String(Number((targetKg * 0.25).toFixed(2))),
-      actual_cooking_oil_liter: String(Number((targetKg * 0.30).toFixed(2))),
-      output_finished_kg: String(estOutputKg),
-      output_longsong_count: String(autoLongsong),
+      actual_mushroom_kg: '',
+      actual_premix_kg: '',
+      actual_cooking_oil_liter: '',
+      output_finished_kg: '',
+      output_longsong_count: '',
+      batch_count: '',
       notes: '',
-      containers: initialContainers,
-      batches: initialBatches,
+      containers: [],
+      batches: [],
     });
     setRecordFryingRunOpen(true);
   };
 
+  const handleFryingRunBatchCountChange = (valStr: string) => {
+    if (valStr === '') {
+      setFryingRunForm(f => ({ ...f, batch_count: '', batches: [] }));
+      return;
+    }
+    const count = parseInt(valStr, 10);
+    if (isNaN(count) || count < 0) {
+      setFryingRunForm(f => ({ ...f, batch_count: valStr }));
+      return;
+    }
+    const safeCount = Math.min(200, count);
+    setFryingRunForm(f => {
+      const currentBatches = [...f.batches];
+      const newBatches: { wajan_number: number; duration_minutes: string; oil_temp_celsius: string; notes?: string }[] = [];
+      for (let i = 1; i <= safeCount; i++) {
+        if (currentBatches[i - 1]) {
+          newBatches.push({ ...currentBatches[i - 1], wajan_number: i });
+        } else {
+          newBatches.push({
+            wajan_number: i,
+            duration_minutes: '',
+            oil_temp_celsius: '',
+            notes: '',
+          });
+        }
+      }
+      return {
+        ...f,
+        batch_count: valStr,
+        batches: newBatches,
+      };
+    });
+  };
+
   const handleFryingRunMushroomChange = (valStr: string) => {
     if (valStr === '') {
-      setFryingRunForm(f => ({
-        ...f,
-        actual_mushroom_kg: '',
-        actual_premix_kg: '',
-        actual_cooking_oil_liter: '',
-        output_finished_kg: '',
-        output_longsong_count: '',
-        containers: [],
-      }));
+      setFryingRunForm(f => ({ ...f, actual_mushroom_kg: '' }));
       return;
     }
     const val = parseFloat(valStr);
@@ -1390,19 +1466,62 @@ export default function ProductionPage() {
       setFryingRunForm(f => ({ ...f, actual_mushroom_kg: valStr }));
       return;
     }
-    const autoPremix = Number((val * 0.25).toFixed(2));
-    const autoOil = Number((val * 0.30).toFixed(2));
-    setFryingRunForm(f => ({
-      ...f,
-      actual_mushroom_kg: valStr,
-      actual_premix_kg: autoPremix.toString(),
-      actual_cooking_oil_liter: autoOil.toString(),
-    }));
+
+    const targetKg = Number(selectedFryingOrder?.target_quantity) || 50;
+    const prevInput = Number(selectedFryingOrder?.input_weight) || 0;
+    const remainingTargetKg = Math.max(0, targetKg - prevInput);
+    const maxAllowed = remainingTargetKg > 0 ? Number(remainingTargetKg.toFixed(2)) : targetKg;
+
+    if (val > maxAllowed) {
+      toast.warning(`Input jamur segar dibatasi maksimal sesuai target SPK (${maxAllowed} kg)`);
+      setFryingRunForm(f => ({ ...f, actual_mushroom_kg: String(maxAllowed) }));
+      return;
+    }
+
+    setFryingRunForm(f => ({ ...f, actual_mushroom_kg: valStr }));
+  };
+
+  const handleFryingRunPremixChange = (valStr: string) => {
+    if (valStr === '') {
+      setFryingRunForm(f => ({ ...f, actual_premix_kg: '' }));
+      return;
+    }
+    const val = parseFloat(valStr);
+    if (isNaN(val)) {
+      setFryingRunForm(f => ({ ...f, actual_premix_kg: valStr }));
+      return;
+    }
+    const maxStock = fryingStockStatus.premix.availableStock;
+    if (maxStock > 0 && val > maxStock) {
+      toast.warning(`Tepung premix dibatasi maksimal sesuai stok gudang (${maxStock.toFixed(1)} kg)`);
+      setFryingRunForm(f => ({ ...f, actual_premix_kg: String(maxStock) }));
+      return;
+    }
+    setFryingRunForm(f => ({ ...f, actual_premix_kg: valStr }));
+  };
+
+  const handleFryingRunOilChange = (valStr: string) => {
+    if (valStr === '') {
+      setFryingRunForm(f => ({ ...f, actual_cooking_oil_liter: '' }));
+      return;
+    }
+    const val = parseFloat(valStr);
+    if (isNaN(val)) {
+      setFryingRunForm(f => ({ ...f, actual_cooking_oil_liter: valStr }));
+      return;
+    }
+    const maxStock = fryingStockStatus.oil.availableStock;
+    if (maxStock > 0 && val > maxStock) {
+      toast.warning(`Minyak goreng dibatasi maksimal sesuai stok gudang (${maxStock.toFixed(1)} L)`);
+      setFryingRunForm(f => ({ ...f, actual_cooking_oil_liter: String(maxStock) }));
+      return;
+    }
+    setFryingRunForm(f => ({ ...f, actual_cooking_oil_liter: valStr }));
   };
 
   const handleFryingRunOutputKgChange = (valStr: string) => {
     if (valStr === '') {
-      setFryingRunForm(f => ({ ...f, output_finished_kg: '', output_longsong_count: '', containers: [] }));
+      setFryingRunForm(f => ({ ...f, output_finished_kg: '' }));
       return;
     }
     const val = parseFloat(valStr);
@@ -1410,63 +1529,54 @@ export default function ProductionPage() {
       setFryingRunForm(f => ({ ...f, output_finished_kg: valStr }));
       return;
     }
+
     const currentMushroom = parseFloat(fryingRunForm.actual_mushroom_kg) || (Number(selectedFryingOrder?.target_quantity) || 50);
-    const maxAllowed = Math.round(currentMushroom * 1.25 * 10) / 10;
-    
-    let clampedVal = val;
-    if (maxAllowed > 0 && val > maxAllowed) {
-      clampedVal = maxAllowed;
-    }
-    const count = parseInt(fryingRunForm.output_longsong_count, 10) || Math.max(1, Math.round(clampedVal / 2.5));
-    
-    // Auto-update container weights
-    const perWadah = Number((clampedVal / count).toFixed(2));
-    let remaining = clampedVal;
-    const newContainers: { container_number: number; weight_kg: string }[] = [];
-    for (let i = 1; i <= count; i++) {
-      const w = i === count ? Number(remaining.toFixed(2)) : perWadah;
-      newContainers.push({ container_number: i, weight_kg: String(w) });
-      remaining -= perWadah;
+    const maxYieldPct = productionStandards?.max_yield_percentage || 85.0;
+    const maxOutputWajarKg = Number(((currentMushroom * maxYieldPct) / 100).toFixed(2));
+
+    if (currentMushroom > 0 && val > maxOutputWajarKg) {
+      toast.warning(`Input jamur matang dibatasi maksimal ${maxOutputWajarKg} kg (Batas wajar BOM ${maxYieldPct}% dari jamur segar ${currentMushroom} kg)`);
+      setFryingRunForm(f => ({
+        ...f,
+        output_finished_kg: String(maxOutputWajarKg),
+      }));
+      return;
     }
 
     setFryingRunForm(f => ({
       ...f,
-      output_finished_kg: clampedVal.toString(),
-      output_longsong_count: count.toString(),
-      containers: newContainers,
+      output_finished_kg: valStr,
     }));
   };
 
   const handleFryingRunLongsongChange = (valStr: string) => {
     if (valStr === '') {
-      setFryingRunForm(f => ({ ...f, output_longsong_count: '', output_finished_kg: '', containers: [] }));
+      setFryingRunForm(f => ({ ...f, output_longsong_count: '', containers: [] }));
       return;
     }
     const count = parseInt(valStr, 10);
     if (isNaN(count) || count <= 0) {
-      setFryingRunForm(f => ({ ...f, output_longsong_count: valStr }));
+      setFryingRunForm(f => ({ ...f, output_longsong_count: valStr, containers: [] }));
       return;
     }
-    const currentMushroom = parseFloat(fryingRunForm.actual_mushroom_kg) || (Number(selectedFryingOrder?.target_quantity) || 50);
-    const maxAllowed = Math.round(currentMushroom * 1.25 * 10) / 10;
-    const curOutput = parseFloat(fryingRunForm.output_finished_kg);
-    const totalWeight = (!isNaN(curOutput) && curOutput > 0) ? curOutput : Math.min(maxAllowed, Number((count * 2.5).toFixed(1)));
 
-    const perWadah = Number((totalWeight / count).toFixed(2));
-    let remaining = totalWeight;
-    const newContainers: { container_number: number; weight_kg: string }[] = [];
-    for (let i = 1; i <= count; i++) {
-      const w = i === count ? Number(remaining.toFixed(2)) : perWadah;
-      newContainers.push({ container_number: i, weight_kg: String(w) });
-      remaining -= perWadah;
-    }
-
-    setFryingRunForm(f => ({
-      ...f,
-      output_longsong_count: valStr,
-      output_finished_kg: totalWeight.toString(),
-      containers: newContainers,
-    }));
+    const safeCount = Math.min(100, count);
+    setFryingRunForm(f => {
+      const currentContainers = [...f.containers];
+      const newContainers: { container_number: number; weight_kg: string }[] = [];
+      for (let i = 1; i <= safeCount; i++) {
+        if (currentContainers[i - 1]) {
+          newContainers.push({ ...currentContainers[i - 1], container_number: i });
+        } else {
+          newContainers.push({ container_number: i, weight_kg: '' });
+        }
+      }
+      return {
+        ...f,
+        output_longsong_count: valStr,
+        containers: newContainers,
+      };
+    });
   };
 
   const handleContainerWeightChange = (index: number, weightStr: string) => {
@@ -1475,11 +1585,9 @@ export default function ProductionPage() {
       if (updated[index]) {
         updated[index] = { ...updated[index], weight_kg: weightStr };
       }
-      const sum = updated.reduce((acc, c) => acc + (parseFloat(c.weight_kg) || 0), 0);
       return {
         ...f,
         containers: updated,
-        output_finished_kg: sum > 0 ? Number(sum.toFixed(2)).toString() : f.output_finished_kg,
       };
     });
   };
@@ -1487,8 +1595,15 @@ export default function ProductionPage() {
   const handleAutoBalanceContainers = () => {
     setFryingRunForm(f => {
       const total = parseFloat(f.output_finished_kg) || 0;
-      const count = f.containers.length || parseInt(f.output_longsong_count, 10) || 1;
-      if (total <= 0 || count <= 0) return f;
+      const count = parseInt(f.output_longsong_count, 10) || f.containers.length || 0;
+      if (total <= 0) {
+        toast.warning('Isi total berat jamur matang terlebih dahulu di Tab 1');
+        return f;
+      }
+      if (count <= 0) {
+        toast.warning('Isi jumlah wadah longsong terlebih dahulu di Tab 2');
+        return f;
+      }
       const perWadah = Number((total / count).toFixed(2));
       let remaining = total;
       const balanced = [];
@@ -1499,6 +1614,7 @@ export default function ProductionPage() {
       }
       return {
         ...f,
+        output_longsong_count: String(count),
         containers: balanced,
       };
     });
@@ -1528,42 +1644,74 @@ export default function ProductionPage() {
   const handleAddBatch = () => {
     setFryingRunForm(f => {
       const nextNo = (f.batches.length > 0 ? Math.max(...f.batches.map(b => b.wajan_number)) : 0) + 1;
+      const updated = [
+        ...f.batches,
+        { wajan_number: nextNo, duration_minutes: '', oil_temp_celsius: '', notes: '' },
+      ];
       return {
         ...f,
-        batches: [
-          ...f.batches,
-          { wajan_number: nextNo, duration_minutes: '15.0', oil_temp_celsius: '170', notes: '' },
-        ],
+        batch_count: String(updated.length),
+        batches: updated,
       };
     });
   };
 
   const handleRemoveBatch = (index: number) => {
     setFryingRunForm(f => {
-      const updated = f.batches.filter((_, idx) => idx !== index);
-      return { ...f, batches: updated };
+      const updated = f.batches.filter((_, idx) => idx !== index).map((b, idx) => ({
+        ...b,
+        wajan_number: idx + 1,
+      }));
+      return {
+        ...f,
+        batch_count: updated.length > 0 ? String(updated.length) : '',
+        batches: updated,
+      };
     });
   };
 
   const handleSetAllBatchesStandard = () => {
+    const stdDur = Number(productionStandards?.frying_duration_minutes) || 15;
+    const oilMin = Number(productionStandards?.oil_temp_min) || 150;
+    const oilMax = Number(productionStandards?.oil_temp_max) || 180;
+    const stdTemp = Math.round((oilMin + oilMax) / 2) || 165;
+
     setFryingRunForm(f => ({
       ...f,
-      batches: f.batches.map(b => ({ ...b, duration_minutes: '15.0', oil_temp_celsius: '170' })),
+      batches: f.batches.map(b => ({
+        ...b,
+        duration_minutes: stdDur.toFixed(1),
+        oil_temp_celsius: String(stdTemp),
+      })),
     }));
-    toast.info('Seluruh batch diset ke standar HACCP (15.0 menit, 170°C)');
+    toast.info(`Seluruh batch diset ke standar SOP (${stdDur} menit, ${stdTemp}°C)`);
   };
 
-  // Handler: Submit Rekap Selesai Masak SPK & Potong Stok Gudang Aktual
-  const handleSubmitFryingRun = async () => {
+  // Handler: Submit Rekap Selesai Masak SPK & Potong Stok Gudang Aktual (Simpan Sementara / Simpan Selesai)
+  const handleSubmitFryingRun = async (isPartial = false) => {
     if (!selectedFryingOrder) return;
     const mushroomKg = parseFloat(fryingRunForm.actual_mushroom_kg);
     const premixKg = parseFloat(fryingRunForm.actual_premix_kg);
     const oilLiter = parseFloat(fryingRunForm.actual_cooking_oil_liter);
     const outputKg = parseFloat(fryingRunForm.output_finished_kg);
     const longsongCount = parseInt(fryingRunForm.output_longsong_count, 10);
+    const batchCount = parseInt(fryingRunForm.batch_count, 10);
 
-    if (!mushroomKg || mushroomKg <= 0 || !outputKg || outputKg <= 0 || !longsongCount || longsongCount <= 0) {
-      toast.error('Mohon isi jamur aktual, berat output matang, dan jumlah longsong dengan benar');
+    const maxYieldAllowedPct = productionStandards?.max_yield_percentage || 85.0;
+    const maxOutputWajarKg = Number(((mushroomKg * maxYieldAllowedPct) / 100).toFixed(2));
+
+    if (!mushroomKg || mushroomKg <= 0 || isNaN(premixKg) || isNaN(oilLiter) || !outputKg || outputKg <= 0 || !longsongCount || longsongCount <= 0 || !batchCount || batchCount <= 0) {
+      toast.error('Mohon lengkapi seluruh rincian bahan aktual, hasil jamur matang, wadah longsong, dan batch wajan.');
+      return;
+    }
+
+    const targetKg = Number(selectedFryingOrder.target_quantity) || 50;
+    const prevInput = Number(selectedFryingOrder.input_weight) || 0;
+    const remainingTargetKg = Math.max(0, targetKg - prevInput);
+    const maxAllowed = remainingTargetKg > 0 ? Number(remainingTargetKg.toFixed(2)) : targetKg;
+
+    if (mushroomKg > maxAllowed) {
+      toast.error(`Jumlah jamur segar (${mushroomKg} kg) melebihi batas target SPK (${maxAllowed} kg). Mohon sesuaikan.`);
       return;
     }
 
@@ -1572,21 +1720,29 @@ export default function ProductionPage() {
       return;
     }
 
-    if (outputKg > mushroomKg * 1.5) {
-      toast.error(`Berat output jamur matang (${outputKg} kg) tidak wajar karena melebihi batas 150% bahan jamur segar (${mushroomKg} kg). Mohon periksa kembali input Anda.`);
+    if (outputKg > 0 && mushroomKg > 0 && outputKg > maxOutputWajarKg) {
+      toast.error(`Berat output jamur matang (${outputKg} kg) melebihi batas maksimal wajar BOM (${maxOutputWajarKg} kg / ${maxYieldAllowedPct}%). Mohon periksa kembali input Anda.`);
       return;
     }
 
+    // Offset nomor wadah longsong jika SPK ini sudah memiliki wadah sebelumnya
+    const existingContainersForThisSpk = longsongContainers.filter(c => c.production_order_id === selectedFryingOrder.id);
+    const containerOffset = existingContainersForThisSpk.length;
+
     const containersPayload = (fryingRunForm.containers && fryingRunForm.containers.length > 0)
       ? fryingRunForm.containers.map(c => ({
-          container_number: c.container_number,
+          container_number: c.container_number + containerOffset,
           weight_kg: parseFloat(c.weight_kg) || 0,
         }))
       : undefined;
 
+    // Offset nomor wajan batch jika SPK ini sudah memiliki wajan sebelumnya
+    const existingBatchesForThisSpk = fryingBatches.filter(b => b.production_order_id === selectedFryingOrder.id);
+    const batchOffset = existingBatchesForThisSpk.length;
+
     const batchesPayload = (fryingRunForm.batches && fryingRunForm.batches.length > 0)
       ? fryingRunForm.batches.map(b => ({
-          wajan_number: b.wajan_number,
+          wajan_number: b.wajan_number + batchOffset,
           duration_minutes: parseFloat(b.duration_minutes) || 15,
           oil_temp_celsius: parseFloat(b.oil_temp_celsius) || 170,
           notes: b.notes || undefined,
@@ -1602,13 +1758,18 @@ export default function ProductionPage() {
         actual_cooking_oil_liter: oilLiter || 0,
         output_finished_kg: outputKg,
         output_longsong_count: longsongCount,
+        is_partial: isPartial,
         containers: containersPayload,
         batches: batchesPayload,
         notes: fryingRunForm.notes || undefined,
       });
 
       if (res.success) {
-        toast.success(`SPK ${selectedFryingOrder.batch_number} selesai! Hasil: ${outputKg}kg (${longsongCount} longsong, Rendemen: ${res.data?.yieldPercentage}%)`);
+        if (isPartial) {
+          toast.success(`Catatan sementara SPK ${selectedFryingOrder.batch_number} tersimpan! Sesi ini: ${outputKg}kg (${longsongCount} wadah baru). Status SPK tetap Sedang Berjalan.`);
+        } else {
+          toast.success(`SPK ${selectedFryingOrder.batch_number} selesai tuntas! Total: ${res.data?.accumulatedOutput || outputKg}kg (Rendemen: ${res.data?.yieldPercentage}%)`);
+        }
         setRecordFryingRunOpen(false);
         await loadData();
       } else {
@@ -1618,6 +1779,31 @@ export default function ProductionPage() {
       toast.error(err.message || 'Terjadi kesalahan sistem');
     } finally {
       setIsSubmittingFryingRun(false);
+    }
+  };
+
+  // Handler sebelum submit Simpan Selesai: periksa apakah akumulasi jamur memenuhi target SPK
+  const handleInitiateSubmitComplete = () => {
+    if (!selectedFryingOrder) return;
+    const targetKg = Number(selectedFryingOrder.target_quantity) || 50;
+    const prevInput = Number(selectedFryingOrder.input_weight) || 0;
+    const currentMushroom = parseFloat(fryingRunForm.actual_mushroom_kg) || 0;
+    const totalInput = prevInput + currentMushroom;
+
+    if (totalInput < targetKg) {
+      const shortage = targetKg - totalInput;
+      const pct = Math.round((totalInput / targetKg) * 100);
+      setUnderTargetData({
+        targetKg,
+        prevInputKg: prevInput,
+        currentMushroomKg: currentMushroom,
+        totalInputKg: totalInput,
+        shortageKg: Number(shortage.toFixed(1)),
+        pct,
+      });
+      setUnderTargetConfirmOpen(true);
+    } else {
+      handleSubmitFryingRun(false);
     }
   };
 
@@ -2106,7 +2292,7 @@ export default function ProductionPage() {
             border: '1px solid var(--border-default)',
             width: 'fit-content',
           }}>
-            Pool Curah Pabrik
+            Pool Pabrik
           </span>
         );
       },
@@ -2682,7 +2868,7 @@ export default function ProductionPage() {
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
                 <Box className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
-                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Total Output Jamur Curah</span>
+                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Total Output Jamur Matang</span>
               </div>
               <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-primary-700)' }}>
                 {((fryingMetrics.totalOutputGramToday || 0) / 1000).toFixed(2)} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>kilogram</span>
@@ -2847,15 +3033,25 @@ export default function ProductionPage() {
                         {!isManagement && (
                           <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => handleOpenSpkBatches(order)}
+                                leftIcon={<Flame className="w-3.5 h-3.5 text-amber-600" aria-hidden="true" />}
+                                title="Lihat riwayat rincian batch wajan untuk SPK ini"
+                                style={{ padding: '6px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}
+                              >
+                                Rincian Wajan ({fryingBatches.filter(b => b.production_order_id === order.id).length})
+                              </Button>
                               {order.status !== 'COMPLETED' ? (
                                 <Button
                                   variant="primary"
                                   size="sm"
                                   leftIcon={<CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />}
                                   onClick={() => handleOpenRecordFryingRun(order)}
-                                  title="Catat hasil goreng dan konsumsi bahan aktual setelah selesai masak"
+                                  title="Catat hasil goreng dan konsumsi bahan aktual (bisa sebagian atau langsung selesai tuntas)"
                                 >
-                                  Catat Selesai Masak
+                                  Catat Hasil Goreng
                                 </Button>
                               ) : (
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
@@ -2897,13 +3093,13 @@ export default function ProductionPage() {
             )}
           </Card>
 
-          {/* Buffer WIP: Kartu Stok Longsong (Jamur Matang Curah) */}
+          {/* Buffer WIP: Kartu Stok Longsong (Jamur Matang) */}
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: 'var(--text-base)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Box className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
-                  Buffer WIP: Kartu Stok Longsong (Jamur Matang Curah)
+                  Buffer WIP: Kartu Stok Longsong (Jamur Matang)
                 </h3>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: '2px' }}>
                   Daftar wadah fisik jamur matang hasil penggorengan per SPK dengan pencatatan berat aktual per wadah.
@@ -3008,7 +3204,7 @@ export default function ProductionPage() {
                           </span>
                         </div>
                         <div style={{ fontSize: '11px', fontFamily: 'monospace', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                          {c.production_order?.batch_number || 'SPK Curah'}
+                          {c.production_order?.batch_number || 'SPK Penggorengan'}
                         </div>
                       </div>
 
@@ -3072,15 +3268,6 @@ export default function ProductionPage() {
             )}
           </Card>
 
-          {/* Frying Data Table with scroll for > 5 items */}
-          <div style={{
-            maxHeight: fryingBatches.length > 5 ? '420px' : undefined,
-            overflowY: fryingBatches.length > 5 ? 'auto' : undefined,
-            border: fryingBatches.length > 5 ? '1px solid var(--border-default)' : undefined,
-            borderRadius: fryingBatches.length > 5 ? 'var(--radius-md)' : undefined,
-          }}>
-            <DataTable columns={fryingColumns} data={fryingBatches} />
-          </div>
         </>
       )}
 
@@ -3135,7 +3322,7 @@ export default function ProductionPage() {
                 {unpackedLongsongCount} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>wadah</span>
               </div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>
-                {unpackedLongsongCount > 0 ? 'Wadah jamur curah siap dibumbui' : 'Tidak ada wadah siap packing'}
+                {unpackedLongsongCount > 0 ? 'Wadah jamur matang siap dibumbui' : 'Tidak ada wadah siap packing'}
               </div>
             </Card>
           </div>
@@ -3206,7 +3393,7 @@ export default function ProductionPage() {
                     <tr style={{ borderBottom: '2px solid var(--border-default)', textAlign: 'left' }}>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>No. SPK Batch</th>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>Varian Produk</th>
-                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Longsong Selesai</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Longsong Terpakai</th>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>Hasil Kemasan (pcs)</th>
                       <th style={{ padding: '8px 12px', fontWeight: 600 }}>Status Alur QC</th>
                       {!isManagement && <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Aksi</th>}
@@ -3230,19 +3417,38 @@ export default function ProductionPage() {
                             {item.order.product_variant || 'Jamur Crispy'}
                           </td>
                           <td style={{ padding: '10px 12px' }}>
-                            <span style={{ fontWeight: 600 }}>
-                              {item.packedCount} / {item.totalLongsongProduced} longsong
-                            </span>
-                            {item.unpackedCount > 0 && (
-                              <div style={{ fontSize: '11px', color: 'var(--color-danger-600)', fontWeight: 500 }}>
-                                {item.unpackedCount} longsong belum packing
+                            {hasPackaged ? (
+                              <>
+                                <span style={{ fontWeight: 600 }}>
+                                  {item.packedCount} / {item.totalLongsongProduced} longsong
+                                </span>
+                                {item.unpackedCount > 0 && (
+                                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500 }}>
+                                    {item.unpackedCount} longsong belum packing
+                                  </div>
+                                )}
+                              </>
+                            ) : (
+                              <div>
+                                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                  0 / {item.totalLongsongProduced} longsong
+                                </span>
+                                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                  Belum ada packing
+                                </div>
                               </div>
                             )}
                           </td>
                           <td style={{ padding: '10px 12px' }}>
-                            <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-800)' }}>
-                              {item.totalPackagedPcs} pcs
-                            </strong>
+                            {hasPackaged ? (
+                              <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-800)' }}>
+                                {item.totalPackagedPcs} pcs
+                              </strong>
+                            ) : (
+                              <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)' }}>
+                                0 pcs
+                              </span>
+                            )}
                           </td>
                           <td style={{ padding: '10px 12px' }}>
                             {s === 'RELEASED' ? (
@@ -3253,8 +3459,24 @@ export default function ProductionPage() {
                               <StatusBadge status="cancelled" label="REJECTED (Afkir)" />
                             ) : s === 'QC_PENDING' ? (
                               <StatusBadge status="info" label="Menunggu Uji QC" />
-                            ) : (
+                            ) : hasPackaged ? (
                               <StatusBadge status="active" label="Sedang Dipacking" />
+                            ) : (
+                              <span style={{
+                                fontSize: 'var(--text-xs)',
+                                color: 'var(--text-secondary)',
+                                fontWeight: 500,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-full)',
+                                background: 'var(--bg-subtle)',
+                                border: '1px solid var(--border-default)',
+                              }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--text-tertiary)' }} />
+                                Belum Dipacking
+                              </span>
                             )}
                           </td>
                           {!isManagement && (
@@ -3347,12 +3569,12 @@ export default function ProductionPage() {
 
 
       {/* ═══════════════════════════════════════════════ */}
-      {/* MODAL: GORENG CURAH (TANPA SPK)                 */}
+      {/* MODAL: GORENG REGULER (TANPA SPK)               */}
       {/* ═══════════════════════════════════════════════ */}
       <Modal
         isOpen={createRegularFryingOpen}
         onClose={() => setCreateRegularFryingOpen(false)}
-        title={`Goreng Curah (Tanpa SPK) — Wajan #${regularFryingForm.wajan_number}`}
+        title={`Goreng Jamur (Tanpa SPK) — Wajan #${regularFryingForm.wajan_number}`}
         size="md"
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
@@ -3380,7 +3602,7 @@ export default function ProductionPage() {
           }}>
             <Flame className="w-5 h-5 text-[var(--color-primary-600)] shrink-0" aria-hidden="true" />
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-primary-900)' }}>
-              Wajan ini dialokasikan untuk <strong>Penggorengan Curah Bebas (Tanpa SPK)</strong>, seperti sisa jamur segar atau uji coba adonan. Hasil matang akan otomatis masuk ke pool longsong jamur curah pabrik.
+              Wajan ini dialokasikan untuk <strong>Penggorengan Jamur Bebas (Tanpa SPK)</strong>, seperti sisa jamur segar atau uji coba adonan. Hasil matang akan otomatis masuk ke pool longsong jamur pabrik.
             </div>
           </div>
 
@@ -3396,10 +3618,10 @@ export default function ProductionPage() {
             <div>
               <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>Alokasi Target Wajan</div>
               <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-                Pool Curah Pabrik (Khusus Tanpa SPK)
+                Pool Pabrik (Khusus Tanpa SPK)
               </strong>
               <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                Hasil penggorengan langsung masuk ke stok longsong curah untuk disiapkan ke tahap packing rasa.
+                Hasil penggorengan langsung masuk ke stok longsong untuk disiapkan ke tahap packing rasa.
               </div>
             </div>
             <span style={{
@@ -3500,7 +3722,7 @@ export default function ProductionPage() {
           <FormField label="Alokasi Target Wajan (Opsional)">
             <Select
               options={[
-                { value: '', label: 'Pool Curah Pabrik (Tanpa SPK Khusus)' },
+                { value: '', label: 'Pool Pabrik (Tanpa SPK Khusus)' },
                 ...fryingOrdersWithProgress.map(({ order: o, targetKg, realizedKg, remainingKg, progressPercent }) => ({
                   value: o.id,
                   label: `SPK ${o.batch_number} (Target: ${targetKg}kg | Realisasi: ${realizedKg.toFixed(1)}kg | Sisa: ${remainingKg.toFixed(1)}kg | ${progressPercent}%)`,
@@ -3510,7 +3732,7 @@ export default function ProductionPage() {
               onChange={(e) => setHaccpFryingForm({ ...haccpFryingForm, production_order_id: e.target.value })}
             />
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: '4px', display: 'block' }}>
-              Penggorengan wajan menghasilkan <strong>Jamur Crispy Polos (Curah)</strong>. Pemilihan varian rasa (Balado, BBQ, dll) dan kemasan dilakukan pada tahap <strong>Packing Rasa</strong>.
+              Penggorengan wajan menghasilkan <strong>Jamur Crispy Polos</strong>. Pemilihan varian rasa (Balado, BBQ, dll) dan kemasan dilakukan pada tahap <strong>Packing Rasa</strong>.
             </span>
           </FormField>
 
@@ -3937,107 +4159,132 @@ export default function ProductionPage() {
         </div>
       </Modal>
 
+      {/* ── MODAL: RINCIAN BATCH WAJAN PER SPK ── */}
+      <Modal
+        isOpen={spkBatchesModalOpen}
+        onClose={() => setSpkBatchesModalOpen(false)}
+        title={`Rincian Batch Wajan — SPK ${selectedSpkForBatches?.batch_number || ''}`}
+        size="xl"
+        footer={<Button variant="secondary" onClick={() => setSpkBatchesModalOpen(false)}>Tutup</Button>}
+      >
+        {selectedSpkForBatches && (() => {
+          const orderBatches = fryingBatches.filter(b => b.production_order_id === selectedSpkForBatches.id);
+          const totalInputMushroomKg = Number(selectedSpkForBatches.input_weight) || 0;
+          const targetQtyKg = Number(selectedSpkForBatches.target_quantity) || 50;
+
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              {/* Header Summary */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                gap: '12px',
+                padding: '12px 16px',
+                background: 'var(--color-primary-50)',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--color-primary-200)',
+              }}>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Target SPK:</span>
+                  <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-primary-900)' }}>
+                    {targetQtyKg} kg
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Telah Digoreng:</span>
+                  <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--color-success-700)' }}>
+                    {totalInputMushroomKg.toFixed(1)} kg
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Jumlah Wajan:</span>
+                  <div style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)' }}>
+                    {orderBatches.length} Wajan
+                  </div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Status SPK:</span>
+                  <div>
+                    <StatusBadge
+                      status={selectedSpkForBatches.status === 'COMPLETED' ? 'completed' : selectedSpkForBatches.status === 'IN_PROGRESS' ? 'in_progress' : 'pending'}
+                      label={selectedSpkForBatches.status === 'COMPLETED' ? 'Selesai' : selectedSpkForBatches.status === 'IN_PROGRESS' ? 'Sedang Jalan' : 'Menunggu'}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Toolbar */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+                  Daftar seluruh batch wajan dan stopwatch penggorengan untuk SPK ini.
+                </div>
+                {!isManagement && selectedSpkForBatches.status !== 'COMPLETED' && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<Plus className="w-3.5 h-3.5" aria-hidden="true" />}
+                    onClick={() => {
+                      handleOpenCreateRegularFrying(selectedSpkForBatches);
+                    }}
+                  >
+                    + Tambah Wajan untuk SPK Ini
+                  </Button>
+                )}
+              </div>
+
+              {/* Tabel Wajan Khusus SPK Ini */}
+              <div style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                <DataTable columns={fryingColumns} data={orderBatches} />
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
       {/* ═══════════════════════════════════════════════ */}
       {/* MODAL: REKAP SELESAI MASAK SPK (BAHAN AKTUAL)   */}
       {/* ═══════════════════════════════════════════════ */}
       <Modal
         isOpen={recordFryingRunOpen}
         onClose={() => setRecordFryingRunOpen(false)}
-        title={`Rekap Selesai Masak — SPK ${selectedFryingOrder?.batch_number}`}
+        title={`Catat Hasil Goreng — SPK ${selectedFryingOrder?.batch_number}`}
         size="lg"
         footer={
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '8px', flexWrap: 'wrap' }}>
             <div>
-              {fryingRunTab === 'BAHAN' ? (
-                <Button variant="secondary" onClick={() => setRecordFryingRunOpen(false)} disabled={isSubmittingFryingRun}>
-                  Batal
-                </Button>
-              ) : fryingRunTab === 'LONGSONG' ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => setFryingRunTab('BAHAN')}
-                  leftIcon={<ArrowLeft className="w-4 h-4" aria-hidden="true" />}
-                  disabled={isSubmittingFryingRun}
-                >
-                  Kembali ke Bahan
-                </Button>
-              ) : (
-                <Button
-                  variant="secondary"
-                  onClick={() => setFryingRunTab('LONGSONG')}
-                  leftIcon={<ArrowLeft className="w-4 h-4" aria-hidden="true" />}
-                  disabled={isSubmittingFryingRun}
-                >
-                  Kembali ke Longsong
-                </Button>
-              )}
+              <Button variant="secondary" onClick={() => setRecordFryingRunOpen(false)} disabled={isSubmittingFryingRun}>
+                Batal
+              </Button>
             </div>
 
-            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
-              {fryingRunTab !== 'BAHAN' && (
-                <Button variant="secondary" onClick={() => setRecordFryingRunOpen(false)} disabled={isSubmittingFryingRun}>
-                  Batal
-                </Button>
+            <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+              {!isFryingRunFormFullyComplete && (
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', maxWidth: '280px', textAlign: 'right' }}>
+                  Isi lengkap seluruh tab untuk mengaktifkan simpan
+                </span>
               )}
 
-              {fryingRunTab === 'BAHAN' ? (
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    const actualMushroom = parseFloat(fryingRunForm.actual_mushroom_kg) || 0;
-                    const outputFinished = parseFloat(fryingRunForm.output_finished_kg) || 0;
-                    if (!actualMushroom || actualMushroom <= 0) {
-                      toast.error('Masukkan timbangan aktual jamur segar di Tab 1');
-                      return;
-                    }
-                    if (!outputFinished || outputFinished <= 0) {
-                      toast.error('Masukkan hasil jamur matang tiris di Tab 1');
-                      return;
-                    }
-                    setFryingRunTab('LONGSONG');
-                  }}
-                  rightIcon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
-                >
-                  Lanjut ke Rincian Longsong
-                </Button>
-              ) : fryingRunTab === 'LONGSONG' ? (
-                <Button
-                  variant="primary"
-                  onClick={() => {
-                    const longsongCount = parseInt(fryingRunForm.output_longsong_count, 10) || 0;
-                    if (!longsongCount || longsongCount <= 0) {
-                      toast.error('Masukkan jumlah wadah longsong terisi di Tab 2');
-                      return;
-                    }
-                    setFryingRunTab('BATCH');
-                  }}
-                  rightIcon={<ArrowRight className="w-4 h-4" aria-hidden="true" />}
-                >
-                  Lanjut ke Waktu Batch (HACCP)
-                </Button>
-              ) : (
-                <Button
-                  variant="primary"
-                  onClick={handleSubmitFryingRun}
-                  leftIcon={fryingStockStatus.hasAnyShortage ? <AlertTriangle className="w-4 h-4" aria-hidden="true" /> : <CheckCircle2 className="w-4 h-4" aria-hidden="true" />}
-                  disabled={
-                    isSubmittingFryingRun ||
-                    fryingStockStatus.hasAnyShortage ||
-                    !fryingRunForm.actual_mushroom_kg ||
-                    Number(fryingRunForm.actual_mushroom_kg) <= 0 ||
-                    !fryingRunForm.output_finished_kg ||
-                    Number(fryingRunForm.output_finished_kg) <= 0 ||
-                    !fryingRunForm.output_longsong_count ||
-                    Number(fryingRunForm.output_longsong_count) <= 0
-                  }
-                >
-                  {isSubmittingFryingRun
-                    ? 'Sedang Menyimpan...'
-                    : fryingStockStatus.hasAnyShortage
-                    ? 'Stok Gudang Kurang'
-                    : 'Simpan & Potong Stok Gudang'}
-                </Button>
-              )}
+              <Button
+                variant="secondary"
+                onClick={() => handleSubmitFryingRun(true)}
+                disabled={!isFryingRunFormFullyComplete || isSubmittingFryingRun}
+                title={!isFryingRunFormFullyComplete ? fryingRunMissingMessage : 'Simpan catatan sesi ini. Status SPK tetap Sedang Berjalan (IN_PROGRESS).'}
+              >
+                {isSubmittingFryingRun ? 'Menyimpan...' : 'Simpan Sementara'}
+              </Button>
+              <Button
+                variant="primary"
+                onClick={handleInitiateSubmitComplete}
+                leftIcon={fryingStockStatus.hasAnyShortage ? <AlertTriangle className="w-4 h-4" aria-hidden="true" /> : <CheckCircle2 className="w-4 h-4" aria-hidden="true" />}
+                disabled={!isFryingRunFormFullyComplete || isSubmittingFryingRun}
+                title={!isFryingRunFormFullyComplete ? fryingRunMissingMessage : 'Simpan dan selesaikan target SPK ini.'}
+              >
+                {isSubmittingFryingRun
+                  ? 'Menyimpan...'
+                  : fryingStockStatus.hasAnyShortage
+                  ? 'Stok Gudang Kurang'
+                  : 'Simpan Selesai'}
+              </Button>
             </div>
           </div>
         }
@@ -4050,16 +4297,27 @@ export default function ProductionPage() {
             const actualOil = parseFloat(fryingRunForm.actual_cooking_oil_liter) || 0;
             const outputFinished = parseFloat(fryingRunForm.output_finished_kg) || 0;
             const longsongCount = parseInt(fryingRunForm.output_longsong_count, 10) || 0;
+            const prevInput = Number(selectedFryingOrder.input_weight) || 0;
+            const prevOutput = Number(selectedFryingOrder.output_weight) || 0;
+            const remainingTargetKg = Math.max(0, targetMushroom - prevInput);
+            const maxMushroomAllowed = remainingTargetKg > 0 ? Number(remainingTargetKg.toFixed(2)) : targetMushroom;
 
-            // Standar BOM
-            const bomPremix = targetMushroom * 0.25;
-            const bomOil = targetMushroom * 0.30;
+            // Standar BOM & estimasi batch wajan berdasarkan jamur yang dimasak
+            const baseMushroomForBom = actualMushroom > 0 ? actualMushroom : maxMushroomAllowed;
+            const bomPremix = Number((baseMushroomForBom * 0.25).toFixed(2));
+            const bomOil = Number((baseMushroomForBom * 0.30).toFixed(2));
+            const estBatchForMushroom = Math.max(1, Math.round(baseMushroomForBom / 0.8));
             const diffPremix = actualPremix - bomPremix;
             const diffOil = actualOil - bomOil;
 
-            // Rendemen
+            // Rendemen & Batas BOM
+            const minYieldPct = productionStandards?.min_yield_percentage || 65.0;
+            const maxYieldPct = productionStandards?.max_yield_percentage || 85.0;
             const yld = actualMushroom > 0 && outputFinished > 0 ? (outputFinished / actualMushroom) * 100 : 0;
-            const isGoodYield = yld >= 65;
+            const isTooHighYield = yld > maxYieldPct;
+            const isGoodYield = yld >= minYieldPct && !isTooHighYield;
+            const isLowYield = yld > 0 && yld < minYieldPct;
+            const maxOutputWajarKg = Number(((baseMushroomForBom * maxYieldPct) / 100).toFixed(1));
 
             return (
               <>
@@ -4070,32 +4328,72 @@ export default function ProductionPage() {
                   border: '1px solid var(--color-primary-200)',
                   borderRadius: 'var(--radius-md)',
                   display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  flexWrap: 'wrap',
+                  flexDirection: 'column',
                   gap: '8px',
                 }}>
-                  <div>
-                    <div style={{ fontSize: '11px', color: 'var(--color-primary-800)', textTransform: 'uppercase', fontWeight: 600 }}>
-                      SPK Penggorengan Curah
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    gap: '8px',
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: 'var(--color-primary-800)', textTransform: 'uppercase', fontWeight: 600 }}>
+                        SPK Penggorengan
+                      </div>
+                      <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
+                        {selectedFryingOrder.batch_number}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
-                      {selectedFryingOrder.batch_number}
+                    <div style={{ display: 'flex', gap: '16px', textAlign: 'right', flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: '11px', color: 'var(--color-primary-800)' }}>Target SPK</div>
+                        <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
+                          {targetMushroom} kg
+                        </div>
+                      </div>
+                      {prevInput > 0 && (
+                        <div>
+                          <div style={{ fontSize: '11px', color: 'var(--color-success-700)' }}>Sudah Digoreng</div>
+                          <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-success-800)' }}>
+                            {prevInput.toFixed(1)} kg
+                          </div>
+                        </div>
+                      )}
+                      {prevInput > 0 && (
+                        <div>
+                          <div style={{ fontSize: '11px', color: 'var(--color-warning-700)' }}>Sisa Target</div>
+                          <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-warning-800)' }}>
+                            {remainingTargetKg.toFixed(1)} kg
+                          </div>
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontSize: '11px', color: 'var(--color-primary-800)' }}>
+                          {fryingRunForm.batch_count ? 'Jumlah Batch Sesi Ini' : 'Estimasi Total Batch'}
+                        </div>
+                        <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
+                          {fryingRunForm.batch_count ? `${fryingRunForm.batch_count} batch` : `~${Math.round(targetMushroom / 0.8)} batch`}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '16px', textAlign: 'right' }}>
-                    <div>
-                      <div style={{ fontSize: '11px', color: 'var(--color-primary-800)' }}>Target Jamur Segar</div>
-                      <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
-                        {targetMushroom} kg
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '11px', color: 'var(--color-primary-800)' }}>Estimasi Total Batch</div>
-                      <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
-                        ~{Math.round(targetMushroom / 0.8)} batch
-                      </div>
-                    </div>
+                  <div style={{
+                    fontSize: '11.5px',
+                    color: 'var(--color-primary-900)',
+                    padding: '6px 10px',
+                    borderRadius: '4px',
+                    background: 'rgba(255, 255, 255, 0.75)',
+                    border: '1px dashed var(--color-primary-300)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}>
+                    <Info className="w-3.5 h-3.5 text-primary-700 shrink-0" />
+                    <span>
+                      Input di bawah adalah bahan &amp; hasil untuk <strong>sesi/shift masak ini</strong>. Pastikan semua tab (Bahan, Longsong, dan Batch) terisi lengkap untuk mengaktifkan tombol <strong>&quot;Simpan Sementara&quot;</strong> atau <strong>&quot;Simpan Selesai&quot;</strong>.
+                    </span>
                   </div>
                 </div>
 
@@ -4123,6 +4421,7 @@ export default function ProductionPage() {
                     },
                   ].map((tab) => {
                     const isActive = fryingRunTab === tab.id;
+
                     return (
                       <button
                         key={tab.id}
@@ -4203,16 +4502,17 @@ export default function ProductionPage() {
                             type="number"
                             step="0.1"
                             min="0.1"
+                            max={maxMushroomAllowed}
                             value={fryingRunForm.actual_mushroom_kg}
                             onChange={(e) => handleFryingRunMushroomChange(e.target.value)}
-                            placeholder={`Misal: ${targetMushroom}`}
+                            placeholder={`Maks: ${maxMushroomAllowed} kg`}
                             style={{
                               borderColor: fryingStockStatus.mushroom.isShortage ? 'var(--color-danger-500)' : undefined,
                             }}
                           />
                           <div style={{ fontSize: '11px', marginTop: '3px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
-                              <span>Standar SPK: {targetMushroom} kg</span>
+                              <span>Batas Target: <strong>{maxMushroomAllowed} kg</strong></span>
                               <span style={{
                                 fontWeight: 600,
                                 color: fryingStockStatus.mushroom.isShortage ? 'var(--color-danger-600)' : 'var(--color-success-700)',
@@ -4233,9 +4533,10 @@ export default function ProductionPage() {
                             type="number"
                             step="0.1"
                             min="0"
+                            max={fryingStockStatus.premix.availableStock > 0 ? fryingStockStatus.premix.availableStock : undefined}
                             value={fryingRunForm.actual_premix_kg}
-                            onChange={(e) => setFryingRunForm({ ...fryingRunForm, actual_premix_kg: e.target.value })}
-                            placeholder={`Misal: ${bomPremix.toFixed(1)}`}
+                            onChange={(e) => handleFryingRunPremixChange(e.target.value)}
+                            placeholder={`BOM: ${bomPremix.toFixed(1)} kg`}
                             style={{
                               borderColor: fryingStockStatus.premix.isShortage ? 'var(--color-danger-500)' : undefined,
                             }}
@@ -4263,9 +4564,10 @@ export default function ProductionPage() {
                             type="number"
                             step="0.1"
                             min="0"
+                            max={fryingStockStatus.oil.availableStock > 0 ? fryingStockStatus.oil.availableStock : undefined}
                             value={fryingRunForm.actual_cooking_oil_liter}
-                            onChange={(e) => setFryingRunForm({ ...fryingRunForm, actual_cooking_oil_liter: e.target.value })}
-                            placeholder={`Misal: ${bomOil.toFixed(1)}`}
+                            onChange={(e) => handleFryingRunOilChange(e.target.value)}
+                            placeholder={`BOM: ${bomOil.toFixed(1)} L`}
                             style={{
                               borderColor: fryingStockStatus.oil.isShortage ? 'var(--color-danger-500)' : undefined,
                             }}
@@ -4292,7 +4594,7 @@ export default function ProductionPage() {
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px dashed var(--border-default)' }}>
                       <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Total Hasil Jamur Matang Curah (Hasil Timbangan Akhir)
+                        Total Hasil Jamur Matang &amp; Jumlah Batch Wajan
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
                         <FormField label="Total Berat Jamur Matang + Kremesan (kg)" required>
@@ -4300,38 +4602,63 @@ export default function ProductionPage() {
                             type="number"
                             step="0.1"
                             min="0.1"
-                            max={Number((actualMushroom * 1.25).toFixed(1)) || undefined}
                             value={fryingRunForm.output_finished_kg}
                             onChange={(e) => handleFryingRunOutputKgChange(e.target.value)}
-                            placeholder={`Misal: ${(actualMushroom * 0.67).toFixed(1)}`}
+                            placeholder={`Misal: ${(baseMushroomForBom * 0.67).toFixed(1)} kg`}
                           />
-                          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-                            Maksimal wajar: {(actualMushroom * 1.25).toFixed(1)} kg
+                          <span style={{ fontSize: '11px', color: isTooHighYield ? 'var(--color-danger-600)' : 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                            Estimasi standar: ~{(baseMushroomForBom * 0.67).toFixed(1)} kg | Maksimal wajar BOM: {maxOutputWajarKg} kg ({maxYieldPct}%)
                           </span>
                         </FormField>
 
-                        <div style={{
-                          padding: '10px 14px',
-                          borderRadius: 'var(--radius-md)',
-                          background: isGoodYield ? 'var(--color-success-50)' : 'var(--bg-subtle)',
-                          border: `1px solid ${isGoodYield ? 'var(--color-success-300)' : 'var(--border-default)'}`,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'center',
-                        }}>
+                        <FormField label="Jumlah Batch Wajan yang Digoreng" required>
+                          <Input
+                            type="number"
+                            step="1"
+                            min="1"
+                            max="100"
+                            value={fryingRunForm.batch_count}
+                            onChange={(e) => handleFryingRunBatchCountChange(e.target.value)}
+                            placeholder="Misal: 10"
+                          />
+                          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
+                            Sinkron otomatis dengan {fryingRunForm.batches.length || 0} kartu batch di tab Waktu Batch
+                          </span>
+                        </FormField>
+                      </div>
+
+                      {/* Rendemen Card */}
+                      <div style={{
+                        padding: '10px 14px',
+                        borderRadius: 'var(--radius-md)',
+                        background: isTooHighYield ? 'var(--color-danger-50)' : isGoodYield ? 'var(--color-success-50)' : isLowYield ? 'var(--color-warning-50)' : 'var(--bg-subtle)',
+                        border: `1px solid ${isTooHighYield ? 'var(--color-danger-300)' : isGoodYield ? 'var(--color-success-300)' : isLowYield ? 'var(--color-warning-300)' : 'var(--border-default)'}`,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                      }}>
+                        <div>
                           <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Rendemen Penggorengan:</div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: isGoodYield ? 'var(--color-success-800)' : 'var(--color-warning-800)' }}>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: isTooHighYield ? 'var(--color-danger-800)' : isGoodYield ? 'var(--color-success-800)' : 'var(--color-warning-800)' }}>
                             {yld.toFixed(1)}%
                           </div>
-                          <div style={{ fontSize: '10px', color: isGoodYield ? 'var(--color-success-700)' : 'var(--text-tertiary)' }}>
-                            {isGoodYield ? (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                <Check className="w-2.5 h-2.5" /> Memenuhi standar rendemen (≥65%)
-                              </span>
-                            ) : (
-                              'Target efisiensi dapur: 65% - 75%'
-                            )}
-                          </div>
+                        </div>
+                        <div style={{ fontSize: '11px', color: isTooHighYield ? 'var(--color-danger-700)' : isGoodYield ? 'var(--color-success-700)' : 'var(--text-tertiary)', textAlign: 'right' }}>
+                          {isTooHighYield ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                              <AlertTriangle className="w-3.5 h-3.5" /> Melebihi batas maksimal wajar BOM (Maks {maxYieldPct}%)
+                            </span>
+                          ) : isGoodYield ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600 }}>
+                              <Check className="w-3.5 h-3.5" /> Memenuhi standar rendemen ({minYieldPct}% - {maxYieldPct}%)
+                            </span>
+                          ) : isLowYield ? (
+                            <span style={{ color: 'var(--color-warning-800)', fontWeight: 600 }}>
+                              Di bawah target efisiensi standar (&lt;{minYieldPct}%)
+                            </span>
+                          ) : (
+                            `Target efisiensi dapur: ${minYieldPct}% - ${maxYieldPct}%`
+                          )}
                         </div>
                       </div>
                     </div>
@@ -4392,7 +4719,7 @@ export default function ProductionPage() {
                           placeholder={`Misal: ${Math.max(1, Math.round((actualMushroom * 0.67) / 2.5))}`}
                         />
                         <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-                          Mengubah jumlah wadah akan otomatis membagi rata beratnya
+                          Input manual bobot wadah, atau klik &quot;Bagi Rata Otomatis&quot; di atas.
                         </span>
                       </FormField>
 
@@ -4413,8 +4740,15 @@ export default function ProductionPage() {
 
                     {/* Grid Input Berat Wadah */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Berat Aktual Masing-Masing Wadah Longsong:
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Berat Aktual Masing-Masing Wadah Longsong:
+                        </span>
+                        {fryingRunForm.containers.length > 0 && (
+                          <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                            {fryingRunForm.containers.filter(c => parseFloat(c.weight_kg) > 0).length} dari {fryingRunForm.containers.length} wadah terisi
+                          </span>
+                        )}
                       </div>
                       <div style={{
                         display: 'grid',
@@ -4441,6 +4775,7 @@ export default function ProductionPage() {
                                 min="0.1"
                                 value={c.weight_kg}
                                 onChange={(e) => handleContainerWeightChange(idx, e.target.value)}
+                                placeholder="0.0"
                                 style={{ height: '30px', fontSize: '12px', padding: '2px 6px' }}
                               />
                               <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>kg</span>
@@ -4458,13 +4793,21 @@ export default function ProductionPage() {
 
                 {/* ── TAB 3: WAKTU BATCH PENGGORENGAN (HACCP) ── */}
                 {fryingRunTab === 'BATCH' && (() => {
+                  const stdDuration = Number(productionStandards?.frying_duration_minutes) || 15;
+                  const oilMin = Number(productionStandards?.oil_temp_min) || 150;
+                  const oilMax = Number(productionStandards?.oil_temp_max) || 180;
+                  const stdTemp = Math.round((oilMin + oilMax) / 2) || 165;
+                  const ccpMinMinutes = Math.max(1, stdDuration - 2);
+                  const ccpMaxMinutes = stdDuration + 2;
+
                   const validBatches = fryingRunForm.batches.filter(b => parseFloat(b.duration_minutes) > 0);
-                  const avgMinutes = validBatches.length > 0
+                  const hasFilledBatches = validBatches.length > 0;
+                  const avgMinutes = hasFilledBatches
                     ? validBatches.reduce((s, b) => s + parseFloat(b.duration_minutes), 0) / validBatches.length
-                    : 15;
-                  const isHaccpOptimal = avgMinutes >= 13 && avgMinutes <= 17;
-                  const isHaccpOver = avgMinutes > 17;
-                  const isHaccpUnder = avgMinutes < 13;
+                    : 0;
+                  const isHaccpOptimal = hasFilledBatches && avgMinutes >= ccpMinMinutes && avgMinutes <= ccpMaxMinutes;
+                  const isHaccpOver = hasFilledBatches && avgMinutes > ccpMaxMinutes;
+                  const isHaccpUnder = hasFilledBatches && avgMinutes < ccpMinMinutes;
 
                   return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -4472,8 +4815,8 @@ export default function ProductionPage() {
                       <div style={{
                         padding: '12px 14px',
                         borderRadius: 'var(--radius-md)',
-                        background: isHaccpOptimal ? 'var(--color-success-50)' : 'var(--color-warning-50)',
-                        border: `1px solid ${isHaccpOptimal ? 'var(--color-success-300)' : 'var(--color-warning-300)'}`,
+                        background: isHaccpOptimal ? 'var(--color-success-50)' : !hasFilledBatches ? 'var(--bg-subtle)' : 'var(--color-warning-50)',
+                        border: `1px solid ${isHaccpOptimal ? 'var(--color-success-300)' : !hasFilledBatches ? 'var(--border-default)' : 'var(--color-warning-300)'}`,
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
@@ -4481,26 +4824,29 @@ export default function ProductionPage() {
                         gap: '12px',
                       }}>
                         <div>
-                          <div style={{ fontSize: '11px', color: isHaccpOptimal ? 'var(--color-success-800)' : 'var(--color-warning-900)', fontWeight: 600 }}>
+                          <div style={{ fontSize: '11px', color: isHaccpOptimal ? 'var(--color-success-800)' : !hasFilledBatches ? 'var(--text-secondary)' : 'var(--color-warning-900)', fontWeight: 600 }}>
                             RATA-RATA WAKTU PENGGORENGAN PER BATCH (HACCP)
                           </div>
-                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: isHaccpOptimal ? 'var(--color-success-800)' : 'var(--color-warning-800)', fontFamily: 'monospace' }}>
-                            {avgMinutes.toFixed(1)} menit / batch
+                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: isHaccpOptimal ? 'var(--color-success-800)' : !hasFilledBatches ? 'var(--text-primary)' : 'var(--color-warning-800)', fontFamily: 'monospace' }}>
+                            {hasFilledBatches ? `${avgMinutes.toFixed(1)} menit / batch` : 'Belum diisi'}
                           </div>
-                          <div style={{ fontSize: '11px', color: isHaccpOptimal ? 'var(--color-success-700)' : 'var(--color-warning-800)', marginTop: '2px' }}>
+                          <div style={{ fontSize: '11px', color: isHaccpOptimal ? 'var(--color-success-700)' : !hasFilledBatches ? 'var(--text-tertiary)' : 'var(--color-warning-800)', marginTop: '2px' }}>
+                            {!hasFilledBatches && (
+                              <span>Standar SOP: {stdDuration} menit (suhu {oilMin}°C - {oilMax}°C). Klik &quot;Set Standar ({stdDuration} Mnt)&quot; di samping atau isi manual.</span>
+                            )}
                             {isHaccpOptimal && (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                <Check className="w-3 h-3" /> Sesuai batas kritis CCP HACCP (Standar: 15 ± 2 menit / 13 - 17 menit)
+                                <Check className="w-3 h-3" /> Sesuai batas kritis CCP HACCP (Standar SOP: {stdDuration} ± 2 menit / {ccpMinMinutes} - {ccpMaxMinutes} menit)
                               </span>
                             )}
                             {isHaccpOver && (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                <AlertTriangle className="w-3 h-3" /> Rata-rata melebihi 17 menit (Potensi overcook / jamur terlalu gelap)
+                                <AlertTriangle className="w-3 h-3" /> Rata-rata melebihi {ccpMaxMinutes} menit (Potensi overcook / jamur terlalu gelap)
                               </span>
                             )}
                             {isHaccpUnder && (
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                                <AlertTriangle className="w-3 h-3" /> Rata-rata kurang dari 13 menit (Potensi undercook / jamur kurang renyah)
+                                <AlertTriangle className="w-3 h-3" /> Rata-rata kurang dari {ccpMinMinutes} menit (Potensi undercook / jamur kurang renyah)
                               </span>
                             )}
                           </div>
@@ -4512,9 +4858,9 @@ export default function ProductionPage() {
                             variant="secondary"
                             size="sm"
                             onClick={handleSetAllBatchesStandard}
-                            title="Set semua batch ke 15.0 menit dan 170°C"
+                            title={`Set semua batch ke standar SOP (${stdDuration} menit dan ${stdTemp}°C)`}
                           >
-                            Set Standar 15 Mnt
+                            Set Standar ({stdDuration} Mnt)
                           </Button>
                           <Button
                             type="button"
@@ -4541,7 +4887,7 @@ export default function ProductionPage() {
 
                         {fryingRunForm.batches.length === 0 ? (
                           <div style={{ textAlign: 'center', padding: 'var(--space-4)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
-                            Belum ada batch tercatat. Klik &quot;+ Tambah Batch&quot; untuk memasukkan durasi batch.
+                            Belum ada batch tercatat. Masukkan &quot;Jumlah Batch Wajan&quot; di Tab 1 (Bahan &amp; Hasil) atau klik &quot;+ Tambah Batch&quot; di atas.
                           </div>
                         ) : (
                           <div style={{
@@ -4592,6 +4938,7 @@ export default function ProductionPage() {
                                       min="1"
                                       value={b.duration_minutes}
                                       onChange={(e) => handleBatchDurationChange(idx, e.target.value)}
+                                      placeholder={String(stdDuration)}
                                       style={{ height: '28px', fontSize: '12px', padding: '2px 6px' }}
                                     />
                                   </div>
@@ -4606,6 +4953,7 @@ export default function ProductionPage() {
                                       max="250"
                                       value={b.oil_temp_celsius}
                                       onChange={(e) => handleBatchTempChange(idx, e.target.value)}
+                                      placeholder={String(stdTemp)}
                                       style={{ height: '28px', fontSize: '12px', padding: '2px 6px' }}
                                     />
                                   </div>
@@ -4622,6 +4970,122 @@ export default function ProductionPage() {
             );
           })()}
         </div>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════════════════ */}
+      {/* MODAL PERINGATAN: TARGET SPK BELUM TERPENUHI (UNDER-TARGET) */}
+      {/* ═══════════════════════════════════════════════════════════ */}
+      <Modal
+        isOpen={underTargetConfirmOpen}
+        onClose={() => setUnderTargetConfirmOpen(false)}
+        title="Target SPK Belum Terpenuhi"
+        size="lg"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', gap: '12px' }}>
+            <Button
+              variant="secondary"
+              onClick={() => setUnderTargetConfirmOpen(false)}
+              disabled={isSubmittingFryingRun}
+            >
+              Batal
+            </Button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setUnderTargetConfirmOpen(false);
+                  handleSubmitFryingRun(true);
+                }}
+                disabled={isSubmittingFryingRun}
+                title="Status SPK tetap Sedang Berjalan (IN_PROGRESS) untuk dilanjutkan di sesi berikutnya"
+              >
+                Simpan Sementara
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setUnderTargetConfirmOpen(false);
+                  handleSubmitFryingRun(false);
+                }}
+                disabled={isSubmittingFryingRun}
+                style={{ background: 'var(--color-warning-600)', borderColor: 'var(--color-warning-700)' }}
+                title="Tutup SPK ini sekarang sebagai selesai tuntas (COMPLETED) di angka ini"
+              >
+                Selesaikan SPK
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        {underTargetData && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              padding: '12px 14px',
+              background: 'var(--color-warning-50)',
+              border: '1px solid var(--color-warning-200)',
+              borderRadius: 'var(--radius-md)',
+              alignItems: 'flex-start',
+            }}>
+              <AlertTriangle className="w-5 h-5 text-warning-600 shrink-0 mt-0.5" />
+              <div style={{ fontSize: 'var(--text-sm)', color: 'var(--color-warning-900)', lineHeight: 1.5 }}>
+                Akumulasi jamur segar yang dimasak pada SPK ini baru mencapai <strong>{underTargetData.totalInputKg.toFixed(1)} kg</strong> dari target <strong>{underTargetData.targetKg} kg</strong> (<strong>{underTargetData.pct}%</strong>).
+                Terdapat kekurangan <strong>{underTargetData.shortageKg.toFixed(1)} kg</strong> untuk memenuhi target SPK.
+              </div>
+            </div>
+
+            {/* Visual Progress Bar */}
+            <div style={{
+              padding: '12px',
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600 }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Progres SPK Saat Ini:</span>
+                <span style={{ color: 'var(--color-warning-700)' }}>{underTargetData.pct}% ({underTargetData.totalInputKg.toFixed(1)} / {underTargetData.targetKg} kg)</span>
+              </div>
+              <div style={{
+                height: '10px',
+                background: 'var(--bg-surface)',
+                borderRadius: '5px',
+                overflow: 'hidden',
+                border: '1px solid var(--border-subtle)',
+              }}>
+                <div style={{
+                  height: '100%',
+                  width: `${Math.min(100, Math.max(0, underTargetData.pct))}%`,
+                  background: 'var(--color-warning-500)',
+                  transition: 'width 0.3s ease',
+                }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                <span>Sesi Sebelumnya: {underTargetData.prevInputKg.toFixed(1)} kg</span>
+                <span>Sesi Ini: {underTargetData.currentMushroomKg.toFixed(1)} kg</span>
+                <span>Kurang: {underTargetData.shortageKg.toFixed(1)} kg</span>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              Anda memilih tombol <strong>Simpan Selesai</strong>. Bagaimana Anda ingin memproses SPK ini?
+              <ul style={{ margin: '8px 0 0 18px', padding: 0, listStyleType: 'disc', display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12.5px' }}>
+                <li>
+                  <strong>Simpan Sementara:</strong> Catatan sesi ini tersimpan dan stok gudang terpotong, status SPK tetap <em>IN_PROGRESS</em> agar sisa {underTargetData.shortageKg.toFixed(1)} kg dapat dilanjutkan pada shift atau hari berikutnya.
+                </li>
+                <li>
+                  <strong>Selesaikan SPK:</strong> Menutup paksa SPK ini menjadi <em>COMPLETED</em> jika memang kegiatan produksi sengaja disudahi di angka {underTargetData.totalInputKg.toFixed(1)} kg.
+                </li>
+                <li>
+                  <strong>Batal:</strong> Menutup pesan ini untuk memeriksa kembali angka pada formulir jika terjadi salah input.
+                </li>
+              </ul>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* ═══════════════════════════════════════════════ */}
@@ -5286,7 +5750,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={createSpkOpen}
         onClose={() => setCreateSpkOpen(false)}
-        title={spkType === 'FRYING' ? 'Buat SPK Penggorengan Jamur Curah' : 'Buat SPK Packing Rasa'}
+        title={spkType === 'FRYING' ? 'Buat SPK Penggorengan Jamur' : 'Buat SPK Packing Rasa'}
         size="md"
         footer={
           <div style={{ display: 'flex', gap: 'var(--space-3)', justifyContent: 'flex-end', width: '100%' }}>
@@ -5314,10 +5778,10 @@ export default function ProductionPage() {
               }}>
                 <div style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <Flame size={14} className="text-[var(--color-primary-600)]" />
-                  Penggorengan Jamur Crispy Polos (Curah)
+                  Penggorengan Jamur Crispy Polos
                 </div>
                 <div style={{ color: 'var(--color-primary-800)', lineHeight: 1.4 }}>
-                  Pada tahap penggorengan, jamur digoreng original curah menjadi stok Longsong. Pemilihan varian bumbu rasa (Balado, BBQ, Pedas Manis, dll) dan jenis kemasan dilakukan pada tahap SPK Packing.
+                  Pada tahap penggorengan, jamur digoreng original menjadi stok Longsong. Pemilihan varian bumbu rasa (Balado, BBQ, Pedas Manis, dll) dan jenis kemasan dilakukan pada tahap SPK Packing.
                 </div>
               </div>
 
@@ -5333,7 +5797,7 @@ export default function ProductionPage() {
                 <div>
                   <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Hasil Output Produksi</div>
                   <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
-                    Jamur Crispy Polos (Curah / Longsong)
+                    Jamur Crispy Polos (Longsong)
                   </strong>
                 </div>
                 <span style={{
@@ -5345,7 +5809,7 @@ export default function ProductionPage() {
                   fontWeight: 600,
                   border: '1px solid var(--color-success-200)',
                 }}>
-                  WIP / Polos Curah
+                  WIP / Polos
                 </span>
               </div>
 
@@ -5418,7 +5882,7 @@ export default function ProductionPage() {
                   Pembumbuan Rasa &amp; Pengemasan Retail
                 </div>
                 <div style={{ color: 'var(--color-warning-800)', lineHeight: 1.4 }}>
-                  Menggunakan stok Longsong Jamur Curah matang dari hasil penggorengan untuk dibumbui dan dikemas sesuai target pesanan/penjualan.
+                  Menggunakan stok Longsong Jamur Matang dari hasil penggorengan untuk dibumbui dan dikemas sesuai target pesanan/penjualan.
                 </div>
               </div>
 

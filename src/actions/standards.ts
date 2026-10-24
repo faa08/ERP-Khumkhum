@@ -9,6 +9,7 @@ import type { ProductionStandardConfig, QcStandardConfig } from '@/types/databas
 const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
   min_yield_percentage: 80.0,
   warning_yield_percentage: 75.0,
+  max_yield_percentage: 85.0,
   oil_temp_min: 160,
   oil_temp_max: 180,
   frying_duration_minutes: 15,

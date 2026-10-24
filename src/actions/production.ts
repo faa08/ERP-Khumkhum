@@ -472,7 +472,68 @@ export async function deleteProductionOrder(orderId: string): Promise<{
     const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT']);
 
     if (isValidUuid(orderId)) {
-      // Hapus data turunan jika ada (wadah longsong, batch wajan, packing, qc, materials, results)
+      // 1. Kembalikan (Revert) stok bahan baku yang terlanjur dipotong dari gudang untuk SPK ini
+      try {
+        // Ambil ID batch wajan terkait SPK ini jika ada
+        const { data: batches } = await supabaseAdmin
+          .from('production_frying_batches')
+          .select('id')
+          .eq('production_order_id', orderId);
+        const batchIds = (batches || []).map(b => b.id);
+
+        let query = supabaseAdmin
+          .from('stock_movements')
+          .select('*')
+          .eq('movement_type', 'OUT');
+
+        if (batchIds.length > 0) {
+          query = query.or(`reference_id.eq.${orderId},reference_id.in.(${batchIds.join(',')})`);
+        } else {
+          query = query.eq('reference_id', orderId);
+        }
+
+        const { data: movements } = await query;
+
+        if (movements && movements.length > 0) {
+          for (const mov of movements) {
+            if (mov.inventory_id && mov.quantity > 0) {
+              const { data: inv } = await supabaseAdmin
+                .from('inventory')
+                .select('id, quantity')
+                .eq('id', mov.inventory_id)
+                .maybeSingle();
+
+              if (inv) {
+                const restoredQty = Number(inv.quantity) + Number(mov.quantity);
+                await supabaseAdmin
+                  .from('inventory')
+                  .update({
+                    quantity: restoredQty,
+                    last_updated_at: new Date().toISOString(),
+                  })
+                  .eq('id', inv.id);
+              }
+            }
+          }
+
+          // Hapus mutasi stok OUT yang dibatalkan
+          if (batchIds.length > 0) {
+            await supabaseAdmin
+              .from('stock_movements')
+              .delete()
+              .or(`reference_id.eq.${orderId},reference_id.in.(${batchIds.join(',')})`);
+          } else {
+            await supabaseAdmin
+              .from('stock_movements')
+              .delete()
+              .eq('reference_id', orderId);
+          }
+        }
+      } catch (stockErr) {
+        console.warn('Revert stock error on deleteProductionOrder:', stockErr);
+      }
+
+      // 2. Hapus data turunan jika ada (wadah longsong, batch wajan, packing, qc, materials, results)
       try {
         await supabaseAdmin.from('production_materials').delete().eq('production_order_id', orderId);
         await supabaseAdmin.from('production_results').delete().eq('production_order_id', orderId);
@@ -508,6 +569,8 @@ export async function deleteProductionOrder(orderId: string): Promise<{
     });
 
     revalidatePath('/production');
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
     return { success: true };
   } catch (err: any) {
     console.error('deleteProductionOrder error:', err);
@@ -526,6 +589,7 @@ export interface RecordFryingRunCompletionInput {
   actual_cooking_oil_liter: number;
   output_finished_kg: number;
   output_longsong_count: number;
+  is_partial?: boolean;
   containers?: { container_number: number; weight_kg: number }[];
   batches?: {
     wajan_number: number;
@@ -550,8 +614,14 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
       return { success: false, error: 'ID Perintah Produksi (SPK) wajib diisi' };
     }
 
-    if (input.actual_mushroom_kg <= 0 || input.output_finished_kg <= 0 || input.output_longsong_count <= 0) {
-      return { success: false, error: 'Jamur aktual, output matang, dan jumlah longsong harus lebih dari 0' };
+    if (!input.is_partial) {
+      if (input.actual_mushroom_kg <= 0 || input.output_finished_kg <= 0 || input.output_longsong_count <= 0) {
+        return { success: false, error: 'Untuk menyelesaikan SPK, jamur aktual, output matang, dan jumlah longsong harus lebih dari 0' };
+      }
+    } else {
+      if (input.actual_mushroom_kg <= 0 && input.output_finished_kg <= 0) {
+        return { success: false, error: 'Mohon isi jamur yang dimasak atau output matang yang diperoleh' };
+      }
     }
 
     // 0. Validasi Ketersediaan Stok Gudang untuk 3 Bahan Baku Penggorengan
@@ -720,6 +790,12 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
       kg: c.weight_kg,
     })));
 
+    const isPartial = Boolean(input.is_partial);
+    let totalInputWeight = input.actual_mushroom_kg;
+    let totalOutputWeight = input.output_finished_kg;
+    let totalLongsongs = input.output_longsong_count;
+    let totalUnpackedLongsongs = input.output_longsong_count;
+
     // 1. Update status SPK di Database / Memory
     if (isValidUuid(orderId)) {
       const { data: ord } = await supabaseAdmin
@@ -730,6 +806,19 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
 
       if (ord) {
         orderBatchNumber = ord.batch_number || orderBatchNumber;
+        const prevInput = Number(ord.input_weight) || 0;
+        const prevOutput = Number(ord.output_weight) || 0;
+        const prevLongsongs = Number(ord.total_longsong_count) || 0;
+        const prevUnpacked = Number(ord.unpacked_longsong_count) || 0;
+
+        totalInputWeight = prevInput + input.actual_mushroom_kg;
+        totalOutputWeight = prevOutput + input.output_finished_kg;
+        totalLongsongs = prevLongsongs + input.output_longsong_count;
+        totalUnpackedLongsongs = prevUnpacked + input.output_longsong_count;
+
+        const accumulatedYieldPct = totalInputWeight > 0 ? parseFloat(((totalOutputWeight / totalInputWeight) * 100).toFixed(1)) : yieldPct;
+        const accumulatedIsCompliant = accumulatedYieldPct >= 65;
+
         const cleanBaseNotes = (ord.notes || '').replace(/\s*\[Longsongs:.*?\]\s*/g, '').trim();
         const baseWithInput = input.notes ? (cleanBaseNotes ? `${cleanBaseNotes} | ${input.notes}` : input.notes) : cleanBaseNotes;
         const appendedNotes = `${baseWithInput} [Longsongs: ${containerJson}]`.trim();
@@ -737,16 +826,16 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
         await supabaseAdmin
           .from('production_orders')
           .update({
-            status: 'COMPLETED',
-            input_weight: input.actual_mushroom_kg,
-            output_weight: input.output_finished_kg,
-            yield_percentage: yieldPct,
-            is_yield_compliant: isCompliant,
-            total_longsong_count: input.output_longsong_count,
-            unpacked_longsong_count: input.output_longsong_count,
+            status: isPartial ? 'IN_PROGRESS' : 'COMPLETED',
+            input_weight: totalInputWeight,
+            output_weight: totalOutputWeight,
+            yield_percentage: accumulatedYieldPct,
+            is_yield_compliant: accumulatedIsCompliant,
+            total_longsong_count: totalLongsongs,
+            unpacked_longsong_count: totalUnpackedLongsongs,
             cycle_time_avg_seconds: cycleTimeAvgSec,
             standard_time_seconds: 15 * 60,
-            end_date: nowIso,
+            end_date: isPartial ? null : nowIso,
             notes: appendedNotes,
             updated_at: nowIso,
           })
@@ -757,22 +846,36 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
     const memIdx = memoryProductionOrders.findIndex(o => o.id === orderId);
     if (memIdx !== -1) {
       orderBatchNumber = memoryProductionOrders[memIdx].batch_number || orderBatchNumber;
-      const memBase = (memoryProductionOrders[memIdx].notes || '').replace(/\s*\[Longsongs:.*?\]\s*/g, '').trim();
+      const memOrd = memoryProductionOrders[memIdx];
+      const prevInput = Number(memOrd.input_weight) || 0;
+      const prevOutput = Number(memOrd.output_weight) || 0;
+      const prevLongsongs = Number(memOrd.total_longsong_count) || 0;
+      const prevUnpacked = Number(memOrd.unpacked_longsong_count) || 0;
+
+      totalInputWeight = prevInput + input.actual_mushroom_kg;
+      totalOutputWeight = prevOutput + input.output_finished_kg;
+      totalLongsongs = prevLongsongs + input.output_longsong_count;
+      totalUnpackedLongsongs = prevUnpacked + input.output_longsong_count;
+
+      const accumulatedYieldPct = totalInputWeight > 0 ? parseFloat(((totalOutputWeight / totalInputWeight) * 100).toFixed(1)) : yieldPct;
+      const accumulatedIsCompliant = accumulatedYieldPct >= 65;
+
+      const memBase = (memOrd.notes || '').replace(/\s*\[Longsongs:.*?\]\s*/g, '').trim();
       const memWithInput = input.notes ? (memBase ? `${memBase} | ${input.notes}` : input.notes) : memBase;
       const memAppendedNotes = `${memWithInput} [Longsongs: ${containerJson}]`.trim();
 
       memoryProductionOrders[memIdx] = {
         ...memoryProductionOrders[memIdx],
-        status: 'COMPLETED',
-        input_weight: input.actual_mushroom_kg,
-        output_weight: input.output_finished_kg,
-        yield_percentage: yieldPct,
-        is_yield_compliant: isCompliant,
-        total_longsong_count: input.output_longsong_count,
-        unpacked_longsong_count: input.output_longsong_count,
+        status: isPartial ? 'IN_PROGRESS' : 'COMPLETED',
+        input_weight: totalInputWeight,
+        output_weight: totalOutputWeight,
+        yield_percentage: accumulatedYieldPct,
+        is_yield_compliant: accumulatedIsCompliant,
+        total_longsong_count: totalLongsongs,
+        unpacked_longsong_count: totalUnpackedLongsongs,
         cycle_time_avg_seconds: cycleTimeAvgSec,
         standard_time_seconds: 15 * 60,
-        end_date: nowIso,
+        end_date: isPartial ? null : nowIso,
         notes: memAppendedNotes,
         updated_at: nowIso,
       };
@@ -792,10 +895,10 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
       production_order: { id: orderId, batch_number: orderBatchNumber, start_date: nowIso },
     }));
 
-    // Simpan ke memory
+    // Simpan ke memory (tambahkan wadah baru tanpa menghapus wadah lama dari SPK yang sama)
     memoryLongsongContainers = [
       ...newContainers,
-      ...memoryLongsongContainers.filter(mc => mc.production_order_id !== orderId)
+      ...memoryLongsongContainers.filter(mc => !newContainers.some(nc => nc.id === mc.id || (nc.production_order_id === mc.production_order_id && nc.container_number === mc.container_number)))
     ];
 
     // Coba simpan ke Supabase jika tabel tersedia
@@ -974,8 +1077,12 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
       data: {
         orderId,
         batchNumber: orderBatchNumber,
-        yieldPercentage: yieldPct,
-        isCompliant,
+        status: isPartial ? 'IN_PROGRESS' : 'COMPLETED',
+        yieldPercentage: totalInputWeight > 0 ? parseFloat(((totalOutputWeight / totalInputWeight) * 100).toFixed(1)) : yieldPct,
+        isCompliant: (totalInputWeight > 0 ? (totalOutputWeight / totalInputWeight) * 100 : yieldPct) >= 65,
+        accumulatedInput: totalInputWeight,
+        accumulatedOutput: totalOutputWeight,
+        accumulatedLongsongs: totalLongsongs,
       },
     };
   } catch (err: any) {
@@ -2794,7 +2901,7 @@ export async function updateFryingBatch(
   input: UpdateFryingBatchInput
 ): Promise<{ success: boolean; data?: DbFryingBatch; error?: string }> {
   try {
-    await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     const updatePayload: any = {};
     if (input.wajan_number !== undefined) updatePayload.wajan_number = input.wajan_number;
@@ -2818,6 +2925,14 @@ export async function updateFryingBatch(
         ...updatePayload,
       };
     }
+
+    await logAuditEvent({
+      userId: session.user.userId,
+      action: 'UPDATE',
+      entityType: 'production_frying_batch',
+      entityId: batchId,
+      details: { updates: updatePayload },
+    });
 
     revalidatePath('/production');
     return { success: true };
@@ -3616,6 +3731,19 @@ export async function recordTimeStudySample(input: {
       createdSample = data;
     }
 
+    await logAuditEvent({
+      userId: session.user.userId,
+      action: 'CREATE',
+      entityType: 'time_study_sample',
+      entityId: createdSample?.id,
+      details: {
+        production_order_id: input.production_order_id,
+        stage: input.stage,
+        duration_seconds: input.duration_seconds,
+        sample_number: input.sample_number,
+      },
+    });
+
     revalidatePath('/production');
     return { success: true, data: createdSample };
   } catch (err: any) {
@@ -3666,7 +3794,7 @@ export async function deleteTimeStudySample(sampleId: string): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
 
     const { error } = await supabaseAdmin
       .from('time_study_samples')
@@ -3676,6 +3804,13 @@ export async function deleteTimeStudySample(sampleId: string): Promise<{
     if (error) {
       memoryTimeStudySamples = memoryTimeStudySamples.filter(s => s.id !== sampleId);
     }
+
+    await logAuditEvent({
+      userId: session.user.userId,
+      action: 'DELETE',
+      entityType: 'time_study_sample',
+      entityId: sampleId,
+    });
 
     revalidatePath('/production');
     return { success: true };
@@ -3744,6 +3879,21 @@ export async function calculateAndSaveStandardTime(input: {
         })
         .eq('id', input.production_order_id);
     } catch (_) {}
+
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN']);
+    await logAuditEvent({
+      userId: session.user.userId,
+      action: 'UPDATE',
+      entityType: 'production_standard_time',
+      entityId: input.production_order_id,
+      details: {
+        cycle_time_avg: Number(cycleTimeAvg.toFixed(2)),
+        normal_time: Number(normalTime.toFixed(2)),
+        standard_time: Number(standardTime.toFixed(2)),
+        rating_factor: input.rating_factor,
+        allowance_factor: input.allowance_factor,
+      },
+    });
 
     revalidatePath('/production');
     return {
@@ -3912,6 +4062,29 @@ export interface MixPremixInput {
   notes?: string;
 }
 
+export interface PremixBatchIngredient {
+  movement_id: string;
+  inventory_id: string;
+  item_name: string;
+  item_code?: string;
+  quantity: number;
+  uom: string;
+}
+
+export interface PremixBatchSession {
+  batch_id: string;
+  batch_code: string;
+  created_at: string;
+  created_by?: string;
+  output_item_name: string;
+  output_quantity: number;
+  output_uom: string;
+  notes?: string;
+  ingredients: PremixBatchIngredient[];
+  total_ingredients_qty: number;
+  movement_ids: string[];
+}
+
 export async function recordPremixMixing(input: MixPremixInput): Promise<{ success: boolean; error?: string }> {
   try {
     const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
@@ -3937,6 +4110,13 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
       }
     }
 
+    // Generate Batch ID and Code
+    const batchId = crypto.randomUUID();
+    const now = new Date();
+    const ymd = now.toISOString().slice(0, 10).replace(/-/g, '');
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const batchCode = `PRX-${ymd}-${timeStr}`;
+
     // 2. Deduct ingredients stock
     for (const ing of input.ingredients) {
       const { data: inv } = await supabaseAdmin
@@ -3945,7 +4125,7 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
         .eq('id', ing.inventory_id)
         .single();
         
-      if(inv) {
+      if (inv) {
         await supabaseAdmin.from('inventory').update({ 
           quantity: inv.quantity - ing.qty,
           last_updated_at: new Date().toISOString()
@@ -3955,9 +4135,10 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
           inventory_id: ing.inventory_id,
           movement_type: 'OUT',
           quantity: ing.qty,
+          reference_id: batchId,
           reference_type: 'MIXING_PREMIX',
           movement_date: new Date().toISOString(),
-          notes: `Dipakai untuk pembuatan premix ${input.output_qty}kg`,
+          notes: `[${batchCode}] Terpakai untuk racikan premix ${input.output_qty} kg`,
           created_by: user.userId
         });
       }
@@ -4002,12 +4183,27 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
       inventory_id: invId,
       movement_type: 'IN',
       quantity: input.output_qty,
+      reference_id: batchId,
       reference_type: 'MIXING_PREMIX',
       movement_date: new Date().toISOString(),
-      notes: input.notes || 'Hasil Produksi Premix',
+      notes: `[${batchCode}] ${input.notes || 'Hasil Produksi Premix'}`,
       created_by: user.userId
     });
     
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'premix_batch',
+      entityId: batchId,
+      details: {
+        batch_code: batchCode,
+        premix_item_id: input.premix_item_id,
+        output_qty: input.output_qty,
+        notes: input.notes,
+        ingredient_count: input.ingredients?.length,
+      },
+    });
+
     revalidatePath('/production');
     revalidatePath('/production/premix');
     revalidatePath('/warehouse');
@@ -4020,11 +4216,88 @@ export async function recordPremixMixing(input: MixPremixInput): Promise<{ succe
   }
 }
 
+export async function deletePremixBatch(batchId: string, movementIds: string[]): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { user } = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'MANAGEMENT', 'PREMIX']);
+
+    if (!movementIds || movementIds.length === 0) {
+      return { success: false, error: 'Daftar transaksi mutasi peracikan tidak valid' };
+    }
+
+    // 1. Ambil data movements yang akan dibatalkan
+    const { data: movements, error: movErr } = await supabaseAdmin
+      .from('stock_movements')
+      .select('id, inventory_id, movement_type, quantity, reference_id, notes')
+      .in('id', movementIds);
+
+    if (movErr || !movements || movements.length === 0) {
+      return { success: false, error: 'Data mutasi tidak ditemukan atau sudah dibatalkan' };
+    }
+
+    // 2. Rollback stok inventori
+    for (const mov of movements) {
+      const { data: inv } = await supabaseAdmin
+        .from('inventory')
+        .select('id, quantity')
+        .eq('id', mov.inventory_id)
+        .maybeSingle();
+
+      if (inv) {
+        let newQty = inv.quantity;
+        if (mov.movement_type === 'IN') {
+          // Hasil premix yang bertambah harus dikurangi kembali
+          newQty = Math.max(0, inv.quantity - Number(mov.quantity));
+        } else if (mov.movement_type === 'OUT') {
+          // Bahan baku yang terpakai harus dikembalikan/ditambahkan kembali
+          newQty = inv.quantity + Number(mov.quantity);
+        }
+
+        await supabaseAdmin.from('inventory').update({
+          quantity: newQty,
+          last_updated_at: new Date().toISOString(),
+        }).eq('id', inv.id);
+      }
+    }
+
+    // 3. Hapus record mutasi dari stock_movements
+    const { error: delErr } = await supabaseAdmin
+      .from('stock_movements')
+      .delete()
+      .in('id', movementIds);
+
+    if (delErr) {
+      throw delErr;
+    }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'DELETE',
+      entityType: 'premix_batch',
+      entityId: batchId,
+      details: {
+        movement_ids: movementIds,
+        reverted_count: movements.length,
+      },
+    });
+
+    revalidatePath('/production');
+    revalidatePath('/production/premix');
+    revalidatePath('/warehouse');
+    revalidatePath('/inventory');
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('deletePremixBatch error:', err);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function getPremixData(): Promise<{
   success: boolean;
   premixItems?: any[];
   ingredients?: any[];
   history?: any[];
+  batches?: PremixBatchSession[];
   error?: string;
 }> {
   try {
@@ -4066,10 +4339,10 @@ export async function getPremixData(): Promise<{
     // 3. Ambil riwayat peracikan premix dari stock_movements
     const { data: movements } = await supabaseAdmin
       .from('stock_movements')
-      .select('id, inventory_id, movement_type, quantity, reference_type, notes, movement_date, created_by')
+      .select('id, inventory_id, movement_type, quantity, reference_id, reference_type, notes, movement_date, created_by')
       .eq('reference_type', 'MIXING_PREMIX')
       .order('movement_date', { ascending: false })
-      .limit(50);
+      .limit(200);
 
     const history = (movements || []).map(mov => {
       const inv = ingredients.find(i => i.id === mov.inventory_id);
@@ -4078,6 +4351,7 @@ export async function getPremixData(): Promise<{
         inventory_id: mov.inventory_id,
         movement_type: mov.movement_type,
         quantity: mov.quantity,
+        reference_id: mov.reference_id,
         notes: mov.notes,
         created_at: mov.movement_date,
         created_by: mov.created_by,
@@ -4086,11 +4360,101 @@ export async function getPremixData(): Promise<{
       };
     });
 
+    // 4. Kelompokkan menjadi Sesi Batch Pembuatan Premix
+    // Kelompokkan berdasarkan reference_id (atau fallback menit tanggal untuk data legacy)
+    const sessionMap = new Map<string, {
+      batch_id: string;
+      batch_code: string;
+      created_at: string;
+      created_by?: string;
+      output_item_name: string;
+      output_quantity: number;
+      output_uom: string;
+      notes?: string;
+      ingredients: PremixBatchIngredient[];
+      movement_ids: string[];
+    }>();
+
+    for (const mov of movements || []) {
+      const inv = ingredients.find(i => i.id === mov.inventory_id);
+      const itemName = inv?.name || 'Bahan';
+      const itemCode = inv?.code;
+      const uom = inv?.uom || 'kg';
+
+      // Ekstrak kode batch jika ada di notes (misal: [PRX-20261022-1552])
+      const match = (mov.notes || '').match(/\[(PRX-[^\]]+)\]/);
+      const explicitCode = match ? match[1] : undefined;
+
+      // Group key: pakai reference_id jika ada, atau fallback ke minute timestamp legacy
+      const dateKey = mov.movement_date ? mov.movement_date.slice(0, 16) : mov.id;
+      const groupKey = mov.reference_id || explicitCode || `legacy-${dateKey}`;
+
+      if (!sessionMap.has(groupKey)) {
+        const fallbackCode = explicitCode || `PRX-${dateKey.replace(/[-T:]/g, '').slice(0, 12)}`;
+        sessionMap.set(groupKey, {
+          batch_id: mov.reference_id || groupKey,
+          batch_code: fallbackCode,
+          created_at: mov.movement_date,
+          created_by: mov.created_by,
+          output_item_name: '',
+          output_quantity: 0,
+          output_uom: 'kg',
+          notes: '',
+          ingredients: [],
+          movement_ids: [],
+        });
+      }
+
+      const session = sessionMap.get(groupKey)!;
+      session.movement_ids.push(mov.id);
+
+      if (mov.movement_type === 'IN') {
+        session.output_item_name = itemName;
+        session.output_quantity += Number(mov.quantity);
+        session.output_uom = uom;
+        // Bersihkan tag [PRX-...] dari notes jika ada
+        const cleanNote = (mov.notes || '').replace(/\[PRX-[^\]]+\]\s*/, '').trim();
+        if (cleanNote) session.notes = cleanNote;
+      } else {
+        session.ingredients.push({
+          movement_id: mov.id,
+          inventory_id: mov.inventory_id,
+          item_name: itemName,
+          item_code: itemCode,
+          quantity: Number(mov.quantity),
+          uom,
+        });
+      }
+    }
+
+    const batches: PremixBatchSession[] = Array.from(sessionMap.values()).map(sess => {
+      // Hitung total berat bahan baku dalam satuan KG dengan konversi UOM yang tepat
+      const totalIngKg = sess.ingredients.reduce((sum, ing) => {
+        const u = (ing.uom || '').toLowerCase().trim();
+        let qtyInKg = ing.quantity;
+        if (u === 'gram' || u === 'gr' || u === 'g') {
+          qtyInKg = ing.quantity / 1000;
+        } else if (u === 'mg') {
+          qtyInKg = ing.quantity / 1000000;
+        } else if (u === 'ons') {
+          qtyInKg = ing.quantity / 10;
+        }
+        return sum + qtyInKg;
+      }, 0);
+
+      return {
+        ...sess,
+        output_item_name: sess.output_item_name || 'Tepung Premix Khumkhum',
+        total_ingredients_qty: Math.round(totalIngKg * 1000) / 1000,
+      };
+    }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
     return {
       success: true,
       premixItems,
       ingredients,
       history,
+      batches,
     };
   } catch (err: any) {
     console.error('getPremixData error:', err);

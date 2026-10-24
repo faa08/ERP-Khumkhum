@@ -475,6 +475,7 @@ export interface SeasoningConfig {
 export interface ProductionStandardConfig {
   min_yield_percentage: number;
   warning_yield_percentage: number;
+  max_yield_percentage?: number;
   oil_temp_min: number;
   oil_temp_max: number;
   frying_duration_minutes: number;

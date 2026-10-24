@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
+import { logAuditEvent } from '@/actions/audit';
 import ExcelJS from 'exceljs';
 import { revalidatePath } from 'next/cache';
 import { getProducts } from '@/actions/master';
@@ -280,6 +281,16 @@ export async function importSalesOrderBulk(
         throw new Error(`Gagal menyimpan item pesanan: ${error.message}`);
       }
     }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'sales_order_bulk_import',
+      details: {
+        order_count: insertedOrders.length,
+        item_count: itemsPayload.length,
+      },
+    });
 
     revalidatePath('/sales');
     revalidatePath('/inventory');

@@ -52,6 +52,7 @@ const EMPTY_FORM: FormState = {
 export default function ReceivingPage() {
   const { user } = useAuth();
   const isManagement = user?.role === 'MANAGEMENT';
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const [data, setData] = useState<DbReceiving[]>([]);
   const [farmers, setFarmers] = useState<{ id: string; name: string; phone_number?: string | null }[]>([]);
@@ -128,8 +129,13 @@ export default function ReceivingPage() {
     setEditId(item.id);
     let rDate = '';
     if (item.received_date) {
-      // Ensure format is YYYY-MM-DDThh:mm for datetime-local
-      rDate = new Date(item.received_date).toISOString().slice(0, 16);
+      try {
+        const d = new Date(item.received_date);
+        const offset = d.getTimezoneOffset() * 60000;
+        rDate = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+      } catch {
+        rDate = getCurrentDateTimeLocal();
+      }
     }
     setForm({
       farmer_id: item.farmer_id || '',
@@ -260,8 +266,8 @@ export default function ReceivingPage() {
       id: 'actions',
       cell: ({ row }) => {
         const item = row.original;
-        const canEdit = !isManagement && item.status !== 'SORTED';
-        const canDelete = !isManagement && item.status !== 'SORTED';
+        const canEdit = !isManagement && (isSuperAdmin || item.status !== 'SORTED');
+        const canDelete = !isManagement && (isSuperAdmin || item.status !== 'SORTED');
         return (
           <Dropdown
             trigger={<Button variant="ghost" size="sm" style={{ padding: '0 8px' }}><MoreVertical size={16} /></Button>}
@@ -306,7 +312,7 @@ export default function ReceivingPage() {
         );
       },
     },
-  ], [isManagement, loadData]);
+  ], [isManagement, isSuperAdmin, loadData]);
 
   // Handlers for Import
   const handleDownloadTemplate = async () => {

@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireAuth } from '@/lib/auth-guard';
+import { logAuditEvent } from '@/actions/audit';
 import type { DbInventory, DbStockMovement } from '@/types/database';
 
 export async function getInventorySummary(itemTypeFilter?: 'RAW_MATERIAL' | 'PRODUCT'): Promise<{
@@ -126,7 +127,7 @@ export async function updateStockMovement(
   }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN', 'MANAGEMENT']);
 
     const { data: oldMv, error: fetchErr } = await supabaseAdmin
       .from('stock_movements')
@@ -177,6 +178,14 @@ export async function updateStockMovement(
 
     if (updErr) throw updErr;
 
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'UPDATE',
+      entityType: 'stock_movement',
+      entityId: movementId,
+      details: { updates, oldQuantity: oldQty, newQuantity: newQty, oldType, newType },
+    });
+
     revalidatePath('/inventory');
     revalidatePath('/warehouse');
 
@@ -191,7 +200,7 @@ export async function deleteStockMovement(
   options?: { revertStock?: boolean }
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
 
     const { data: oldMv, error: fetchErr } = await supabaseAdmin
       .from('stock_movements')
@@ -228,6 +237,19 @@ export async function deleteStockMovement(
 
     if (delErr) throw delErr;
 
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'DELETE',
+      entityType: 'stock_movement',
+      entityId: movementId,
+      details: {
+        notes: oldMv.notes,
+        quantity: oldMv.quantity,
+        movement_type: oldMv.movement_type,
+        revertedStock: shouldRevert,
+      },
+    });
+
     revalidatePath('/inventory');
     revalidatePath('/warehouse');
 
@@ -242,7 +264,7 @@ export async function deleteMultipleStockMovements(
   options?: { revertStock?: boolean }
 ): Promise<{ success: boolean; count?: number; error?: string }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
 
     if (!movementIds || movementIds.length === 0) {
       return { success: true, count: 0 };
@@ -294,6 +316,17 @@ export async function deleteMultipleStockMovements(
       .in('id', movementIds);
 
     if (delErr) throw delErr;
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'DELETE',
+      entityType: 'stock_movement',
+      details: {
+        count: movements.length,
+        movement_ids: movementIds,
+        revertedStock: shouldRevert,
+      },
+    });
 
     revalidatePath('/inventory');
     revalidatePath('/warehouse');
@@ -547,6 +580,20 @@ export async function receiveNonMushroomItem(payload: {
       created_by: user.userId
     });
 
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'inventory_inbound',
+      entityId: inventoryId,
+      details: {
+        item_name: payload.item_name,
+        quantity: payload.quantity,
+        uom: payload.uom,
+        item_type: itemType,
+        notes: payload.notes,
+      },
+    });
+
     revalidatePath('/inventory');
     revalidatePath('/warehouse');
 
@@ -590,6 +637,19 @@ export async function saveStockOpname(items: DbStockOpnameItem[]): Promise<{ suc
         });
       }
     }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'UPDATE',
+      entityType: 'stock_opname',
+      details: {
+        itemCount: items.length,
+        adjustedCount: items.filter(i => i.difference !== 0).length,
+      },
+    });
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
 
     return { success: true };
   } catch (err: any) {
@@ -717,6 +777,21 @@ export async function transferToConsignment(payload: { inventory_id: string, tar
       });
     }
 
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'UPDATE',
+      entityType: 'inventory_transfer',
+      entityId: payload.inventory_id,
+      details: {
+        target_warehouse_id: payload.target_warehouse_id,
+        quantity: payload.quantity,
+        notes: payload.notes,
+      },
+    });
+
+    revalidatePath('/inventory');
+    revalidatePath('/warehouse');
+
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };
@@ -725,7 +800,7 @@ export async function transferToConsignment(payload: { inventory_id: string, tar
 
 export async function deleteInventoryItem(id: string): Promise<{ success: boolean; error?: string }> {
   try {
-    await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
+    const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
     
     // 1. Ambil data inventory terlebih dahulu untuk mengetahui master item ID & tipenya
     const { data: inv } = await supabaseAdmin
@@ -741,6 +816,14 @@ export async function deleteInventoryItem(id: string): Promise<{ success: boolea
     const { error } = await supabaseAdmin.from('inventory').delete().eq('id', id);
     if (error) throw error;
     
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'DELETE',
+      entityType: 'inventory',
+      entityId: id,
+      details: { item_id: inv?.item_id, item_type: inv?.item_type },
+    });
+
     revalidatePath('/inventory');
     revalidatePath('/warehouse');
 
@@ -793,6 +876,14 @@ export async function updateInventoryItem(
         });
       }
     }
+
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'UPDATE',
+      entityType: 'inventory',
+      entityId: id,
+      details: { payload, previous_quantity: current?.quantity },
+    });
 
     revalidatePath('/inventory');
     revalidatePath('/warehouse');
@@ -862,6 +953,14 @@ export async function syncInventoryWithMaster(): Promise<{ success: boolean; err
     
     if (toInsert.length > 0) {
       await supabaseAdmin.from('inventory').insert(toInsert);
+
+      await logAuditEvent({
+        userId: user.userId,
+        action: 'CREATE',
+        entityType: 'inventory_sync',
+        details: { insertedCount: toInsert.length, warehouseId: mainWarehouse.id },
+      });
+
       revalidatePath('/inventory');
       revalidatePath('/warehouse');
       revalidatePath('/master/raw-materials');

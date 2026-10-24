@@ -1114,6 +1114,15 @@ export async function initializeInventory(items: { item_id: string; item_type: '
       });
     }
 
+    await logAuditEvent({
+      userId: user.userId,
+      action: 'CREATE',
+      entityType: 'inventory_initialization',
+      details: {
+        item_count: items.length,
+      },
+    });
+
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message };

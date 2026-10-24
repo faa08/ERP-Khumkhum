@@ -6,6 +6,9 @@ import type { ColumnDef, SortingState, VisibilityState, RowSelectionState } from
 
 export type { ColumnDef, SortingState, VisibilityState, RowSelectionState };
 
+export type DateFilterOption = 'ALL' | 'TODAY' | 'THIS_WEEK' | 'THIS_MONTH' | 'LAST_MONTH';
+export type DateSortOption = 'NEWEST' | 'OLDEST';
+
 export interface DataTableProps<TData, TValue = unknown> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
@@ -22,6 +25,10 @@ export interface DataTableProps<TData, TValue = unknown> {
   enableGlobalFilter?: boolean;
   enableColumnVisibility?: boolean;
   enableSorting?: boolean;
+  enableDateFilter?: boolean;
+  dateField?: string;
+  defaultDateFilter?: DateFilterOption;
+  defaultDateSort?: DateSortOption;
   bulkActions?: BulkAction[];
   emptyStateTitle?: string;
   emptyStateDescription?: string;

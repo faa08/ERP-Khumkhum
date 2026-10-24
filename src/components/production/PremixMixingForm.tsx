@@ -4,7 +4,10 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
+import { Modal } from '@/components/ui/Modal';
 import { FormField } from '@/components/form/FormField';
+import { DataTable } from '@/components/data-table/DataTable';
+import type { ColumnDef } from '@/types/table';
 import { useToast } from '@/hooks/useToast';
 import {
   CookingPot,
@@ -21,8 +24,12 @@ import {
   Scale,
   CheckCircle2,
   AlertTriangle,
+  Eye,
+  Layers,
+  AlertCircle,
+  Calendar,
 } from 'lucide-react';
-import { recordPremixMixing, getPremixData } from '@/actions/production';
+import { recordPremixMixing, getPremixData, deletePremixBatch, type PremixBatchSession } from '@/actions/production';
 import { format } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 
@@ -42,10 +49,32 @@ const DEFAULT_FORMULA_ITEMS = [
   { name: 'Garam Halus', keywords: ['garam'], defaultRatio: 0.05 },
 ];
 
+function convertToKg(qty: number, uom?: string): number {
+  if (!qty) return 0;
+  const u = (uom || '').toLowerCase().trim();
+  if (u === 'gram' || u === 'gr' || u === 'g') {
+    return qty / 1000;
+  }
+  if (u === 'mg') {
+    return qty / 1000000;
+  }
+  if (u === 'ons') {
+    return qty / 10;
+  }
+  return qty;
+}
+
 export function PremixMixingForm() {
   const [inventories, setInventories] = useState<any[]>([]);
   const [premixItems, setPremixItems] = useState<any[]>([]);
   const [historyList, setHistoryList] = useState<any[]>([]);
+  const [batches, setBatches] = useState<PremixBatchSession[]>([]);
+  const [selectedBatchForDetail, setSelectedBatchForDetail] = useState<PremixBatchSession | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [batchToDelete, setBatchToDelete] = useState<PremixBatchSession | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [mobileTab, setMobileTab] = useState<'FORM' | 'STOCK' | 'HISTORY'>('FORM');
@@ -70,7 +99,13 @@ export function PremixMixingForm() {
         return item.keywords.some(k => invName.includes(k));
       });
 
-      const calcQty = Math.round(targetKg * item.defaultRatio * 100) / 100;
+      const uom = matchedInv?.uom || 'kg';
+      const uomNorm = uom.toLowerCase().trim();
+      let targetForMaterial = targetKg * item.defaultRatio;
+      if (uomNorm === 'gram' || uomNorm === 'gr' || uomNorm === 'g') {
+        targetForMaterial = targetForMaterial * 1000;
+      }
+      const calcQty = Math.round(targetForMaterial * 100) / 100;
 
       return {
         _id: Date.now() + idx,
@@ -78,7 +113,7 @@ export function PremixMixingForm() {
         material_name: matchedInv?.name || item.name,
         qty: calcQty.toString(),
         available_qty: Number(matchedInv?.quantity) || 0,
-        uom: matchedInv?.uom || 'kg',
+        uom: uom,
       };
     });
   }, []);
@@ -93,6 +128,7 @@ export function PremixMixingForm() {
         setInventories(invList);
         setPremixItems(premixRes.premixItems || []);
         setHistoryList(premixRes.history || []);
+        setBatches(premixRes.batches || []);
 
         if (premixRes.premixItems && premixRes.premixItems.length > 0 && !form.premix_item_id) {
           setForm(prev => ({ ...prev, premix_item_id: premixRes.premixItems![0].id }));
@@ -109,6 +145,28 @@ export function PremixMixingForm() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // ── 2b. Handler Batalkan / Hapus Sesi Batch ──
+  const handleDeleteBatch = async () => {
+    if (!batchToDelete) return;
+    setIsDeletingBatch(true);
+    try {
+      const res = await deletePremixBatch(batchToDelete.batch_id, batchToDelete.movement_ids);
+      if (res.success) {
+        toast.success(`Batch ${batchToDelete.batch_code} berhasil dibatalkan. Stok gudang otomatis di-rollback.`);
+        setConfirmDeleteOpen(false);
+        setBatchToDelete(null);
+        await loadData();
+      } else {
+        toast.error(res.error || 'Gagal membatalkan sesi pembuatan premix');
+      }
+    } catch (err: any) {
+      console.error('delete batch error:', err);
+      toast.error('Terjadi kesalahan saat membatalkan sesi premix');
+    } finally {
+      setIsDeletingBatch(false);
+    }
+  };
 
   // ── 3. Handle Muat Formula Standar ──
   const handleLoadStandardIngredients = () => {
@@ -167,9 +225,13 @@ export function PremixMixingForm() {
     setIngredients([]);
   };
 
-  // Total berat bahan baku yang dimasukkan
+  // Total berat bahan baku yang dimasukkan (dikonversikan ke kg)
   const totalInputKg = useMemo(() => {
-    return ingredients.reduce((sum, item) => sum + (Number(item.qty) || 0), 0);
+    const sumKg = ingredients.reduce((sum, item) => {
+      const q = Number(item.qty) || 0;
+      return sum + convertToKg(q, item.uom);
+    }, 0);
+    return Math.round(sumKg * 1000) / 1000;
   }, [ingredients]);
 
   // ── 6. Submit Pembuatan Premix ──
@@ -230,6 +292,139 @@ export function PremixMixingForm() {
     }
   };
 
+  // ── 7. Definisi Kolom DataTable untuk Sesi Pembuatan Premix ──
+  const batchColumns = useMemo<ColumnDef<PremixBatchSession & { id: string }>[]>(() => [
+    {
+      id: 'created_at',
+      accessorFn: (row) => row.created_at,
+      header: 'Waktu Sesi',
+      cell: ({ row }) => {
+        const d = row.original.created_at;
+        return (
+          <div style={{ whiteSpace: 'nowrap' }}>
+            <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+              {d ? format(new Date(d), 'dd MMM yyyy', { locale: idLocale }) : '-'}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+              {d ? format(new Date(d), 'HH:mm', { locale: idLocale }) + ' WIB' : ''}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      accessorKey: 'batch_code',
+      header: 'Kode Batch',
+      cell: ({ row }) => (
+        <span style={{
+          fontFamily: 'monospace',
+          fontSize: '11px',
+          fontWeight: 700,
+          padding: '3px 8px',
+          borderRadius: '4px',
+          background: 'var(--color-primary-50)',
+          color: 'var(--color-primary-700)',
+          border: '1px solid var(--color-primary-200)',
+          display: 'inline-block',
+          letterSpacing: '0.3px',
+        }}>
+          {row.original.batch_code}
+        </span>
+      ),
+    },
+    {
+      id: 'output',
+      header: 'Hasil Produksi Premix',
+      cell: ({ row }) => (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '3px',
+              fontWeight: 700,
+              color: 'var(--color-success-700)',
+              background: 'var(--color-success-50)',
+              padding: '2px 8px',
+              borderRadius: 'var(--radius-full)',
+              fontSize: '12px',
+              border: '1px solid var(--color-success-200)',
+            }}>
+              <ArrowDownRight size={13} />
+              +{row.original.output_quantity.toLocaleString('id-ID')} {row.original.output_uom}
+            </span>
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', fontWeight: 500 }}>
+            {row.original.output_item_name}
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'ingredients',
+      header: 'Bahan Terpakai',
+      cell: ({ row }) => (
+        <div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+            {row.original.ingredients.length} Jenis Bahan Baku
+          </div>
+          <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+            Total input: {row.original.total_ingredients_qty.toLocaleString('id-ID')} kg
+          </div>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'notes',
+      header: 'Catatan',
+      cell: ({ row }) => (
+        <div className="truncate" style={{ maxWidth: '220px' }} title={row.original.notes || '-'}>
+          {row.original.notes || '-'}
+        </div>
+      ),
+    },
+    {
+      id: 'actions',
+      header: 'Aksi',
+      cell: ({ row }) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setSelectedBatchForDetail(row.original);
+              setDetailModalOpen(true);
+            }}
+            leftIcon={<Eye size={13} />}
+            style={{ fontSize: '11px', padding: '4px 10px', height: '30px' }}
+          >
+            Detail
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setBatchToDelete(row.original);
+              setConfirmDeleteOpen(true);
+            }}
+            leftIcon={<Trash2 size={13} />}
+            style={{ fontSize: '11px', padding: '4px 10px', height: '30px', color: 'var(--color-danger-600)' }}
+            title="Batalkan sesi pembuatan ini & pulihkan stok gudang"
+          >
+            Hapus
+          </Button>
+        </div>
+      ),
+    },
+  ], []);
+
+  const batchTableData = useMemo(() => {
+    return batches.map(b => ({
+      ...b,
+      id: b.batch_id,
+    }));
+  }, [batches]);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', width: '100%' }}>
       
@@ -257,7 +452,7 @@ export function PremixMixingForm() {
           className={`mobile-tab-btn ${mobileTab === 'HISTORY' ? 'active' : ''}`}
         >
           <History size={15} />
-          <span>Riwayat ({historyList.length})</span>
+          <span>Riwayat ({batches.length})</span>
         </button>
       </div>
 
@@ -698,104 +893,282 @@ export function PremixMixingForm() {
       {/* ═══════════════════════════════════════════════════════ */}
       {/* BARIS BAWAH: RIWAYAT PERACIKAN PREMIX & MUTASI GUDANG   */}
       {/* ═══════════════════════════════════════════════════════ */}
+      {/* ═══════════════════════════════════════════════════════ */}
+      {/* BARIS BAWAH: RIWAYAT SESI PEMBUATAN PREMIX (1 BARIS = 1 BATCH) */}
+      {/* ═══════════════════════════════════════════════════════ */}
       <div className={`premix-panel-history ${mobileTab !== 'HISTORY' ? 'mobile-hidden' : ''}`}>
-        <Card
-          header={
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <History className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
-                <div>
-                  <strong style={{ fontSize: 'var(--text-base)' }}>Riwayat Aktivitas Peracikan Premix &amp; Mutasi Gudang</strong>
-                  <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>
-                    Log pergerakan barang masuk (hasil premix) dan keluar (bahan baku terpakai)
-                  </span>
-                </div>
-              </div>
-              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-                {historyList.length} aktivitas terdata
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--space-2)', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <History className="w-5 h-5 text-[var(--color-primary-600)]" aria-hidden="true" />
+            <div>
+              <strong style={{ fontSize: 'var(--text-base)' }}>Riwayat Sesi Pembuatan Premix</strong>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', display: 'block' }}>
+                1 Baris = 1 Transaksi Sesi Produksi Premix lengkap dengan rincian bahan &amp; aksi pembatalan
               </span>
             </div>
-          }
-        >
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-xs)' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--border-default)', textAlign: 'left' }}>
-                  <th style={{ padding: '8px 12px', fontWeight: 600 }}>Waktu</th>
-                  <th style={{ padding: '8px 12px', fontWeight: 600 }}>Jenis Mutasi</th>
-                  <th style={{ padding: '8px 12px', fontWeight: 600 }}>Bahan / Premix</th>
-                  <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right' }}>Jumlah</th>
-                  <th style={{ padding: '8px 12px', fontWeight: 600 }}>Keterangan</th>
-                </tr>
-              </thead>
-              <tbody>
-                {historyList.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} style={{ textAlign: 'center', padding: '24px', color: 'var(--text-secondary)' }}>
-                      Belum ada riwayat peracikan premix
-                    </td>
-                  </tr>
-                ) : (
-                  historyList.slice(0, 30).map(item => {
-                    const isIncoming = item.movement_type === 'IN';
-                    return (
-                      <tr key={item.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                        <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                          {item.created_at ? format(new Date(item.created_at), 'dd MMM yyyy, HH:mm', { locale: idLocale }) : '-'}
-                        </td>
-                        <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
-                          {isIncoming ? (
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              padding: '2px 8px',
-                              borderRadius: 'var(--radius-full)',
-                              background: 'var(--color-success-50)',
-                              color: 'var(--color-success-700)',
-                              border: '1px solid var(--color-success-200)',
-                            }}>
-                              <ArrowDownRight size={13} />
-                              HASIL RACIK (IN)
-                            </span>
-                          ) : (
-                            <span style={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              padding: '2px 8px',
-                              borderRadius: 'var(--radius-full)',
-                              background: 'var(--color-danger-50)',
-                              color: 'var(--color-danger-700)',
-                              border: '1px solid var(--color-danger-200)',
-                            }}>
-                              <ArrowUpRight size={13} />
-                              KONSUMSI BAHAN (OUT)
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {item.itemName}
-                        </td>
-                        <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: isIncoming ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>
-                          {isIncoming ? '+' : '-'}{Number(item.quantity).toLocaleString('id-ID')} {item.uom}
-                        </td>
-                        <td style={{ padding: '10px 12px', color: 'var(--text-secondary)' }}>
-                          {item.notes || '-'}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 600,
+              padding: '3px 10px',
+              borderRadius: 'var(--radius-full)',
+              background: 'var(--bg-subtle)',
+              color: 'var(--text-secondary)',
+              border: '1px solid var(--border-default)',
+            }}>
+              {batches.length} Sesi Pembuatan
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={loadData}
+              style={{ padding: '4px 6px' }}
+              title="Refresh riwayat batch"
+            >
+              <RefreshCw size={14} />
+            </Button>
+          </div>
+        </div>
+
+        <DataTable
+          columns={batchColumns}
+          data={batchTableData}
+          dateField="created_at"
+          emptyStateTitle="Belum ada riwayat sesi pembuatan premix"
+          emptyStateDescription="Gunakan formulir di atas untuk mencatat sesi pembuatan dan peracikan tepung premix."
+        />
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════ */}
+      {/* MODAL 1: DETAIL SESI PEMBUATAN PREMIX                   */}
+      {/* ═══════════════════════════════════════════════════════ */}
+      <Modal
+        isOpen={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        title={`Rincian Sesi Pembuatan: ${selectedBatchForDetail?.batch_code || ''}`}
+        size="lg"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+            <Button variant="secondary" onClick={() => setDetailModalOpen(false)}>
+              Tutup
+            </Button>
+          </div>
+        }
+      >
+        {selectedBatchForDetail && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            
+            {/* RINGKASAN SESI */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: '12px',
+              padding: '14px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-subtle)',
+              border: '1px solid var(--border-subtle)',
+            }}>
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Hasil Premix Dihasilkan</span>
+                <strong style={{ fontSize: '15px', color: 'var(--color-success-700)' }}>
+                  +{selectedBatchForDetail.output_quantity.toLocaleString('id-ID')} {selectedBatchForDetail.output_uom}
+                </strong>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {selectedBatchForDetail.output_item_name}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Total Bahan Masuk</span>
+                <strong style={{ fontSize: '15px', color: 'var(--color-primary-700)' }}>
+                  {selectedBatchForDetail.total_ingredients_qty.toLocaleString('id-ID')} kg
+                </strong>
+                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {selectedBatchForDetail.ingredients.length} jenis bahan baku terpakai
+                </div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', display: 'block' }}>Waktu Sesi Produksi</span>
+                <strong style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                  {selectedBatchForDetail.created_at ? format(new Date(selectedBatchForDetail.created_at), 'dd MMMM yyyy, HH:mm', { locale: idLocale }) + ' WIB' : '-'}
+                </strong>
+                <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                  Status: <span style={{ color: 'var(--color-success-700)', fontWeight: 600 }}>Tercatat di Inventori</span>
+                </div>
+              </div>
+            </div>
+
+            {/* TABEL RINCIAN BAHAN TERPAKAI */}
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                Daftar Komposisi Bahan Baku Yang Dipakai:
+              </div>
+
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-xs)' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-default)', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 12px', fontWeight: 600, width: '40px' }}>No</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600 }}>Nama Bahan Baku</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600, width: '100px' }}>Kode</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right', width: '130px' }}>Takaran Dipakai</th>
+                      <th style={{ padding: '8px 12px', fontWeight: 600, textAlign: 'right', width: '90px' }}>Proporsi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedBatchForDetail.ingredients.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: 'center', padding: '16px', color: 'var(--text-tertiary)' }}>
+                          Tidak ada rincian bahan tercatat untuk sesi ini
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                    ) : (
+                      selectedBatchForDetail.ingredients.map((ing, idx) => {
+                        const ingQtyInKg = convertToKg(ing.quantity, ing.uom);
+                        const proportion = selectedBatchForDetail.total_ingredients_qty > 0
+                          ? Math.round((ingQtyInKg / selectedBatchForDetail.total_ingredients_qty) * 1000) / 10
+                          : 0;
+
+                        return (
+                          <tr key={ing.movement_id || idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                            <td style={{ padding: '8px 12px', color: 'var(--text-tertiary)' }}>{idx + 1}</td>
+                            <td style={{ padding: '8px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {ing.item_name}
+                            </td>
+                            <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>
+                              {ing.item_code || '-'}
+                            </td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--color-danger-700)' }}>
+                              -{ing.quantity.toLocaleString('id-ID')} {ing.uom}
+                            </td>
+                            <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-secondary)' }}>
+                              {proportion}%
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                  {selectedBatchForDetail.ingredients.length > 0 && (
+                    <tfoot>
+                      <tr style={{ background: 'var(--bg-subtle)', fontWeight: 700, borderTop: '2px solid var(--border-default)' }}>
+                        <td colSpan={3} style={{ padding: '10px 12px', textAlign: 'right' }}>
+                          Total Bahan Terpakai:
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right', color: 'var(--color-danger-700)' }}>
+                          -{selectedBatchForDetail.total_ingredients_qty.toLocaleString('id-ID')} kg
+                        </td>
+                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                          100%
+                        </td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </div>
+
+            {/* CATATAN SESI */}
+            {selectedBatchForDetail.notes && (
+              <div style={{
+                padding: '10px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--bg-default)',
+                border: '1px solid var(--border-subtle)',
+                fontSize: '12px',
+                color: 'var(--text-secondary)',
+              }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Catatan: </span>
+                {selectedBatchForDetail.notes}
+              </div>
+            )}
+
           </div>
-        </Card>
-      </div>
+        )}
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════════════ */}
+      {/* MODAL 2: KONFIRMASI PEMBATALAN & ROLLBACK STOK          */}
+      {/* ═══════════════════════════════════════════════════════ */}
+      <Modal
+        isOpen={confirmDeleteOpen}
+        onClose={() => {
+          if (!isDeletingBatch) setConfirmDeleteOpen(false);
+        }}
+        title="Batalkan Sesi Pembuatan Premix?"
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', width: '100%' }}>
+            <Button
+              variant="secondary"
+              onClick={() => setConfirmDeleteOpen(false)}
+              disabled={isDeletingBatch}
+            >
+              Tutup / Batal
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDeleteBatch}
+              disabled={isDeletingBatch}
+              leftIcon={<Trash2 size={14} />}
+            >
+              {isDeletingBatch ? 'Membatalkan & Rollback...' : 'Ya, Batalkan & Pulihkan Stok'}
+            </Button>
+          </div>
+        }
+      >
+        {batchToDelete && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{
+              padding: '12px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-danger-50)',
+              border: '1px solid var(--color-danger-200)',
+              color: 'var(--color-danger-800)',
+              fontSize: '13px',
+              lineHeight: 1.5,
+            }}>
+              <div style={{ fontWeight: 700, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <AlertCircle size={16} />
+                <span>Peringatan Pembatalan Transaksi</span>
+              </div>
+              <div>
+                Anda akan membatalkan sesi pembuatan kode <strong style={{ fontFamily: 'monospace' }}>{batchToDelete.batch_code}</strong>.
+              </div>
+            </div>
+
+            <div style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Aksi ini akan secara otomatis melakukan <strong>rollback</strong> stok di sistem gudang:
+            </div>
+
+            <ul style={{
+              fontSize: '12px',
+              color: 'var(--text-primary)',
+              paddingLeft: '20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '6px',
+              margin: 0,
+            }}>
+              <li>
+                Stok <strong>{batchToDelete.output_item_name}</strong> akan <strong>dikurangi</strong> sebanyak <strong>{batchToDelete.output_quantity} {batchToDelete.output_uom}</strong>.
+              </li>
+              <li>
+                Stok <strong>{batchToDelete.ingredients.length} bahan baku</strong> yang terpakai ({batchToDelete.total_ingredients_qty} kg) akan <strong>dikembalikan</strong> ke gudang secara utuh.
+              </li>
+              <li>
+                Log mutasi barang masuk &amp; keluar untuk sesi ini akan dihapus dari riwayat.
+              </li>
+            </ul>
+
+            <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+              * Gunakan fitur ini jika ada kesalahan input kuantitas, resep salah, atau sesi produksi batal dilaksanakan.
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* ── RESPONSIVE MOBILE-FIRST CSS (NO OVERLAP, NO GEPENG) ── */}
       <style jsx>{`

@@ -424,7 +424,7 @@ export default function ProductionPage() {
     containers: { container_number: number; weight_kg: string }[];
     batches: {
       wajan_number: number;
-      batch_weight_gram: string;
+      output_weight_gram: string;
       duration_minutes: string;
       oil_temp_celsius: string;
       notes?: string;
@@ -1024,17 +1024,17 @@ export default function ProductionPage() {
       !isNaN(batchCount) && batchCount > 0 &&
       (fryingRunForm.batches.length !== batchCount ||
         fryingRunForm.batches.some(
-          b => !b.batch_weight_gram || isNaN(parseFloat(b.batch_weight_gram)) || parseFloat(b.batch_weight_gram) <= 0 ||
+          b => !b.output_weight_gram || isNaN(parseFloat(b.output_weight_gram)) || parseFloat(b.output_weight_gram) <= 0 ||
                !b.duration_minutes || isNaN(parseFloat(b.duration_minutes)) || parseFloat(b.duration_minutes) <= 0 || parseFloat(b.duration_minutes) > 30 ||
                !b.oil_temp_celsius || isNaN(parseFloat(b.oil_temp_celsius)) || parseFloat(b.oil_temp_celsius) <= 0
         ))
     ) {
       const hasOver30 = fryingRunForm.batches.some(b => parseFloat(b.duration_minutes) > 30);
-      const hasInvalidWeight = fryingRunForm.batches.some(b => !b.batch_weight_gram || isNaN(parseFloat(b.batch_weight_gram)) || parseFloat(b.batch_weight_gram) <= 0);
+      const hasInvalidWeight = fryingRunForm.batches.some(b => !b.output_weight_gram || isNaN(parseFloat(b.output_weight_gram)) || parseFloat(b.output_weight_gram) <= 0);
       if (hasOver30) {
         missing.push('Durasi Batch Melebihi 30 Menit (Tab 3)');
       } else if (hasInvalidWeight) {
-        missing.push('Bobot Jamur Tiap Batch Harus > 0g (Tab 3)');
+        missing.push('Bobot Jamur Matang Tiap Batch Harus > 0g (Tab 3)');
       } else {
         missing.push('Durasi/Suhu Tiap Batch (Tab 3)');
       }
@@ -1740,31 +1740,31 @@ export default function ProductionPage() {
       const currentBatches = [...f.batches];
       const newBatches: {
         wajan_number: number;
-        batch_weight_gram: string;
+        output_weight_gram: string;
         duration_minutes: string;
         oil_temp_celsius: string;
         notes?: string;
       }[] = [];
-      const totalMushroomGrams = (parseFloat(f.actual_mushroom_kg) || 0) * 1000;
-      const perBatchGram = totalMushroomGrams > 0 && safeCount > 0 ? Math.floor(totalMushroomGrams / safeCount) : 800;
-      let remainingGrams = totalMushroomGrams;
+      const totalOutputGrams = (parseFloat(f.output_finished_kg) || 0) * 1000;
+      const perBatchGram = totalOutputGrams > 0 && safeCount > 0 ? Math.floor(totalOutputGrams / safeCount) : 800;
+      let remainingGrams = totalOutputGrams;
 
       for (let i = 1; i <= safeCount; i++) {
-        const assignedGram = totalMushroomGrams > 0
+        const assignedGram = totalOutputGrams > 0
           ? (i === safeCount ? remainingGrams : perBatchGram)
-          : (currentBatches[i - 1]?.batch_weight_gram || '800');
-        if (totalMushroomGrams > 0) remainingGrams -= perBatchGram;
+          : (currentBatches[i - 1]?.output_weight_gram || '800');
+        if (totalOutputGrams > 0) remainingGrams -= perBatchGram;
 
         if (currentBatches[i - 1]) {
           newBatches.push({
             ...currentBatches[i - 1],
             wajan_number: i,
-            batch_weight_gram: currentBatches[i - 1].batch_weight_gram || String(assignedGram),
+            output_weight_gram: currentBatches[i - 1].output_weight_gram || String(assignedGram),
           });
         } else {
           newBatches.push({
             wajan_number: i,
-            batch_weight_gram: String(assignedGram),
+            output_weight_gram: String(assignedGram),
             duration_minutes: '',
             oil_temp_celsius: '',
             notes: '',
@@ -1797,31 +1797,15 @@ export default function ProductionPage() {
     const maxAllowed = Number((targetBase * 1.2).toFixed(2));
 
     const finalValStr = val > maxAllowed ? String(maxAllowed) : valStr;
-    const finalVal = parseFloat(finalValStr);
 
     if (val > maxAllowed) {
       toast.warning(`Input jamur segar dibatasi maksimal target + 20% (${maxAllowed} kg)`);
     }
 
-    setFryingRunForm(f => {
-      const bCount = f.batches.length;
-      let updatedBatches = f.batches;
-      if (bCount > 0 && finalVal > 0) {
-        const totalGrams = Math.round(finalVal * 1000);
-        const perBatch = Math.floor(totalGrams / bCount);
-        let rem = totalGrams;
-        updatedBatches = f.batches.map((b, idx) => {
-          const w = idx === bCount - 1 ? rem : perBatch;
-          rem -= perBatch;
-          return { ...b, batch_weight_gram: String(w) };
-        });
-      }
-      return {
-        ...f,
-        actual_mushroom_kg: finalValStr,
-        batches: updatedBatches,
-      };
-    });
+    setFryingRunForm(f => ({
+      ...f,
+      actual_mushroom_kg: finalValStr,
+    }));
   };
 
   const handleFryingRunPremixChange = (valStr: string) => {
@@ -1877,19 +1861,32 @@ export default function ProductionPage() {
     const maxYieldPct = productionStandards?.max_yield_percentage || 85.0;
     const maxOutputWajarKg = Number(((currentMushroom * maxYieldPct) / 100).toFixed(2));
 
+    const finalValStr = currentMushroom > 0 && val > maxOutputWajarKg ? String(maxOutputWajarKg) : valStr;
+    const finalVal = parseFloat(finalValStr);
+
     if (currentMushroom > 0 && val > maxOutputWajarKg) {
       toast.warning(`Input jamur matang dibatasi maksimal ${maxOutputWajarKg} kg (Batas wajar BOM ${maxYieldPct}% dari jamur segar ${currentMushroom} kg)`);
-      setFryingRunForm(f => ({
-        ...f,
-        output_finished_kg: String(maxOutputWajarKg),
-      }));
-      return;
     }
 
-    setFryingRunForm(f => ({
-      ...f,
-      output_finished_kg: valStr,
-    }));
+    setFryingRunForm(f => {
+      const bCount = f.batches.length;
+      let updatedBatches = f.batches;
+      if (bCount > 0 && finalVal > 0) {
+        const totalGrams = Math.round(finalVal * 1000);
+        const perBatch = Math.floor(totalGrams / bCount);
+        let rem = totalGrams;
+        updatedBatches = f.batches.map((b, idx) => {
+          const w = idx === bCount - 1 ? rem : perBatch;
+          rem -= perBatch;
+          return { ...b, output_weight_gram: String(w) };
+        });
+      }
+      return {
+        ...f,
+        output_finished_kg: finalValStr,
+        batches: updatedBatches,
+      };
+    });
   };
 
   const handleFryingRunLongsongChange = (valStr: string) => {
@@ -2008,24 +2005,24 @@ export default function ProductionPage() {
     setFryingRunForm(f => {
       const updated = [...f.batches];
       if (updated[index]) {
-        updated[index] = { ...updated[index], batch_weight_gram: val };
+        updated[index] = { ...updated[index], output_weight_gram: val };
       }
-      const sumGrams = updated.reduce((acc, b) => acc + (parseFloat(b.batch_weight_gram) || 0), 0);
-      const newTotalKg = sumGrams > 0 ? (sumGrams / 1000).toFixed(2).replace(/\.?0+$/, '') : f.actual_mushroom_kg;
+      const sumGrams = updated.reduce((acc, b) => acc + (parseFloat(b.output_weight_gram) || 0), 0);
+      const newTotalKg = sumGrams > 0 ? (sumGrams / 1000).toFixed(2).replace(/\.?0+$/, '') : f.output_finished_kg;
       return {
         ...f,
         batches: updated,
-        actual_mushroom_kg: sumGrams > 0 ? newTotalKg : f.actual_mushroom_kg,
+        output_finished_kg: sumGrams > 0 ? newTotalKg : f.output_finished_kg,
       };
     });
   };
 
   const handleAutoBalanceBatchWeights = () => {
     setFryingRunForm(f => {
-      const totalKg = parseFloat(f.actual_mushroom_kg) || 0;
+      const totalKg = parseFloat(f.output_finished_kg) || 0;
       const count = f.batches.length;
       if (totalKg <= 0) {
-        toast.warning('Isi total jamur segar di Tab 1 terlebih dahulu');
+        toast.warning('Isi total berat jamur matang di Tab 1 terlebih dahulu');
         return f;
       }
       if (count <= 0) {
@@ -2038,11 +2035,11 @@ export default function ProductionPage() {
       const balanced = f.batches.map((b, idx) => {
         const w = idx === count - 1 ? rem : perBatch;
         rem -= perBatch;
-        return { ...b, batch_weight_gram: String(w) };
+        return { ...b, output_weight_gram: String(w) };
       });
       return { ...f, batches: balanced };
     });
-    toast.info('Bobot jamur per batch berhasil dibagi rata');
+    toast.info('Bobot jamur matang per batch berhasil dibagi rata');
   };
 
   const handleBatchDurationChange = (index: number, val: string) => {
@@ -2074,17 +2071,19 @@ export default function ProductionPage() {
   const handleAddBatch = () => {
     setFryingRunForm(f => {
       const nextNo = (f.batches.length > 0 ? Math.max(...f.batches.map(b => b.wajan_number)) : 0) + 1;
+      const totalOutputGrams = (parseFloat(f.output_finished_kg) || 0) * 1000;
+      const defaultGram = totalOutputGrams > 0 ? String(Math.round(totalOutputGrams / (f.batches.length + 1))) : '800';
       const updated = [
         ...f.batches,
-        { wajan_number: nextNo, batch_weight_gram: '800', duration_minutes: '', oil_temp_celsius: '', notes: '' },
+        { wajan_number: nextNo, output_weight_gram: defaultGram, duration_minutes: '', oil_temp_celsius: '', notes: '' },
       ];
-      const sumGrams = updated.reduce((acc, b) => acc + (parseFloat(b.batch_weight_gram) || 0), 0);
-      const newTotalKg = sumGrams > 0 ? (sumGrams / 1000).toFixed(2).replace(/\.?0+$/, '') : f.actual_mushroom_kg;
+      const sumGrams = updated.reduce((acc, b) => acc + (parseFloat(b.output_weight_gram) || 0), 0);
+      const newTotalKg = sumGrams > 0 ? (sumGrams / 1000).toFixed(2).replace(/\.?0+$/, '') : f.output_finished_kg;
       return {
         ...f,
         batch_count: String(updated.length),
         batches: updated,
-        actual_mushroom_kg: newTotalKg,
+        output_finished_kg: newTotalKg,
       };
     });
   };
@@ -2095,13 +2094,13 @@ export default function ProductionPage() {
         ...b,
         wajan_number: idx + 1,
       }));
-      const sumGrams = updated.reduce((acc, b) => acc + (parseFloat(b.batch_weight_gram) || 0), 0);
-      const newTotalKg = sumGrams > 0 ? (sumGrams / 1000).toFixed(2).replace(/\.?0+$/, '') : f.actual_mushroom_kg;
+      const sumGrams = updated.reduce((acc, b) => acc + (parseFloat(b.output_weight_gram) || 0), 0);
+      const newTotalKg = sumGrams > 0 ? (sumGrams / 1000).toFixed(2).replace(/\.?0+$/, '') : f.output_finished_kg;
       return {
         ...f,
         batch_count: updated.length > 0 ? String(updated.length) : '',
         batches: updated,
-        actual_mushroom_kg: updated.length > 0 ? newTotalKg : f.actual_mushroom_kg,
+        output_finished_kg: updated.length > 0 ? newTotalKg : f.output_finished_kg,
       };
     });
   };
@@ -2181,7 +2180,8 @@ export default function ProductionPage() {
     const batchesPayload = (fryingRunForm.batches && fryingRunForm.batches.length > 0)
       ? fryingRunForm.batches.map(b => ({
           wajan_number: b.wajan_number + batchOffset,
-          batch_weight_gram: parseFloat(b.batch_weight_gram) || Math.round((mushroomKg * 1000) / (fryingRunForm.batches.length || 1)),
+          output_weight_gram: parseFloat(b.output_weight_gram) || Math.round((outputKg * 1000) / (fryingRunForm.batches.length || 1)),
+          batch_weight_gram: Math.round((mushroomKg * 1000) / (fryingRunForm.batches.length || 1)),
           duration_minutes: parseFloat(b.duration_minutes) || 15,
           oil_temp_celsius: parseFloat(b.oil_temp_celsius) || 170,
           notes: b.notes || undefined,
@@ -5645,9 +5645,9 @@ export default function ProductionPage() {
                             variant="secondary"
                             size="sm"
                             onClick={handleAutoBalanceBatchWeights}
-                            title="Bagi rata bobot jamur segar ke seluruh batch"
+                            title="Bagi rata bobot jamur matang ke seluruh batch"
                           >
-                            Bagi Rata Jamur
+                            Bagi Rata Jamur Matang
                           </Button>
                           <Button
                             type="button"
@@ -5678,7 +5678,7 @@ export default function ProductionPage() {
                           </span>
                           <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: 'var(--text-tertiary)' }}>
                             <span>
-                              Total Jamur: <strong>{fryingRunForm.batches.reduce((s, b) => s + (parseFloat(b.batch_weight_gram) || 0), 0)}g</strong> ({((fryingRunForm.batches.reduce((s, b) => s + (parseFloat(b.batch_weight_gram) || 0), 0)) / 1000).toFixed(2)} kg)
+                              Total Jamur Matang: <strong>{fryingRunForm.batches.reduce((s, b) => s + (parseFloat(b.output_weight_gram) || 0), 0)}g</strong> ({((fryingRunForm.batches.reduce((s, b) => s + (parseFloat(b.output_weight_gram) || 0), 0)) / 1000).toFixed(2)} kg)
                             </span>
                             <span>
                               Total Waktu: <strong>{validBatches.reduce((s, b) => s + parseFloat(b.duration_minutes), 0).toFixed(1)} menit</strong>
@@ -5731,14 +5731,14 @@ export default function ProductionPage() {
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
                                   <div>
                                     <label style={{ fontSize: '10px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>
-                                      Jamur (gram)
+                                      Jamur Matang (gram)
                                     </label>
                                     <Input
                                       type="number"
                                       step="50"
                                       min="100"
                                       max="5000"
-                                      value={b.batch_weight_gram || ''}
+                                      value={b.output_weight_gram || ''}
                                       onChange={(e) => handleBatchWeightChange(idx, e.target.value)}
                                       placeholder="800"
                                       style={{ height: '28px', fontSize: '12px', padding: '2px 6px' }}

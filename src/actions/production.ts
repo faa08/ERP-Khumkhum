@@ -596,6 +596,7 @@ export interface RecordFryingRunCompletionInput {
     duration_minutes: number;
     oil_temp_celsius?: number;
     batch_weight_gram?: number;
+    output_weight_gram?: number;
     notes?: string;
   }[];
   notes?: string;
@@ -1021,12 +1022,13 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
 
       for (const b of input.batches) {
         const batchWeight = b.batch_weight_gram || Math.round((input.actual_mushroom_kg * 1000) / input.batches.length);
+        const outputWeight = b.output_weight_gram || perBatchOutputGram;
         const batchItem: DbFryingBatch = {
           id: randomUUID(),
           production_order_id: orderId,
           wajan_number: b.wajan_number,
           batch_weight_gram: batchWeight,
-          output_weight_gram: perBatchOutputGram,
+          output_weight_gram: outputWeight,
           longsong_count: perBatchLongsong,
           kremesan_weight_gram: 0,
           frying_duration_minutes: b.duration_minutes,

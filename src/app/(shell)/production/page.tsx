@@ -3626,7 +3626,7 @@ export default function ProductionPage() {
                         {!isManagement && (
                           <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                <Button
+                              <Button
                                 variant="secondary"
                                 size="sm"
                                 onClick={() => handleOpenSpkBatches(order)}
@@ -3643,18 +3643,32 @@ export default function ProductionPage() {
                                   leftIcon={<CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />}
                                   onClick={() => handleOpenRecordFryingRun(order)}
                                   title="Catat hasil goreng dan konsumsi bahan aktual (bisa sebagian atau langsung selesai tuntas)"
+                                  style={{ whiteSpace: 'nowrap' }}
                                 >
                                   Catat Hasil Goreng
                                 </Button>
                               ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px' }}>
-                                  <span style={{ fontSize: '11px', color: 'var(--color-success-700)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 inline" aria-hidden="true" />
-                                    <span>Selesai ({longsongTotal} Longsong)</span>
-                                  </span>
-                                  <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
-                                    Rendemen: {order.yield_percentage ? `${order.yield_percentage}%` : `${((outputKg / (realizedKg || 1)) * 100).toFixed(0)}%`}
-                                  </span>
+                                <div
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: '4px 10px',
+                                    borderRadius: 'var(--radius-full)',
+                                    background: 'var(--color-success-50)',
+                                    border: '1px solid var(--color-success-200)',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" aria-hidden="true" />
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.15 }}>
+                                    <span style={{ fontSize: '11px', color: 'var(--color-success-800)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                                      Selesai ({longsongTotal} Longsong)
+                                    </span>
+                                    <span style={{ fontSize: '10px', color: 'var(--color-success-700)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                                      Rendemen: {order.yield_percentage ? `${order.yield_percentage}%` : `${((outputKg / (realizedKg || 1)) * 100).toFixed(0)}%`}
+                                    </span>
+                                  </div>
                                 </div>
                               )}
                               <Button

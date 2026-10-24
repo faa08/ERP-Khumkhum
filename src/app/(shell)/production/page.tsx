@@ -1793,13 +1793,14 @@ export default function ProductionPage() {
     const targetKg = Number(selectedFryingOrder?.target_quantity) || 50;
     const prevInput = Number(selectedFryingOrder?.input_weight) || 0;
     const remainingTargetKg = Math.max(0, targetKg - prevInput);
-    const maxAllowed = remainingTargetKg > 0 ? Number(remainingTargetKg.toFixed(2)) : targetKg;
+    const targetBase = remainingTargetKg > 0 ? remainingTargetKg : targetKg;
+    const maxAllowed = Number((targetBase * 1.2).toFixed(2));
 
     const finalValStr = val > maxAllowed ? String(maxAllowed) : valStr;
     const finalVal = parseFloat(finalValStr);
 
     if (val > maxAllowed) {
-      toast.warning(`Input jamur segar dibatasi maksimal sesuai target SPK (${maxAllowed} kg)`);
+      toast.warning(`Input jamur segar dibatasi maksimal target + 20% (${maxAllowed} kg)`);
     }
 
     setFryingRunForm(f => {
@@ -2144,10 +2145,11 @@ export default function ProductionPage() {
     const targetKg = Number(selectedFryingOrder.target_quantity) || 50;
     const prevInput = Number(selectedFryingOrder.input_weight) || 0;
     const remainingTargetKg = Math.max(0, targetKg - prevInput);
-    const maxAllowed = remainingTargetKg > 0 ? Number(remainingTargetKg.toFixed(2)) : targetKg;
+    const targetBase = remainingTargetKg > 0 ? remainingTargetKg : targetKg;
+    const maxAllowed = Number((targetBase * 1.2).toFixed(2));
 
     if (mushroomKg > maxAllowed) {
-      toast.error(`Jumlah jamur segar (${mushroomKg} kg) melebihi batas target SPK (${maxAllowed} kg). Mohon sesuaikan.`);
+      toast.error(`Jumlah jamur segar (${mushroomKg} kg) melebihi batas toleransi target + 20% (${maxAllowed} kg). Mohon sesuaikan.`);
       return;
     }
 
@@ -4968,7 +4970,8 @@ export default function ProductionPage() {
             const prevInput = Number(selectedFryingOrder.input_weight) || 0;
             const prevOutput = Number(selectedFryingOrder.output_weight) || 0;
             const remainingTargetKg = Math.max(0, targetMushroom - prevInput);
-            const maxMushroomAllowed = remainingTargetKg > 0 ? Number(remainingTargetKg.toFixed(2)) : targetMushroom;
+            const targetBase = remainingTargetKg > 0 ? Number(remainingTargetKg.toFixed(2)) : targetMushroom;
+            const maxMushroomAllowed = Number((targetBase * 1.2).toFixed(2));
 
             // Standar BOM & estimasi batch wajan berdasarkan jamur yang dimasak
             const { premixRatio, oilRatio, batchWeightKg, defaultBatchGram } = getFryingBomRatios(selectedFryingOrder);
@@ -5210,7 +5213,7 @@ export default function ProductionPage() {
                           />
                           <div style={{ fontSize: '11px', marginTop: '3px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)' }}>
-                              <span>Batas Target: <strong>{maxMushroomAllowed} kg</strong></span>
+                              <span>Target: <strong>{targetBase} kg</strong> (Maks +20%: <strong>{maxMushroomAllowed} kg</strong>)</span>
                               <span style={{
                                 fontWeight: 600,
                                 color: fryingStockStatus.mushroom.isShortage ? 'var(--color-danger-600)' : 'var(--color-success-700)',

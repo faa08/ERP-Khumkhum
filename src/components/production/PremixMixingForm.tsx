@@ -28,6 +28,7 @@ import {
   Layers,
   AlertCircle,
   Calendar,
+  Info,
 } from 'lucide-react';
 import { recordPremixMixing, getPremixData, deletePremixBatch, type PremixBatchSession } from '@/actions/production';
 import { format } from 'date-fns';
@@ -41,6 +42,41 @@ interface IngredientRow {
   available_qty: number;
   uom: string;
 }
+
+const PREMIX_DRAFT_KEY = 'draft_prod_premix_form';
+
+interface PremixDraftData {
+  form: {
+    premix_item_id: string;
+    output_qty: string;
+    notes: string;
+  };
+  ingredients: IngredientRow[];
+}
+
+const getPremixDraft = (): PremixDraftData | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(PREMIX_DRAFT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const savePremixDraft = (data: PremixDraftData) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(PREMIX_DRAFT_KEY, JSON.stringify(data));
+  } catch {}
+};
+
+const clearPremixDraft = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(PREMIX_DRAFT_KEY);
+  } catch {}
+};
 
 const DEFAULT_FORMULA_ITEMS = [
   { name: 'Tepung Terigu', keywords: ['terigu'], defaultRatio: 0.65 },
@@ -82,14 +118,25 @@ export function PremixMixingForm() {
   const [selectedCustomInvId, setSelectedCustomInvId] = useState('');
   const toast = useToast();
 
-  const [form, setForm] = useState({
-    premix_item_id: '',
-    output_qty: '50',
-    notes: '',
+  const [hasDraft, setHasDraft] = useState(false);
+
+  const [form, setForm] = useState(() => {
+    const saved = getPremixDraft();
+    if (saved?.form) {
+      return saved.form;
+    }
+    return {
+      premix_item_id: '',
+      output_qty: '50',
+      notes: '',
+    };
   });
 
-  // Di awal daftar bahan baku KOSONG sesuai request user
-  const [ingredients, setIngredients] = useState<IngredientRow[]>([]);
+  // Di awal daftar bahan baku KOSONG sesuai request user, atau dari draf yang tersimpan
+  const [ingredients, setIngredients] = useState<IngredientRow[]>(() => {
+    const saved = getPremixDraft();
+    return saved?.ingredients && Array.isArray(saved.ingredients) ? saved.ingredients : [];
+  });
 
   // ── 1. Map 4 Bahan Baku Standar ke Inventory ──
   const buildStandardRows = useCallback((invList: any[], targetKg: number): IngredientRow[] => {
@@ -145,6 +192,32 @@ export function PremixMixingForm() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const saved = getPremixDraft();
+    if (saved && (saved.ingredients.length > 0 || saved.form.notes || (saved.form.output_qty && saved.form.output_qty !== '50'))) {
+      setHasDraft(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (ingredients.length > 0 || form.notes || form.output_qty !== '50') {
+      savePremixDraft({ form, ingredients });
+      setHasDraft(true);
+    }
+  }, [form, ingredients]);
+
+  const handleClearDraft = () => {
+    clearPremixDraft();
+    setHasDraft(false);
+    setForm(prev => ({
+      premix_item_id: premixItems[0]?.id || prev.premix_item_id,
+      output_qty: '50',
+      notes: '',
+    }));
+    setIngredients([]);
+    toast.success('Formulir berhasil dibersihkan');
+  };
 
   // ── 2b. Handler Batalkan / Hapus Sesi Batch ──
   const handleDeleteBatch = async () => {
@@ -223,6 +296,10 @@ export function PremixMixingForm() {
 
   const handleClearAllIngredients = () => {
     setIngredients([]);
+    const saved = getPremixDraft();
+    if (saved) {
+      savePremixDraft({ ...saved, ingredients: [] });
+    }
   };
 
   // Total berat bahan baku yang dimasukkan (dikonversikan ke kg)
@@ -277,6 +354,8 @@ export function PremixMixingForm() {
       });
 
       if (res.success) {
+        clearPremixDraft();
+        setHasDraft(false);
         toast.success(`Berhasil! Stok ${outputNum} kg premix bertambah & bahan baku otomatis terpotong.`);
         setForm(prev => ({ ...prev, notes: '' }));
         setIngredients([]); // Reset kembali kosong untuk produksi berikutnya
@@ -502,6 +581,39 @@ export function PremixMixingForm() {
             }
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              {hasDraft && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '8px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'var(--color-primary-50)',
+                  border: '1px solid var(--color-primary-200)',
+                  fontSize: 'var(--text-xs)',
+                  color: 'var(--color-primary-800)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Info size={14} className="shrink-0 text-[var(--color-primary-600)]" />
+                    <span>Draf formulir racik dipulihkan dari sesi sebelumnya</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClearDraft}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--color-primary-700)',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                    }}
+                  >
+                    Bersihkan Form
+                  </button>
+                </div>
+              )}
               
               {/* HASIL PREMIX YANG DIHASILKAN */}
               <FormField label="Pilih Hasil Premix (Barang Setengah Jadi)" required>
@@ -946,6 +1058,7 @@ export function PremixMixingForm() {
       <Modal
         isOpen={detailModalOpen}
         onClose={() => setDetailModalOpen(false)}
+        closeOnOverlayClick={false}
         title={`Rincian Sesi Pembuatan: ${selectedBatchForDetail?.batch_code || ''}`}
         size="lg"
         footer={
@@ -1097,6 +1210,7 @@ export function PremixMixingForm() {
         onClose={() => {
           if (!isDeletingBatch) setConfirmDeleteOpen(false);
         }}
+        closeOnOverlayClick={false}
         title="Batalkan Sesi Pembuatan Premix?"
         size="md"
         footer={

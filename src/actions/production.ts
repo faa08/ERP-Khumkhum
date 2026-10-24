@@ -3508,6 +3508,335 @@ export async function markLongsongPacked(packingEntryId: string): Promise<{
   }
 }
 
+export interface UpdatePackingEntryInput {
+  flavor_variant?: string;
+  longsong_weight_gram?: number;
+  packaged_toples_count?: number;
+  packaging_type?: string;
+  packaging_weight_gram?: string;
+  seasoning_used_gram?: number;
+  defect_packaging_count?: number;
+  notes?: string;
+}
+
+export async function deletePackingEntry(packingEntryId: string): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'PREMIX']);
+
+    const isEntryUuid = isValidUuid(packingEntryId);
+    let targetEntry: DbPackingEntry | undefined;
+
+    if (isEntryUuid) {
+      const { data } = await supabaseAdmin
+        .from('production_packing_entries')
+        .select('*')
+        .eq('id', packingEntryId)
+        .maybeSingle();
+      if (data) targetEntry = data;
+    }
+
+    if (!targetEntry) {
+      targetEntry = memoryPackingEntries.find(p => p.id === packingEntryId);
+    }
+
+    // 1. Revert stock movements (kembalikan stok bumbu tabur & kemasan, kurangi stok produk jadi jika ada)
+    if (isEntryUuid) {
+      const { data: movements } = await supabaseAdmin
+        .from('stock_movements')
+        .select('*')
+        .eq('reference_id', packingEntryId);
+
+      if (movements && movements.length > 0) {
+        for (const mov of movements) {
+          if (mov.inventory_id && mov.quantity > 0) {
+            const { data: inv } = await supabaseAdmin
+              .from('inventory')
+              .select('id, quantity')
+              .eq('id', mov.inventory_id)
+              .maybeSingle();
+
+            if (inv) {
+              const currentQty = Number(inv.quantity) || 0;
+              const newQty = mov.movement_type === 'OUT'
+                ? currentQty + Number(mov.quantity)
+                : Math.max(0, currentQty - Number(mov.quantity));
+
+              await supabaseAdmin
+                .from('inventory')
+                .update({ quantity: newQty, last_updated_at: new Date().toISOString() })
+                .eq('id', inv.id);
+            }
+          }
+        }
+
+        await supabaseAdmin
+          .from('stock_movements')
+          .delete()
+          .eq('reference_id', packingEntryId);
+      }
+
+      await supabaseAdmin
+        .from('production_packing_entries')
+        .delete()
+        .eq('id', packingEntryId);
+    }
+
+    // 2. Remove from memory store
+    memoryPackingEntries = memoryPackingEntries.filter(p => p.id !== packingEntryId);
+
+    // 3. Recalculate production_orders actual_quantity
+    if (targetEntry?.production_order_id) {
+      const orderId = targetEntry.production_order_id;
+      if (isValidUuid(orderId)) {
+        const { data: remainingEntries } = await supabaseAdmin
+          .from('production_packing_entries')
+          .select('packaged_toples_count, is_packed')
+          .eq('production_order_id', orderId);
+
+        let totalPcs = (remainingEntries || [])
+          .filter(e => e.is_packed)
+          .reduce((sum, e) => sum + (Number(e.packaged_toples_count) || 0), 0);
+
+        const memPcs = memoryPackingEntries
+          .filter(p => p.production_order_id === orderId && p.is_packed)
+          .reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
+        totalPcs += memPcs;
+
+        await supabaseAdmin
+          .from('production_orders')
+          .update({
+            actual_quantity: totalPcs,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', orderId);
+
+        await supabaseAdmin
+          .from('production_results')
+          .update({
+            finished_goods_quantity: totalPcs,
+          })
+          .eq('production_order_id', orderId);
+      }
+    }
+
+    // 4. Log audit event
+    await logAuditEvent({
+      action: 'DELETE',
+      entityType: 'production_packing_entry',
+      entityId: packingEntryId,
+      userId: (session.user as any).userId || session.user.id,
+      details: {
+        note: `Entri packing longsong #${targetEntry?.longsong_number || ''} dibatalkan dan stok dikembalikan`,
+        flavor_variant: targetEntry?.flavor_variant,
+        packaged_toples_count: targetEntry?.packaged_toples_count,
+      },
+    });
+
+    revalidatePath('/production');
+    revalidatePath('/sales');
+    revalidatePath('/inventory');
+    revalidatePath('/quality-control');
+    return { success: true };
+  } catch (err: any) {
+    console.error('deletePackingEntry error:', err);
+    return { success: false, error: err.message || 'Gagal menghapus entri packing' };
+  }
+}
+
+export async function updatePackingEntry(
+  packingEntryId: string,
+  input: UpdatePackingEntryInput
+): Promise<{
+  success: boolean;
+  data?: DbPackingEntry;
+  error?: string;
+}> {
+  try {
+    const session = await requireAuth(['PRODUCTION', 'SUPER_ADMIN', 'PREMIX']);
+
+    const isEntryUuid = isValidUuid(packingEntryId);
+    let existingEntry: DbPackingEntry | undefined;
+
+    if (isEntryUuid) {
+      const { data } = await supabaseAdmin
+        .from('production_packing_entries')
+        .select('*')
+        .eq('id', packingEntryId)
+        .maybeSingle();
+      if (data) existingEntry = data;
+    }
+
+    if (!existingEntry) {
+      existingEntry = memoryPackingEntries.find(p => p.id === packingEntryId);
+    }
+
+    if (!existingEntry) {
+      return { success: false, error: 'Entri packing tidak ditemukan' };
+    }
+
+    const nextFlavor = input.flavor_variant ?? existingEntry.flavor_variant;
+    const nextPkgType = input.packaging_type ?? (existingEntry.packaging_type || 'Standing Pouch');
+    const nextWeightGram = input.packaging_weight_gram ?? (existingEntry.packaging_weight_gram || '100g');
+    const nextCount = input.packaged_toples_count !== undefined ? Number(input.packaged_toples_count) : existingEntry.packaged_toples_count;
+    const nextSeasoning = input.seasoning_used_gram !== undefined ? Number(input.seasoning_used_gram) : existingEntry.seasoning_used_gram;
+    const nextLongsongWeight = input.longsong_weight_gram !== undefined ? Number(input.longsong_weight_gram) : existingEntry.longsong_weight_gram;
+    const nextNotes = input.notes !== undefined ? input.notes : existingEntry.notes;
+
+    const hasMaterialChange =
+      nextFlavor !== existingEntry.flavor_variant ||
+      nextPkgType !== existingEntry.packaging_type ||
+      nextWeightGram !== existingEntry.packaging_weight_gram ||
+      nextCount !== existingEntry.packaged_toples_count ||
+      nextSeasoning !== existingEntry.seasoning_used_gram;
+
+    if (hasMaterialChange && isEntryUuid) {
+      // Revert previous stock movements
+      const { data: movements } = await supabaseAdmin
+        .from('stock_movements')
+        .select('*')
+        .eq('reference_id', packingEntryId);
+
+      if (movements && movements.length > 0) {
+        for (const mov of movements) {
+          if (mov.inventory_id && mov.quantity > 0) {
+            const { data: inv } = await supabaseAdmin
+              .from('inventory')
+              .select('id, quantity')
+              .eq('id', mov.inventory_id)
+              .maybeSingle();
+
+            if (inv) {
+              const currentQty = Number(inv.quantity) || 0;
+              const restoredQty = mov.movement_type === 'OUT'
+                ? currentQty + Number(mov.quantity)
+                : Math.max(0, currentQty - Number(mov.quantity));
+
+              await supabaseAdmin
+                .from('inventory')
+                .update({ quantity: restoredQty, last_updated_at: new Date().toISOString() })
+                .eq('id', inv.id);
+            }
+          }
+        }
+
+        await supabaseAdmin
+          .from('stock_movements')
+          .delete()
+          .eq('reference_id', packingEntryId);
+      }
+    }
+
+    let updatedPacking: DbPackingEntry | undefined;
+
+    if (isEntryUuid) {
+      const { data, error } = await supabaseAdmin
+        .from('production_packing_entries')
+        .update({
+          flavor_variant: nextFlavor,
+          packaging_type: nextPkgType,
+          packaging_weight_gram: nextWeightGram,
+          packaged_toples_count: nextCount,
+          seasoning_used_gram: nextSeasoning,
+          longsong_weight_gram: nextLongsongWeight,
+          notes: nextNotes,
+        })
+        .eq('id', packingEntryId)
+        .select('*, frying_batch:production_frying_batches(id, wajan_number, batch_weight_gram), production_order:production_orders(id, batch_number, product_variant)')
+        .single();
+
+      if (!error && data) {
+        updatedPacking = data;
+      }
+    }
+
+    if (!updatedPacking) {
+      const idx = memoryPackingEntries.findIndex(p => p.id === packingEntryId);
+      if (idx !== -1) {
+        memoryPackingEntries[idx] = {
+          ...memoryPackingEntries[idx],
+          flavor_variant: nextFlavor,
+          packaging_type: nextPkgType,
+          packaging_weight_gram: nextWeightGram,
+          packaged_toples_count: nextCount,
+          seasoning_used_gram: nextSeasoning,
+          longsong_weight_gram: nextLongsongWeight,
+          notes: nextNotes,
+        };
+        updatedPacking = memoryPackingEntries[idx];
+      }
+    }
+
+    // Re-deduct bahan jika ada perubahan dan entry is_packed
+    if (hasMaterialChange && updatedPacking && updatedPacking.is_packed) {
+      await deductPackingMaterials(packingEntryId, {
+        production_order_id: updatedPacking.production_order_id,
+        flavor_variant: nextFlavor,
+        packaged_toples_count: nextCount,
+        packaging_type: nextPkgType,
+        packaging_weight_gram: nextWeightGram,
+        seasoning_used_gram: nextSeasoning,
+        longsong_number: updatedPacking.longsong_number,
+        defect_packaging_count: input.defect_packaging_count || 0,
+      }, (session.user as any).userId || session.user.id);
+    }
+
+    // Update order progress / actual_quantity
+    if (updatedPacking?.production_order_id && isValidUuid(updatedPacking.production_order_id)) {
+      const orderId = updatedPacking.production_order_id;
+      const { data: allPackings } = await supabaseAdmin
+        .from('production_packing_entries')
+        .select('packaged_toples_count, is_packed')
+        .eq('production_order_id', orderId);
+
+      const totalPcs = (allPackings || [])
+        .filter(p => p.is_packed)
+        .reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
+
+      await supabaseAdmin
+        .from('production_orders')
+        .update({
+          actual_quantity: totalPcs,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', orderId);
+
+      await supabaseAdmin
+        .from('production_results')
+        .update({
+          finished_goods_quantity: totalPcs,
+        })
+        .eq('production_order_id', orderId);
+    }
+
+    await logAuditEvent({
+      action: 'UPDATE',
+      entityType: 'production_packing_entry',
+      entityId: packingEntryId,
+      userId: (session.user as any).userId || session.user.id,
+      details: {
+        changes: {
+          flavor_variant: nextFlavor,
+          packaged_toples_count: nextCount,
+          packaging_type: nextPkgType,
+          seasoning_used_gram: nextSeasoning,
+        },
+      },
+    });
+
+    revalidatePath('/production');
+    revalidatePath('/sales');
+    revalidatePath('/inventory');
+    revalidatePath('/quality-control');
+    return { success: true, data: updatedPacking };
+  } catch (err: any) {
+    console.error('updatePackingEntry error:', err);
+    return { success: false, error: err.message || 'Gagal mengubah entri packing' };
+  }
+}
+
 export async function getPackingEntriesByOrder(orderId: string): Promise<{
   success: boolean;
   data?: DbPackingEntry[];

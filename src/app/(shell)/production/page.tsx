@@ -83,6 +83,8 @@ import {
   deleteProductionOrder,
   updateFryingBatch,
   createPackingEntry,
+  updatePackingEntry,
+  deletePackingEntry,
   consumeLongsongForPacking,
   markLongsongPacked,
   getAllPackingEntries,
@@ -99,7 +101,7 @@ import {
 import { getProductionStandards } from '@/actions/standards';
 import { supabase } from '@/lib/supabase';
 import { getPpicData } from '@/actions/ppic';
-import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry, DbLongsongContainer, ProductionStandardConfig, FlavorVariant } from '@/types/database';
+import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry, DbLongsongContainer, ProductionStandardConfig, FlavorVariant, BomRecipe, BomIngredientItem } from '@/types/database';
 import { FLAVOR_VARIANTS, PACKAGING_TYPES, PACKAGING_WEIGHTS, isFryingSpk } from '@/types/database';
 
 // ─────────────────────────────────────────────
@@ -166,6 +168,81 @@ function addMinutesToTimeString(timeStr: string, minutesToAdd: number): string {
 }
 
 // ─────────────────────────────────────────────
+// FORM DRAFT PERSISTENCE HELPERS
+// ─────────────────────────────────────────────
+function getFormDraft<T = any>(key: string): T | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveFormDraft<T>(key: string, data: T): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch {
+    // ignore
+  }
+}
+
+function clearFormDraft(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
+function DraftNoticeBanner({
+  onReset,
+  onClear,
+  label = 'Draft sebelumnya dipulihkan otomatis.',
+}: {
+  onReset?: () => void;
+  onClear?: () => void;
+  label?: string;
+}): React.ReactElement {
+  const handleReset = onReset || onClear || (() => {});
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      padding: '8px 12px',
+      borderRadius: 'var(--radius-md)',
+      background: 'var(--bg-subtle)',
+      border: '1px solid var(--border-default)',
+      fontSize: '11px',
+      color: 'var(--text-secondary)',
+      marginBottom: 'var(--space-3)',
+    }}>
+      <span>{label}</span>
+      <button
+        type="button"
+        onClick={handleReset}
+        style={{
+          background: 'none',
+          border: 'none',
+          color: 'var(--color-danger-600)',
+          fontSize: '11px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          padding: '2px 6px',
+          borderRadius: 'var(--radius-sm)',
+        }}
+      >
+        Bersihkan Form
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // MAIN PAGE COMPONENT
 // ─────────────────────────────────────────────
 
@@ -197,26 +274,46 @@ export default function ProductionPage() {
   const [createSpkOpen, setCreateSpkOpen] = useState(false);
   const [isCreatingSpk, setIsCreatingSpk] = useState(false);
   const [spkType, setSpkType] = useState<'FRYING' | 'PACKING'>('FRYING');
-  const [spkForm, setSpkForm] = useState({
-    spk_type: 'FRYING' as 'FRYING' | 'PACKING',
-    product_id: '',
-    target_quantity: '50',
-    start_date: format(new Date(), 'yyyy-MM-dd'),
-    notes: '',
+  const [spkForm, setSpkForm] = useState(() => {
+    return getFormDraft<{
+      spk_type: 'FRYING' | 'PACKING';
+      product_id: string;
+      target_quantity: string;
+      start_date: string;
+      notes: string;
+    }>('draft_prod_spk') || {
+      spk_type: 'FRYING' as 'FRYING' | 'PACKING',
+      product_id: '',
+      target_quantity: '50',
+      start_date: format(new Date(), 'yyyy-MM-dd'),
+      notes: '',
+    };
   });
+
+  useEffect(() => {
+    if (spkForm.product_id || spkForm.notes || (spkForm.target_quantity && spkForm.target_quantity !== '50' && spkForm.target_quantity !== '200')) {
+      saveFormDraft('draft_prod_spk', spkForm);
+    }
+  }, [spkForm]);
 
   const handleOpenCreateSpk = useCallback((type?: 'FRYING' | 'PACKING') => {
     const selected = type || (activeTab === 'PACKING' ? 'PACKING' : 'FRYING');
     setSpkType(selected);
-    setSpkForm({
-      spk_type: selected,
-      product_id: '',
-      target_quantity: selected === 'FRYING' ? '50' : '200',
-      start_date: format(new Date(), 'yyyy-MM-dd'),
-      notes: '',
-    });
+    const saved = getFormDraft<typeof spkForm>('draft_prod_spk');
+    if (saved && (saved.product_id || saved.notes || (saved.target_quantity && saved.target_quantity !== '50' && saved.target_quantity !== '200'))) {
+      setSpkForm(saved);
+      toast.info('Draft SPK sebelumnya berhasil dipulihkan');
+    } else {
+      setSpkForm({
+        spk_type: selected,
+        product_id: '',
+        target_quantity: selected === 'FRYING' ? '50' : '200',
+        start_date: format(new Date(), 'yyyy-MM-dd'),
+        notes: '',
+      });
+    }
     setCreateSpkOpen(true);
-  }, [activeTab]);
+  }, [activeTab, toast]);
 
   // ── Frying state ──
   const [fryingBatches, setFryingBatches] = useState<DbFryingBatch[]>([]);
@@ -243,27 +340,60 @@ export default function ProductionPage() {
   };
 
   // 1. Regular Frying Form (Standar Persiapan Wajan & Real-time Stopwatch)
-  const [regularFryingForm, setRegularFryingForm] = useState({
-    production_order_id: '',
-    wajan_number: '1',
-    batch_weight_gram: '800',
-    oil_temp_celsius: '170',
-    notes: '',
+  const [regularFryingForm, setRegularFryingForm] = useState(() => {
+    return getFormDraft<{
+      production_order_id: string;
+      wajan_number: string;
+      batch_weight_gram: string;
+      oil_temp_celsius: string;
+      notes: string;
+    }>('draft_prod_regular_frying') || {
+      production_order_id: '',
+      wajan_number: '1',
+      batch_weight_gram: '800',
+      oil_temp_celsius: '170',
+      notes: '',
+    };
   });
 
+  useEffect(() => {
+    if (regularFryingForm.notes || (regularFryingForm.batch_weight_gram && regularFryingForm.batch_weight_gram !== '800') || (regularFryingForm.oil_temp_celsius && regularFryingForm.oil_temp_celsius !== '170')) {
+      saveFormDraft('draft_prod_regular_frying', regularFryingForm);
+    }
+  }, [regularFryingForm]);
+
   // 2. HACCP Time Study Form (Catatan Jam Dinding & Wajib Hasil Goreng)
-  const [haccpFryingForm, setHaccpFryingForm] = useState({
-    production_order_id: '',
-    wajan_number: '1',
-    batch_weight_gram: '800',
-    oil_temp_celsius: '170',
-    start_time: '',
-    end_time: '',
-    output_weight_gram: '',
-    longsong_count: '',
-    kremesan_weight_gram: '0',
-    notes: '',
+  const [haccpFryingForm, setHaccpFryingForm] = useState(() => {
+    return getFormDraft<{
+      production_order_id: string;
+      wajan_number: string;
+      batch_weight_gram: string;
+      oil_temp_celsius: string;
+      start_time: string;
+      end_time: string;
+      output_weight_gram: string;
+      longsong_count: string;
+      kremesan_weight_gram: string;
+      notes: string;
+    }>('draft_prod_haccp_frying') || {
+      production_order_id: '',
+      wajan_number: '1',
+      batch_weight_gram: '800',
+      oil_temp_celsius: '170',
+      start_time: '',
+      end_time: '',
+      output_weight_gram: '',
+      longsong_count: '',
+      kremesan_weight_gram: '0',
+      notes: '',
+    };
   });
+
+  useEffect(() => {
+    if (haccpFryingForm.output_weight_gram || haccpFryingForm.longsong_count || haccpFryingForm.notes) {
+      saveFormDraft('draft_prod_haccp_frying', haccpFryingForm);
+    }
+  }, [haccpFryingForm]);
 
   // 3. Complete / Edit Frying Form (Untuk Input/Edit Hasil di Tabel)
   const [completeFryingForm, setCompleteFryingForm] = useState({
@@ -272,6 +402,12 @@ export default function ProductionPage() {
     kremesan_weight_gram: '0',
     notes: '',
   });
+
+  useEffect(() => {
+    if (selectedFryingBatch?.id && (completeFryingForm.output_weight_gram || completeFryingForm.longsong_count || completeFryingForm.notes)) {
+      saveFormDraft(`draft_prod_complete_${selectedFryingBatch.id}`, completeFryingForm);
+    }
+  }, [completeFryingForm, selectedFryingBatch]);
 
   // 4. Rekap Selesai Masak SPK Goreng (Run Selesai - Bahan Aktual vs Standar BOM)
   const [recordFryingRunOpen, setRecordFryingRunOpen] = useState(false);
@@ -384,6 +520,39 @@ export default function ProductionPage() {
     notes: '',
   });
 
+  useEffect(() => {
+    if (selectedFryingOrder?.id && (fryingRunForm.actual_mushroom_kg || fryingRunForm.output_finished_kg || fryingRunForm.notes || fryingRunForm.batch_count)) {
+      saveFormDraft(`draft_prod_frying_run_${selectedFryingOrder.id}`, fryingRunForm);
+    }
+  }, [fryingRunForm, selectedFryingOrder]);
+
+  useEffect(() => {
+    if (packingForm.packaged_toples_count || packingForm.notes || (packingForm.seasoning_used_gram && packingForm.seasoning_used_gram !== '0')) {
+      saveFormDraft('draft_prod_packing', packingForm);
+    }
+  }, [packingForm]);
+
+  // ── Packing Detail & Edit State ──
+  const [detailPackingModal, setDetailPackingModal] = useState<{ isOpen: boolean; entry: DbPackingEntry | null }>({
+    isOpen: false,
+    entry: null,
+  });
+  const [editPackingModal, setEditPackingModal] = useState<{ isOpen: boolean; entry: DbPackingEntry | null }>({
+    isOpen: false,
+    entry: null,
+  });
+  const [editPackingForm, setEditPackingForm] = useState({
+    flavor_variant: 'Original',
+    packaging_type: 'Standing Pouch',
+    packaging_weight_gram: '100g',
+    packaged_toples_count: '',
+    seasoning_used_gram: '0',
+    longsong_weight_gram: '',
+    defect_packaging_count: '0',
+    notes: '',
+  });
+  const [isSavingEditPacking, setIsSavingEditPacking] = useState(false);
+
   // ── Standar Resep Bumbu Tabur & Kemasan Packing ──
   const getSeasoningRatioForVariant = useCallback((variantName: string): { ratio: number; name: string } => {
     const vLower = variantName.toLowerCase();
@@ -398,6 +567,101 @@ export default function ProductionPage() {
     }
     if (vLower.includes('super pedas')) return { ratio: 0.10, name: 'Bumbu Tabur Super Pedas' };
     return { ratio: 0.08, name: `Bumbu Tabur ${variantName}` };
+  }, [productionStandards]);
+
+  // ── Standar Resep BOM Penggorengan (Premix, Minyak, Jamur Dinamis dari Standar) ──
+  const getFryingBomRatios = useCallback((order?: DbProductionOrder | null, variantName?: string) => {
+    const standards = productionStandards;
+    const recipes = standards?.bom_recipes || [];
+    const baseRecipe = recipes[0];
+    
+    // Cari resep varian yang cocok atau fallback ke resep dasar pertama
+    let recipe: BomRecipe | undefined;
+    const targetVariant = (variantName || order?.product_variant || '').toLowerCase();
+    const prodId = order?.product_id;
+
+    if (recipes.length > 0) {
+      if (prodId || targetVariant) {
+        recipe = recipes.find(r => 
+          (prodId && r.product_id === prodId) ||
+          (targetVariant && r.product_name && r.product_name.toLowerCase().includes(targetVariant)) ||
+          (targetVariant && r.product_name && targetVariant.includes(r.product_name.toLowerCase()))
+        );
+      }
+      if (!recipe) {
+        recipe = baseRecipe;
+      }
+    }
+
+    let premixRatio = 0.25;
+    let oilRatio = 0.30;
+    let mushroomRatio = 1.0;
+
+    const findInIngredients = (ingredients?: BomIngredientItem[]) => {
+      if (!ingredients || ingredients.length === 0) return null;
+      const premix = ingredients.find(i => {
+        const n = (i.name || '').toLowerCase();
+        return n.includes('premix') || n.includes('tepung');
+      });
+      const oil = ingredients.find(i => {
+        const n = (i.name || '').toLowerCase();
+        return n.includes('minyak');
+      });
+      const mushroom = ingredients.find(i => {
+        const n = (i.name || '').toLowerCase();
+        return n.includes('jamur');
+      });
+      return {
+        premix: premix?.ratio_per_kg,
+        oil: oil?.ratio_per_kg,
+        mushroom: mushroom?.ratio_per_kg,
+      };
+    };
+
+    const specificIngs = findInIngredients(recipe?.ingredients);
+    const baseIngs = findInIngredients(baseRecipe?.ingredients);
+
+    if (specificIngs?.premix !== undefined) {
+      premixRatio = specificIngs.premix;
+    } else if (baseIngs?.premix !== undefined) {
+      premixRatio = baseIngs.premix;
+    } else if (typeof recipe?.premix_flour_ratio === 'number') {
+      premixRatio = recipe.premix_flour_ratio;
+    } else if (typeof baseRecipe?.premix_flour_ratio === 'number') {
+      premixRatio = baseRecipe.premix_flour_ratio;
+    }
+
+    if (specificIngs?.oil !== undefined) {
+      oilRatio = specificIngs.oil;
+    } else if (baseIngs?.oil !== undefined) {
+      oilRatio = baseIngs.oil;
+    } else if (typeof recipe?.cooking_oil_ratio === 'number') {
+      oilRatio = recipe.cooking_oil_ratio;
+    } else if (typeof baseRecipe?.cooking_oil_ratio === 'number') {
+      oilRatio = baseRecipe.cooking_oil_ratio;
+    }
+
+    if (specificIngs?.mushroom !== undefined) {
+      mushroomRatio = specificIngs.mushroom;
+    } else if (baseIngs?.mushroom !== undefined) {
+      mushroomRatio = baseIngs.mushroom;
+    } else if (typeof recipe?.raw_mushroom_ratio === 'number') {
+      mushroomRatio = recipe.raw_mushroom_ratio;
+    } else if (typeof baseRecipe?.raw_mushroom_ratio === 'number') {
+      mushroomRatio = baseRecipe.raw_mushroom_ratio;
+    }
+
+    const defaultBatchGram = Number(standards?.default_batch_weight_gram) || 800;
+    const batchWeightKg = defaultBatchGram > 0 ? defaultBatchGram / 1000 : 0.8;
+
+    return {
+      premixRatio,
+      oilRatio,
+      mushroomRatio,
+      batchWeightKg,
+      defaultBatchGram,
+      recipe: recipe || baseRecipe,
+    };
   }, [productionStandards]);
 
   const calculateRecipeSeasoningGram = useCallback((
@@ -845,6 +1109,7 @@ export default function ProductionPage() {
 
     setIsCreatingSpk(false);
     if (res.success) {
+      clearFormDraft('draft_prod_spk');
       toast.success(
         spkType === 'FRYING'
           ? 'SPK Penggorengan Jamur berhasil dibuat!'
@@ -1361,13 +1626,23 @@ export default function ProductionPage() {
   const handleOpenCreateRegularFrying = (order?: DbProductionOrder) => {
     const spkBatches = order ? fryingBatches.filter(b => b.production_order_id === order.id) : fryingBatches;
     const nextWajan = (spkBatches.length > 0 ? Math.max(...spkBatches.map(b => b.wajan_number)) : 0) + 1;
-    setRegularFryingForm({
-      production_order_id: order?.id || '',
-      wajan_number: String(nextWajan),
-      batch_weight_gram: '800',
-      oil_temp_celsius: '170',
-      notes: '',
-    });
+    const saved = getFormDraft<typeof regularFryingForm>('draft_prod_regular_frying');
+    if (saved && (saved.notes || (saved.batch_weight_gram && saved.batch_weight_gram !== '800') || (saved.oil_temp_celsius && saved.oil_temp_celsius !== '170'))) {
+      setRegularFryingForm({
+        ...saved,
+        production_order_id: order?.id || saved.production_order_id || '',
+        wajan_number: saved.wajan_number || String(nextWajan),
+      });
+      toast.info('Draft wajan goreng sebelumnya berhasil dipulihkan');
+    } else {
+      setRegularFryingForm({
+        production_order_id: order?.id || '',
+        wajan_number: String(nextWajan),
+        batch_weight_gram: '800',
+        oil_temp_celsius: '170',
+        notes: '',
+      });
+    }
     setCreateRegularFryingOpen(true);
   };
 
@@ -1396,6 +1671,7 @@ export default function ProductionPage() {
     });
 
     if (res.success) {
+      clearFormDraft('draft_prod_regular_frying');
       toast.success(`Batch wajan #${regularFryingForm.wajan_number} berhasil disiapkan (Siap Goreng)`);
       setCreateRegularFryingOpen(false);
       loadData();
@@ -1408,17 +1684,23 @@ export default function ProductionPage() {
   const handleOpenRecordFryingRun = (order: DbProductionOrder) => {
     setFryingRunTab('BAHAN');
     setSelectedFryingOrder(order);
-    setFryingRunForm({
-      actual_mushroom_kg: '',
-      actual_premix_kg: '',
-      actual_cooking_oil_liter: '',
-      output_finished_kg: '',
-      output_longsong_count: '',
-      batch_count: '',
-      notes: '',
-      containers: [],
-      batches: [],
-    });
+    const saved = getFormDraft<typeof fryingRunForm>(`draft_prod_frying_run_${order.id}`);
+    if (saved && (saved.actual_mushroom_kg || saved.output_finished_kg || saved.notes || saved.batch_count)) {
+      setFryingRunForm(saved);
+      toast.info('Draft rekap hasil goreng SPK sebelumnya berhasil dipulihkan');
+    } else {
+      setFryingRunForm({
+        actual_mushroom_kg: '',
+        actual_premix_kg: '',
+        actual_cooking_oil_liter: '',
+        output_finished_kg: '',
+        output_longsong_count: '',
+        batch_count: '',
+        notes: '',
+        containers: [],
+        batches: [],
+      });
+    }
     setRecordFryingRunOpen(true);
   };
 
@@ -1964,18 +2246,27 @@ export default function ProductionPage() {
   const handleOpenCreateHaccpFrying = (targetOrderId?: string) => {
     const defaultStart = getCurrentTimeString();
     const defaultEnd = addMinutesToTimeString(defaultStart, 15);
-    setHaccpFryingForm({
-      production_order_id: targetOrderId || '',
-      wajan_number: String((fryingBatches.length > 0 ? Math.max(...fryingBatches.map(b => b.wajan_number)) : 0) + 1),
-      batch_weight_gram: '800',
-      oil_temp_celsius: '170',
-      start_time: defaultStart,
-      end_time: defaultEnd,
-      output_weight_gram: '',
-      longsong_count: '',
-      kremesan_weight_gram: '',
-      notes: '',
-    });
+    const saved = getFormDraft<typeof haccpFryingForm>('draft_prod_haccp_frying');
+    if (saved && (saved.output_weight_gram || saved.longsong_count || saved.notes)) {
+      setHaccpFryingForm({
+        ...saved,
+        production_order_id: targetOrderId || saved.production_order_id || '',
+      });
+      toast.info('Draft HACCP time study sebelumnya berhasil dipulihkan');
+    } else {
+      setHaccpFryingForm({
+        production_order_id: targetOrderId || '',
+        wajan_number: String((fryingBatches.length > 0 ? Math.max(...fryingBatches.map(b => b.wajan_number)) : 0) + 1),
+        batch_weight_gram: '800',
+        oil_temp_celsius: '170',
+        start_time: defaultStart,
+        end_time: defaultEnd,
+        output_weight_gram: '',
+        longsong_count: '',
+        kremesan_weight_gram: '',
+        notes: '',
+      });
+    }
     setCreateHaccpFryingOpen(true);
   };
 
@@ -2020,6 +2311,7 @@ export default function ProductionPage() {
     });
 
     if (res.success) {
+      clearFormDraft('draft_prod_haccp_frying');
       toast.success(
         `Batch HACCP wajan #${haccpFryingForm.wajan_number} berhasil dicatat (${haccpFryingForm.output_weight_gram}g di longsong, ${haccpFryingForm.longsong_count} longsong, ${durationMinutes} mnt)`
       );
@@ -2032,12 +2324,18 @@ export default function ProductionPage() {
 
   const handleOpenEditFrying = (batch: DbFryingBatch) => {
     setSelectedFryingBatch(batch);
-    setCompleteFryingForm({
-      output_weight_gram: batch.output_weight_gram ? String(batch.output_weight_gram) : '',
-      longsong_count: batch.longsong_count ? String(batch.longsong_count) : '',
-      kremesan_weight_gram: batch.kremesan_weight_gram != null ? String(batch.kremesan_weight_gram) : '0',
-      notes: batch.notes || '',
-    });
+    const saved = getFormDraft<typeof completeFryingForm>(`draft_prod_complete_${batch.id}`);
+    if (saved && (saved.output_weight_gram || saved.longsong_count || saved.notes)) {
+      setCompleteFryingForm(saved);
+      toast.info('Draft timbangan hasil sebelumnya berhasil dipulihkan');
+    } else {
+      setCompleteFryingForm({
+        output_weight_gram: batch.output_weight_gram ? String(batch.output_weight_gram) : '',
+        longsong_count: batch.longsong_count ? String(batch.longsong_count) : '',
+        kremesan_weight_gram: batch.kremesan_weight_gram != null ? String(batch.kremesan_weight_gram) : '0',
+        notes: batch.notes || '',
+      });
+    }
     setCompleteFryingOpen(true);
   };
 
@@ -2067,6 +2365,9 @@ export default function ProductionPage() {
     });
 
     if (res.success) {
+      if (selectedFryingBatch?.id) {
+        clearFormDraft(`draft_prod_complete_${selectedFryingBatch.id}`);
+      }
       const isEditing = !!selectedFryingBatch.finished_at;
       toast.success(
         isEditing
@@ -2090,6 +2391,15 @@ export default function ProductionPage() {
   // ─────────────────────────────────────────────
 
   const handleOpenCreatePacking = (targetOrderId?: string) => {
+    const saved = getFormDraft<typeof packingForm>('draft_prod_packing');
+    if (saved && (saved.packaged_toples_count || saved.notes || (saved.seasoning_used_gram && saved.seasoning_used_gram !== '0'))) {
+      setPackingForm(saved);
+      toast.info('Draft input packing sebelumnya berhasil dipulihkan');
+      setPackingNavTab('PACKAGING');
+      setCreatePackingOpen(true);
+      return;
+    }
+
     // Cari target SPK yang diminta secara langsung atau SPK yang masih butuh packing
     let target = targetOrderId
       ? friedOrdersData.find(d => d.order.id === targetOrderId)
@@ -2199,6 +2509,7 @@ export default function ProductionPage() {
       });
 
       if (res.success) {
+        clearFormDraft('draft_prod_packing');
         // Otomatis potong wadah selongsong di Buffer WIP (FIFO)
         if (neededKg > 0) {
           try {
@@ -2231,6 +2542,78 @@ export default function ProductionPage() {
       toast.error(res.error || 'Gagal menandai longsong');
     }
   };
+
+  const handleOpenDetailPacking = useCallback((entry: DbPackingEntry) => {
+    setDetailPackingModal({ isOpen: true, entry });
+  }, []);
+
+  const handleOpenEditPacking = useCallback((entry: DbPackingEntry) => {
+    setEditPackingForm({
+      flavor_variant: entry.flavor_variant || 'Original',
+      packaging_type: entry.packaging_type || 'Standing Pouch',
+      packaging_weight_gram: entry.packaging_weight_gram || '100g',
+      packaged_toples_count: String(entry.packaged_toples_count || ''),
+      seasoning_used_gram: String(entry.seasoning_used_gram || '0'),
+      longsong_weight_gram: String(entry.longsong_weight_gram || ''),
+      defect_packaging_count: '0',
+      notes: entry.notes || '',
+    });
+    setEditPackingModal({ isOpen: true, entry });
+  }, []);
+
+  const handleSaveEditPacking = async () => {
+    if (!editPackingModal.entry) return;
+    const pcs = Number(editPackingForm.packaged_toples_count);
+    if (isNaN(pcs) || pcs <= 0) {
+      toast.error('Jumlah kemasan yang dihasilkan wajib diisi minimal 1 pcs');
+      return;
+    }
+
+    setIsSavingEditPacking(true);
+    try {
+      const res = await updatePackingEntry(editPackingModal.entry.id, {
+        flavor_variant: editPackingForm.flavor_variant,
+        packaging_type: editPackingForm.packaging_type,
+        packaging_weight_gram: editPackingForm.packaging_weight_gram,
+        packaged_toples_count: pcs,
+        seasoning_used_gram: Number(editPackingForm.seasoning_used_gram) || 0,
+        longsong_weight_gram: Number(editPackingForm.longsong_weight_gram) || 0,
+        defect_packaging_count: Number(editPackingForm.defect_packaging_count) || 0,
+        notes: editPackingForm.notes,
+      });
+
+      if (res.success) {
+        toast.success(`Entri packing #${editPackingModal.entry.longsong_number} berhasil diperbarui`);
+        setEditPackingModal({ isOpen: false, entry: null });
+        loadData();
+      } else {
+        toast.error(res.error || 'Gagal mengubah entri packing');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Terjadi kesalahan sistem');
+    } finally {
+      setIsSavingEditPacking(false);
+    }
+  };
+
+  const handleDeletePackingEntry = useCallback((entry: DbPackingEntry) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: `Hapus / Batalkan Packing Longsong #${entry.longsong_number}`,
+      description: `Apakah Anda yakin ingin membatalkan entri packing #${entry.longsong_number} (${entry.flavor_variant} - ${entry.packaged_toples_count} pcs)? Stok bumbu tabur (${entry.seasoning_used_gram || 0}g) dan kemasan (${entry.packaging_type || 'Standing Pouch'}) yang telah dialokasikan/dipotong akan dikembalikan otomatis ke gudang bahan baku.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        const res = await deletePackingEntry(entry.id);
+        if (res.success) {
+          toast.success(`Packing #${entry.longsong_number} berhasil dibatalkan dan stok dikembalikan`);
+          loadData();
+        } else {
+          toast.error(res.error || 'Gagal menghapus entri packing');
+        }
+      },
+    });
+  }, [loadData]);
 
 
 
@@ -2739,24 +3122,60 @@ export default function ProductionPage() {
         />
       ),
     },
-    ...(!isManagement ? [{
+    {
       id: 'actions',
-      header: '',
+      header: 'Aksi',
       cell: ({ row }: any) => {
-        if (row.original.is_packed) return null;
+        const entry = row.original;
         return (
-          <Button
-            variant="primary"
-            size="sm"
-            leftIcon={<PackageCheck className="w-3.5 h-3.5" aria-hidden="true" />}
-            onClick={() => handleMarkPacked(row.original.id)}
-          >
-            Tandai Selesai
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleOpenDetailPacking(entry)}
+              title="Lihat Detail Rincian Packing"
+              style={{ padding: '6px', color: 'var(--color-primary-700)' }}
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </Button>
+            {!isManagement && (
+              <>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => handleOpenEditPacking(entry)}
+                  title="Edit Entri Packing"
+                  style={{ padding: '6px' }}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </Button>
+                {!entry.is_packed && (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<PackageCheck className="w-3.5 h-3.5" aria-hidden="true" />}
+                    onClick={() => handleMarkPacked(entry.id)}
+                    title="Tandai Selesai Packing"
+                  >
+                    Selesai
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleDeletePackingEntry(entry)}
+                  title="Hapus / Batalkan entri packing ini & kembalikan stok bahan"
+                  style={{ color: 'var(--color-danger-600)', padding: '6px' }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
+              </>
+            )}
+          </div>
         );
       },
-    } as ColumnDef<DbPackingEntry>] : []),
-  ], [isManagement, handleMarkPacked, orders]);
+    } as ColumnDef<DbPackingEntry>,
+  ], [isManagement, handleMarkPacked, orders, handleOpenDetailPacking, handleOpenEditPacking, handleDeletePackingEntry]);
 
   // ─────────────────────────────────────────────
   // RENDER
@@ -3574,6 +3993,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={createRegularFryingOpen}
         onClose={() => setCreateRegularFryingOpen(false)}
+        closeOnOverlayClick={false}
         title={`Goreng Jamur (Tanpa SPK) — Wajan #${regularFryingForm.wajan_number}`}
         size="md"
         footer={
@@ -3591,6 +4011,21 @@ export default function ProductionPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {Boolean(getFormDraft('draft_prod_regular_frying')) && (
+            <DraftNoticeBanner
+              onReset={() => {
+                clearFormDraft('draft_prod_regular_frying');
+                setRegularFryingForm({
+                  production_order_id: '',
+                  wajan_number: regularFryingForm.wajan_number || '1',
+                  batch_weight_gram: '800',
+                  oil_temp_celsius: '170',
+                  notes: '',
+                });
+                toast.info('Draft form wajan goreng telah direset');
+              }}
+            />
+          )}
           <div style={{
             padding: 'var(--space-3)',
             borderRadius: 'var(--radius-md)',
@@ -3695,6 +4130,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={createHaccpFryingOpen}
         onClose={() => setCreateHaccpFryingOpen(false)}
+        closeOnOverlayClick={false}
         title="Batch HACCP Time Study (Catatan Jam Dinding)"
         size="md"
         footer={
@@ -3719,6 +4155,28 @@ export default function ProductionPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {Boolean(getFormDraft('draft_prod_haccp_frying')) && (
+            <DraftNoticeBanner
+              onReset={() => {
+                clearFormDraft('draft_prod_haccp_frying');
+                const defaultStart = getCurrentTimeString();
+                const defaultEnd = addMinutesToTimeString(defaultStart, 15);
+                setHaccpFryingForm({
+                  production_order_id: '',
+                  wajan_number: haccpFryingForm.wajan_number || '1',
+                  batch_weight_gram: '800',
+                  oil_temp_celsius: '170',
+                  start_time: defaultStart,
+                  end_time: defaultEnd,
+                  output_weight_gram: '',
+                  longsong_count: '',
+                  kremesan_weight_gram: '0',
+                  notes: '',
+                });
+                toast.info('Draft form HACCP telah direset');
+              }}
+            />
+          )}
           <FormField label="Alokasi Target Wajan (Opsional)">
             <Select
               options={[
@@ -4045,6 +4503,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={completeFryingOpen}
         onClose={() => setCompleteFryingOpen(false)}
+        closeOnOverlayClick={false}
         title={`${selectedFryingBatch?.finished_at ? 'Edit Hasil Goreng' : 'Input Hasil Goreng'} — Wajan #${selectedFryingBatch?.wajan_number}`}
         size="md"
         footer={
@@ -4067,6 +4526,20 @@ export default function ProductionPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {selectedFryingBatch && Boolean(getFormDraft(`draft_prod_complete_${selectedFryingBatch.id}`)) && (
+            <DraftNoticeBanner
+              onReset={() => {
+                clearFormDraft(`draft_prod_complete_${selectedFryingBatch.id}`);
+                setCompleteFryingForm({
+                  output_weight_gram: selectedFryingBatch.output_weight_gram ? String(selectedFryingBatch.output_weight_gram) : '',
+                  longsong_count: selectedFryingBatch.longsong_count ? String(selectedFryingBatch.longsong_count) : '',
+                  kremesan_weight_gram: selectedFryingBatch.kremesan_weight_gram != null ? String(selectedFryingBatch.kremesan_weight_gram) : '0',
+                  notes: selectedFryingBatch.notes || '',
+                });
+                toast.info('Draft form hasil timbangan telah direset');
+              }}
+            />
+          )}
           {selectedFryingBatch && (() => {
             const timing = getAutoBatchTiming(selectedFryingBatch);
             return (
@@ -4247,6 +4720,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={recordFryingRunOpen}
         onClose={() => setRecordFryingRunOpen(false)}
+        closeOnOverlayClick={false}
         title={`Catat Hasil Goreng — SPK ${selectedFryingOrder?.batch_number}`}
         size="lg"
         footer={
@@ -4290,6 +4764,25 @@ export default function ProductionPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {selectedFryingOrder && Boolean(getFormDraft(`draft_prod_frying_run_${selectedFryingOrder.id}`)) && (
+            <DraftNoticeBanner
+              onReset={() => {
+                clearFormDraft(`draft_prod_frying_run_${selectedFryingOrder.id}`);
+                setFryingRunForm({
+                  actual_mushroom_kg: '',
+                  actual_premix_kg: '',
+                  actual_cooking_oil_liter: '',
+                  output_finished_kg: '',
+                  output_longsong_count: '',
+                  batch_count: '',
+                  notes: '',
+                  containers: [],
+                  batches: [],
+                });
+                toast.info('Draft form rekap SPK telah direset');
+              }}
+            />
+          )}
           {selectedFryingOrder && (() => {
             const targetMushroom = Number(selectedFryingOrder.target_quantity) || 50;
             const actualMushroom = parseFloat(fryingRunForm.actual_mushroom_kg) || 0;
@@ -4303,10 +4796,11 @@ export default function ProductionPage() {
             const maxMushroomAllowed = remainingTargetKg > 0 ? Number(remainingTargetKg.toFixed(2)) : targetMushroom;
 
             // Standar BOM & estimasi batch wajan berdasarkan jamur yang dimasak
+            const { premixRatio, oilRatio, batchWeightKg, defaultBatchGram } = getFryingBomRatios(selectedFryingOrder);
             const baseMushroomForBom = actualMushroom > 0 ? actualMushroom : maxMushroomAllowed;
-            const bomPremix = Number((baseMushroomForBom * 0.25).toFixed(2));
-            const bomOil = Number((baseMushroomForBom * 0.30).toFixed(2));
-            const estBatchForMushroom = Math.max(1, Math.round(baseMushroomForBom / 0.8));
+            const bomPremix = Number((baseMushroomForBom * premixRatio).toFixed(2));
+            const bomOil = Number((baseMushroomForBom * oilRatio).toFixed(2));
+            const estBatchForMushroom = Math.max(1, Math.round(baseMushroomForBom / batchWeightKg));
             const diffPremix = actualPremix - bomPremix;
             const diffOil = actualOil - bomOil;
 
@@ -4374,7 +4868,7 @@ export default function ProductionPage() {
                           {fryingRunForm.batch_count ? 'Jumlah Batch Sesi Ini' : 'Estimasi Total Batch'}
                         </div>
                         <div style={{ fontSize: 'var(--text-base)', fontWeight: 700, color: 'var(--color-primary-900)' }}>
-                          {fryingRunForm.batch_count ? `${fryingRunForm.batch_count} batch` : `~${Math.round(targetMushroom / 0.8)} batch`}
+                          {fryingRunForm.batch_count ? `${fryingRunForm.batch_count} batch` : `~${Math.round(targetMushroom / batchWeightKg)} batch`}
                         </div>
                       </div>
                     </div>
@@ -4493,8 +4987,37 @@ export default function ProductionPage() {
                     )}
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                        Konsumsi Bahan Baku Riil di Dapur (Timbangan Aktual)
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                        <div style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                          Konsumsi Bahan Baku Riil di Dapur (Timbangan Aktual)
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const mushroomToUse = fryingRunForm.actual_mushroom_kg ? parseFloat(fryingRunForm.actual_mushroom_kg) : maxMushroomAllowed;
+                            const calcPremix = Number((mushroomToUse * premixRatio).toFixed(1));
+                            const calcOil = Number((mushroomToUse * oilRatio).toFixed(1));
+                            setFryingRunForm(f => ({
+                              ...f,
+                              actual_mushroom_kg: f.actual_mushroom_kg || String(maxMushroomAllowed),
+                              actual_premix_kg: String(calcPremix),
+                              actual_cooking_oil_liter: String(calcOil),
+                            }));
+                            toast.success(`Bahan diisi otomatis sesuai standar BOM (Premix: ${calcPremix} kg, Minyak: ${calcOil} L)`);
+                          }}
+                          style={{
+                            fontSize: '11px',
+                            color: 'var(--color-primary-700)',
+                            fontWeight: 600,
+                            background: 'var(--color-primary-50)',
+                            border: '1px solid var(--color-primary-200)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '3px 8px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          Isi Sesuai Standar BOM
+                        </button>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--space-3)' }}>
                         <FormField label="Jamur Tiram Segar (kg)" required>
@@ -4978,6 +5501,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={underTargetConfirmOpen}
         onClose={() => setUnderTargetConfirmOpen(false)}
+        closeOnOverlayClick={false}
         title="Target SPK Belum Terpenuhi"
         size="lg"
         footer={
@@ -5097,6 +5621,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={createPackingOpen}
         onClose={() => setCreatePackingOpen(false)}
+        closeOnOverlayClick={false}
         title="Input Packing Rasa & Kemasan SPK"
         size="lg"
         footer={
@@ -5229,6 +5754,32 @@ export default function ProductionPage() {
 
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <DraftNoticeBanner
+                onClear={() => {
+                  clearFormDraft('draft_prod_packing');
+                  if (friedOrdersData.length > 0) {
+                    const firstSpk = friedOrdersData[0];
+                    const spkTargetPcs = firstSpk.order.target_quantity || 200;
+                    const spkCompletedPcs = firstSpk.totalPackagedPcs || 0;
+                    const spkRemainingPcs = Math.max(0, spkTargetPcs - spkCompletedPcs);
+                    setPackingForm({
+                      production_order_id: firstSpk.order.id,
+                      seasoning_material_id: '',
+                      frying_batch_id: '',
+                      flavor_variant: 'Original',
+                      longsong_number: '1',
+                      longsong_weight_gram: '',
+                      packaged_toples_count: String(spkRemainingPcs > 0 ? spkRemainingPcs : spkTargetPcs),
+                      packaging_type: 'Standing Pouch',
+                      packaging_weight_gram: '60g',
+                      seasoning_used_gram: '0',
+                      longsongs_used_count: '1',
+                      defect_packaging_count: '0',
+                      notes: '',
+                    });
+                  }
+                }}
+              />
               {/* Locked SPK Information Header */}
               <div style={{
                 padding: '12px 14px',
@@ -5660,11 +6211,281 @@ export default function ProductionPage() {
       </Modal>
 
       {/* ═══════════════════════════════════════════════ */}
+      {/* MODAL: DETAIL RINCIAN ENTRI PACKING             */}
+      {/* ═══════════════════════════════════════════════ */}
+      <Modal
+        isOpen={detailPackingModal.isOpen}
+        onClose={() => setDetailPackingModal({ isOpen: false, entry: null })}
+        closeOnOverlayClick={false}
+        title={`Rincian Packing Longsong #${detailPackingModal.entry?.longsong_number || ''} — ${detailPackingModal.entry?.flavor_variant || ''}`}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+            <Button variant="secondary" onClick={() => setDetailPackingModal({ isOpen: false, entry: null })}>
+              Tutup
+            </Button>
+            {!isManagement && detailPackingModal.entry && (
+              <Button
+                variant="primary"
+                leftIcon={<Pencil className="w-4 h-4" />}
+                onClick={() => {
+                  const e = detailPackingModal.entry!;
+                  setDetailPackingModal({ isOpen: false, entry: null });
+                  handleOpenEditPacking(e);
+                }}
+              >
+                Edit Data
+              </Button>
+            )}
+          </div>
+        }
+      >
+        {detailPackingModal.entry && (() => {
+          const entry = detailPackingModal.entry;
+          const order = orders.find(o => o.id === entry.production_order_id) || entry.production_order;
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              {/* Header card with status */}
+              <div style={{
+                padding: 'var(--space-3)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--bg-subtle)',
+                border: '1px solid var(--border-default)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>No. Longsong</div>
+                  <strong style={{ fontSize: 'var(--text-lg)', color: 'var(--color-primary-700)' }}>
+                    #{entry.longsong_number}
+                  </strong>
+                </div>
+                <StatusBadge
+                  status={entry.is_packed ? 'completed' : 'pending'}
+                  label={entry.is_packed ? 'Dipacking (Selesai)' : 'Menunggu Packing'}
+                />
+              </div>
+
+              {/* Grid 2 Columns */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                <div style={{
+                  padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-default)',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>SPK & Batch Asal</div>
+                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-800)' }}>
+                    {order?.batch_number || 'SPK Terintegrasi'}
+                  </strong>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                    {entry.frying_batch ? `Wajan #${entry.frying_batch.wajan_number}` : 'Campuran SPK / Pool'}
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-default)',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>Varian Rasa</div>
+                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-800)' }}>
+                    {entry.flavor_variant}
+                  </strong>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                    Resep Tabur KhumKhum
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-default)',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>Hasil Kemasan Jadi</div>
+                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-success-700)' }}>
+                    {entry.packaged_toples_count} pcs
+                  </strong>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                    {entry.packaging_type || 'Standing Pouch'} @{entry.packaging_weight_gram || '100g'}
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-default)',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>Penggunaan Bumbu Tabur</div>
+                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                    {Number(entry.seasoning_used_gram || 0).toFixed(1)} gram
+                  </strong>
+                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                    Dipotong dari Stok Gudang
+                  </div>
+                </div>
+
+                <div style={{
+                  padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-default)',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>Berat Longsong Jamur</div>
+                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                    {entry.longsong_weight_gram ? `${entry.longsong_weight_gram.toLocaleString('id-ID')}g` : '-'}
+                  </strong>
+                </div>
+
+                <div style={{
+                  padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-default)',
+                }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>Waktu Pencatatan</div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 600 }}>
+                    {entry.created_at ? format(new Date(entry.created_at), 'dd MMM yyyy, HH:mm', { locale: idLocale }) : '-'}
+                  </div>
+                </div>
+              </div>
+
+              {entry.notes && (
+                <div style={{
+                  padding: 'var(--space-3)',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--bg-subtle)',
+                  border: '1px solid var(--border-default)',
+                  fontSize: 'var(--text-xs)',
+                }}>
+                  <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '2px' }}>Catatan Khusus:</div>
+                  <div style={{ color: 'var(--text-primary)' }}>{entry.notes}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════ */}
+      {/* MODAL: EDIT DATA ENTRI PACKING                  */}
+      {/* ═══════════════════════════════════════════════ */}
+      <Modal
+        isOpen={editPackingModal.isOpen}
+        onClose={() => setEditPackingModal({ isOpen: false, entry: null })}
+        closeOnOverlayClick={false}
+        title={`Edit Data Packing Longsong #${editPackingModal.entry?.longsong_number || ''}`}
+        size="md"
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+            <Button variant="secondary" onClick={() => setEditPackingModal({ isOpen: false, entry: null })} disabled={isSavingEditPacking}>
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSaveEditPacking}
+              disabled={isSavingEditPacking}
+            >
+              {isSavingEditPacking ? 'Menyimpan...' : 'Simpan Perubahan'}
+            </Button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+          <div style={{
+            padding: '10px 12px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-primary-50)',
+            border: '1px solid var(--color-primary-200)',
+            fontSize: '11px',
+            color: 'var(--color-primary-900)',
+          }}>
+            Perubahan varian, jumlah kemasan, atau bumbu akan otomatis merevisi kartu stok gudang bahan baku dan progres SPK.
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+            <FormField label="Varian Rasa">
+              <Select
+                options={FLAVOR_VARIANTS.map(v => ({ value: v, label: v }))}
+                value={editPackingForm.flavor_variant}
+                onChange={(e) => setEditPackingForm(prev => ({ ...prev, flavor_variant: e.target.value }))}
+              />
+            </FormField>
+
+            <FormField label="Jenis Kemasan">
+              <Select
+                options={PACKAGING_TYPES.map(t => ({ value: t, label: t }))}
+                value={editPackingForm.packaging_type}
+                onChange={(e) => setEditPackingForm(prev => ({ ...prev, packaging_type: e.target.value }))}
+              />
+            </FormField>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+            <FormField label="Gramasi / Netto Kemasan">
+              <Select
+                options={PACKAGING_WEIGHTS.map(w => ({ value: w.value, label: w.label }))}
+                value={editPackingForm.packaging_weight_gram}
+                onChange={(e) => setEditPackingForm(prev => ({ ...prev, packaging_weight_gram: e.target.value }))}
+              />
+            </FormField>
+
+            <FormField label="Jumlah Kemasan Jadi (pcs) *" required>
+              <Input
+                type="number"
+                min="1"
+                value={editPackingForm.packaged_toples_count}
+                onChange={(e) => setEditPackingForm(prev => ({ ...prev, packaged_toples_count: e.target.value }))}
+                placeholder="Contoh: 100"
+              />
+            </FormField>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+            <FormField label="Bumbu Tabur Dipakai (gram)">
+              <Input
+                type="number"
+                min="0"
+                step="0.1"
+                value={editPackingForm.seasoning_used_gram}
+                onChange={(e) => setEditPackingForm(prev => ({ ...prev, seasoning_used_gram: e.target.value }))}
+                placeholder="0"
+              />
+            </FormField>
+
+            <FormField label="Berat Longsong Jamur (gram)">
+              <Input
+                type="number"
+                min="0"
+                value={editPackingForm.longsong_weight_gram}
+                onChange={(e) => setEditPackingForm(prev => ({ ...prev, longsong_weight_gram: e.target.value }))}
+                placeholder="Contoh: 7500"
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Catatan / Keterangan">
+            <Input
+              type="text"
+              value={editPackingForm.notes}
+              onChange={(e) => setEditPackingForm(prev => ({ ...prev, notes: e.target.value }))}
+              placeholder="Catatan kendala / keterangan batch..."
+            />
+          </FormField>
+        </div>
+      </Modal>
+
+      {/* ═══════════════════════════════════════════════ */}
       {/* MODAL: AJUKAN BATCH KEMASAN KE QUALITY CONTROL */}
       {/* ═══════════════════════════════════════════════ */}
       <Modal
         isOpen={submitQcOpen}
         onClose={() => setSubmitQcOpen(false)}
+        closeOnOverlayClick={false}
         title="Ajukan Batch Kemasan ke Quality Control (QC)"
         size="md"
         footer={
@@ -5750,6 +6571,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={createSpkOpen}
         onClose={() => setCreateSpkOpen(false)}
+        closeOnOverlayClick={false}
         title={spkType === 'FRYING' ? 'Buat SPK Penggorengan Jamur' : 'Buat SPK Packing Rasa'}
         size="md"
         footer={
@@ -5762,6 +6584,18 @@ export default function ProductionPage() {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <DraftNoticeBanner
+            onClear={() => {
+              clearFormDraft('draft_prod_spk');
+              setSpkForm({
+                product_id: '',
+                target_quantity: spkType === 'FRYING' ? '50' : '200',
+                start_date: format(new Date(), 'yyyy-MM-dd'),
+                notes: '',
+                spk_type: spkType,
+              });
+            }}
+          />
           {/* Form Content by Type */}
           {spkType === 'FRYING' ? (
             <>
@@ -5824,45 +6658,49 @@ export default function ProductionPage() {
                 />
               </FormField>
 
-              {/* Dynamic BOM Estimation */}
-              {parseFloat(spkForm.target_quantity) > 0 && (
-                <div style={{
-                  padding: '12px',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'var(--bg-subtle)',
-                  border: '1px solid var(--border-default)',
-                }}>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                    Estimasi Kebutuhan Bahan Baku (Standar BOM)
+              {parseFloat(spkForm.target_quantity) > 0 && (() => {
+                const selProduct = products.find(p => p.id === spkForm.product_id);
+                const { premixRatio, oilRatio, batchWeightKg, defaultBatchGram } = getFryingBomRatios(null, selProduct?.name);
+                const targetQty = parseFloat(spkForm.target_quantity);
+                return (
+                  <div style={{
+                    padding: '12px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--bg-subtle)',
+                    border: '1px solid var(--border-default)',
+                  }}>
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Estimasi Kebutuhan Bahan Baku (Standar BOM)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: 'var(--text-xs)' }}>
+                      <div style={{ background: 'var(--bg-surface)', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Jamur Segar:</span>
+                        <div style={{ fontWeight: 700, color: 'var(--color-success-700)', fontSize: '13px' }}>
+                          {targetQty.toLocaleString('id-ID')} kg
+                        </div>
+                      </div>
+                      <div style={{ background: 'var(--bg-surface)', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Tepung Premix ({(premixRatio * 100).toFixed(0)}%):</span>
+                        <div style={{ fontWeight: 700, color: '#7e22ce', fontSize: '13px' }}>
+                          {(targetQty * premixRatio).toFixed(2)} kg
+                        </div>
+                      </div>
+                      <div style={{ background: 'var(--bg-surface)', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Minyak Goreng ({(oilRatio * 100).toFixed(0)}%):</span>
+                        <div style={{ fontWeight: 700, color: '#a16207', fontSize: '13px' }}>
+                          {(targetQty * oilRatio).toFixed(2)} Liter
+                        </div>
+                      </div>
+                      <div style={{ background: 'var(--bg-surface)', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Estimasi Wajan:</span>
+                        <div style={{ fontWeight: 700, color: 'var(--color-primary-700)', fontSize: '13px' }}>
+                          ~{Math.round(targetQty / batchWeightKg)} Batch (@{defaultBatchGram}g)
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', fontSize: 'var(--text-xs)' }}>
-                    <div style={{ background: 'var(--bg-surface)', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Jamur Segar:</span>
-                      <div style={{ fontWeight: 700, color: 'var(--color-success-700)', fontSize: '13px' }}>
-                        {parseFloat(spkForm.target_quantity).toLocaleString('id-ID')} kg
-                      </div>
-                    </div>
-                    <div style={{ background: 'var(--bg-surface)', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Tepung Premix (25%):</span>
-                      <div style={{ fontWeight: 700, color: '#7e22ce', fontSize: '13px' }}>
-                        {(parseFloat(spkForm.target_quantity) * 0.25).toFixed(2)} kg
-                      </div>
-                    </div>
-                    <div style={{ background: 'var(--bg-surface)', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Minyak Goreng (30%):</span>
-                      <div style={{ fontWeight: 700, color: '#a16207', fontSize: '13px' }}>
-                        {(parseFloat(spkForm.target_quantity) * 0.30).toFixed(2)} Liter
-                      </div>
-                    </div>
-                    <div style={{ background: 'var(--bg-surface)', padding: '8px', borderRadius: '4px', border: '1px solid var(--border-default)' }}>
-                      <span style={{ color: 'var(--text-secondary)' }}>Estimasi Wajan:</span>
-                      <div style={{ fontWeight: 700, color: 'var(--color-primary-700)', fontSize: '13px' }}>
-                        ~{Math.round(parseFloat(spkForm.target_quantity) / 0.8)} Batch (@800g)
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </>
           ) : (
             <>
@@ -5932,6 +6770,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={editSpkOpen}
         onClose={() => setEditSpkOpen(false)}
+        closeOnOverlayClick={false}
         title={`Edit SPK ${selectedSpkForEdit?.batch_number || ''}`}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
@@ -5980,6 +6819,7 @@ export default function ProductionPage() {
       <Modal
         isOpen={editLongsongOpen}
         onClose={() => setEditLongsongOpen(false)}
+        closeOnOverlayClick={false}
         title={`Edit Wadah #${selectedLongsongForEdit?.container_number || ''}`}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>

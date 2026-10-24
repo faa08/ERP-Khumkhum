@@ -115,11 +115,23 @@ export default function ProductionStandardsPage() {
 
   const handleSave = async () => {
     setIsSaving(true);
-    const updatedBom = [...(config.bom_recipes || [])];
+    const premixIng = fryingIngredients.find(i => i.name.toLowerCase().includes('premix') || i.name.toLowerCase().includes('tepung'));
+    const oilIng = fryingIngredients.find(i => i.name.toLowerCase().includes('minyak'));
+    const mushroomIng = fryingIngredients.find(i => i.name.toLowerCase().includes('jamur'));
+
+    const baseSynced: BomRecipe = {
+      ...(config.bom_recipes?.[0] || baseFryingRecipe),
+      ingredients: fryingIngredients,
+      ...(premixIng ? { premix_flour_ratio: premixIng.ratio_per_kg, premix_flour_id: premixIng.raw_material_id } : {}),
+      ...(oilIng ? { cooking_oil_ratio: oilIng.ratio_per_kg, cooking_oil_id: oilIng.raw_material_id } : {}),
+      ...(mushroomIng ? { raw_mushroom_ratio: mushroomIng.ratio_per_kg, raw_mushroom_id: mushroomIng.raw_material_id } : {}),
+    };
+
+    let updatedBom = [...(config.bom_recipes || [])];
     if (updatedBom.length === 0) {
-      updatedBom.push({ ...baseFryingRecipe, ingredients: fryingIngredients });
+      updatedBom.push(baseSynced);
     } else {
-      updatedBom[0] = { ...updatedBom[0], ingredients: fryingIngredients };
+      updatedBom[0] = baseSynced;
     }
     const finalConfig = { ...config, bom_recipes: updatedBom };
 

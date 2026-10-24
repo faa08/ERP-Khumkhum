@@ -864,7 +864,9 @@ export default function ProductionPage() {
       c => (c.status === 'AVAILABLE' || c.status === 'PARTIAL') && Number(c.current_weight_kg) > 0
     );
     const totalContainerKg = activeContainers.reduce((sum, c) => sum + (Number(c.current_weight_kg) || 0), 0);
-    const isLongsongSufficient = totalContainerKg >= neededKg && neededKg > 0;
+    const isLongsongSufficient = totalContainerKg > 0
+      ? (totalContainerKg >= (neededKg - 0.05) && neededKg > 0)
+      : (longsongContainers.length === 0);
 
     const isValid = pcs > 0 && isPackagingSufficient && isLongsongSufficient && (isOriginalVariant || (seasoningGramsInput > 0 && isSeasoningSufficient));
 
@@ -893,6 +895,7 @@ export default function ProductionPage() {
     packingForm.packaging_weight_gram,
     packingForm.seasoning_used_gram,
     packingForm.seasoning_material_id,
+    packingForm.flavor_variant,
     matchedPackagingInfo,
     warehouseSeasoningMaterials,
     matchedSeasoningInfo.matchedRm,

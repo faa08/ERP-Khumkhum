@@ -870,6 +870,7 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
       ...newContainers,
       ...memoryLongsongContainers.filter(mc => !newContainers.some(nc => nc.id === mc.id || (nc.production_order_id === mc.production_order_id && nc.container_number === mc.container_number)))
     ];
+    await savePersistedContainers(memoryLongsongContainers);
 
     // Coba simpan ke Supabase jika tabel tersedia
     try {
@@ -1777,14 +1778,72 @@ export async function getProductionCapacityMetrics(): Promise<{
 }
 
 // ─────────────────────────────────────────────
-// MEMORY FALLBACK STORES (Jika tabel Supabase belum di-migrate)
+// MEMORY & PERSISTENCE FALLBACK STORES (Jika tabel Supabase belum di-migrate)
 // ─────────────────────────────────────────────
 let memoryFryingBatches: DbFryingBatch[] = [];
 let memoryPackingEntries: DbPackingEntry[] = [];
 let memoryTimeStudySamples: DbTimeStudySample[] = [];
 let memoryLongsongContainers: DbLongsongContainer[] = [];
 
+async function getPersistedContainers(): Promise<DbLongsongContainer[]> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('settings')
+      .select('value')
+      .eq('key', 'production_longsong_containers')
+      .maybeSingle();
+    if (data?.value && Array.isArray(data.value)) {
+      return data.value as DbLongsongContainer[];
+    }
+  } catch (_) {}
+  return [];
+}
+
+async function savePersistedContainers(containers: DbLongsongContainer[]): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from('settings')
+      .upsert({
+        key: 'production_longsong_containers',
+        value: containers,
+        updated_at: new Date().toISOString(),
+      });
+  } catch (_) {}
+}
+
+async function getPersistedPackingEntries(): Promise<DbPackingEntry[]> {
+  try {
+    const { data } = await supabaseAdmin
+      .from('settings')
+      .select('value')
+      .eq('key', 'production_packing_entries')
+      .maybeSingle();
+    if (data?.value && Array.isArray(data.value)) {
+      return data.value as DbPackingEntry[];
+    }
+  } catch (_) {}
+  return [];
+}
+
+async function savePersistedPackingEntries(entries: DbPackingEntry[]): Promise<void> {
+  try {
+    await supabaseAdmin
+      .from('settings')
+      .upsert({
+        key: 'production_packing_entries',
+        value: entries,
+        updated_at: new Date().toISOString(),
+      });
+  } catch (_) {}
+}
+
 export async function getMemoryPackingEntries(): Promise<DbPackingEntry[]> {
+  if (memoryPackingEntries.length === 0) {
+    const persisted = await getPersistedPackingEntries();
+    if (persisted.length > 0) {
+      memoryPackingEntries = persisted;
+    }
+  }
   return memoryPackingEntries;
 }
 
@@ -1817,6 +1876,16 @@ export async function getLongsongContainers(productionOrderId?: string): Promise
       }
     } catch (_) {}
 
+    // Check settings table persistence
+    if (containers.length === 0) {
+      const persisted = await getPersistedContainers();
+      if (persisted.length > 0) {
+        containers = productionOrderId
+          ? persisted.filter(c => c.production_order_id === productionOrderId)
+          : persisted;
+      }
+    }
+
     // Fallback & enrich from memory
     const memFiltered = productionOrderId
       ? memoryLongsongContainers.filter(c => c.production_order_id === productionOrderId)
@@ -1833,13 +1902,13 @@ export async function getLongsongContainers(productionOrderId?: string): Promise
       }
     }
 
-    // Fallback from production_orders notes/counts if containers are still empty
+    // Fallback from production_orders notes if containers are still empty
     if (containers.length === 0) {
       try {
         const { data: ordersWithNotes } = await supabaseAdmin
           .from('production_orders')
-          .select('id, batch_number, notes, start_date, total_longsong_count, output_weight')
-          .gt('total_longsong_count', 0);
+          .select('id, batch_number, notes, start_date, output_weight')
+          .not('notes', 'is', null);
 
         (ordersWithNotes || []).forEach(o => {
           if (productionOrderId && o.id !== productionOrderId) return;
@@ -1862,9 +1931,9 @@ export async function getLongsongContainers(productionOrderId?: string): Promise
                 });
               });
             } catch (_) {}
-          } else if (Number(o.total_longsong_count) > 0) {
-            const count = Number(o.total_longsong_count);
-            const totalKg = Number(o.output_weight) || (count * 2.5);
+          } else if (Number(o.output_weight) > 0) {
+            const totalKg = Number(o.output_weight);
+            const count = Math.max(1, Math.round(totalKg / 2.6));
             const perKg = Number((totalKg / count).toFixed(2));
             for (let i = 1; i <= count; i++) {
               containers.push({
@@ -1882,7 +1951,15 @@ export async function getLongsongContainers(productionOrderId?: string): Promise
             }
           }
         });
+
+        if (containers.length > 0 && !productionOrderId) {
+          await savePersistedContainers(containers);
+        }
       } catch (_) {}
+    }
+
+    if (containers.length > 0 && !productionOrderId) {
+      memoryLongsongContainers = containers;
     }
 
     return { success: true, data: containers };
@@ -1946,6 +2023,7 @@ export async function createLongsongContainer(input: CreateLongsongContainerInpu
 
     if (!created) {
       memoryLongsongContainers.unshift(resultCreated);
+      await savePersistedContainers(memoryLongsongContainers);
     }
 
     await logAuditEvent({
@@ -2003,6 +2081,7 @@ export async function updateLongsongContainer(
         ...memoryLongsongContainers[memIdx],
         ...updatePayload,
       };
+      await savePersistedContainers(memoryLongsongContainers);
     }
 
     await logAuditEvent({
@@ -2035,6 +2114,7 @@ export async function deleteLongsongContainer(id: string): Promise<{
     }
 
     memoryLongsongContainers = memoryLongsongContainers.filter(c => c.id !== id);
+    await savePersistedContainers(memoryLongsongContainers);
 
     await logAuditEvent({
       userId: user.userId,
@@ -3388,7 +3468,10 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
         notes: input.notes || null,
         created_at: new Date().toISOString(),
       };
-      memoryPackingEntries.unshift(fallbackItem);
+      const current = await getPersistedPackingEntries();
+      const updated = [fallbackItem, ...current.filter(p => p.id !== fallbackItem.id)];
+      await savePersistedPackingEntries(updated);
+      memoryPackingEntries = updated;
       createdPacking = fallbackItem;
     }
 
@@ -3425,7 +3508,6 @@ export async function createPackingEntry(input: CreatePackingEntryInput): Promis
             .from('production_orders')
             .update({
               status: nextStatus,
-              actual_quantity: totalPackagedPcs,
               updated_at: new Date().toISOString(),
             })
             .eq('id', input.production_order_id);
@@ -3521,6 +3603,7 @@ export async function markLongsongPacked(packingEntryId: string): Promise<{
           packed_at: new Date().toISOString(),
         };
         targetPacking = memoryPackingEntries[idx];
+        await savePersistedPackingEntries(memoryPackingEntries);
       }
     }
 
@@ -3624,10 +3707,12 @@ export async function deletePackingEntry(packingEntryId: string): Promise<{
         .eq('id', packingEntryId);
     }
 
-    // 2. Remove from memory store
+    // 2. Remove from memory store & persistence
     memoryPackingEntries = memoryPackingEntries.filter(p => p.id !== packingEntryId);
+    const currentPersisted = await getPersistedPackingEntries();
+    await savePersistedPackingEntries(currentPersisted.filter(p => p.id !== packingEntryId));
 
-    // 3. Recalculate production_orders actual_quantity
+    // 3. Recalculate production_orders progress
     if (targetEntry?.production_order_id) {
       const orderId = targetEntry.production_order_id;
       if (isValidUuid(orderId)) {
@@ -3648,7 +3733,6 @@ export async function deletePackingEntry(packingEntryId: string): Promise<{
         await supabaseAdmin
           .from('production_orders')
           .update({
-            actual_quantity: totalPcs,
             updated_at: new Date().toISOString(),
           })
           .eq('id', orderId);
@@ -3806,6 +3890,14 @@ export async function updatePackingEntry(
           notes: nextNotes,
         };
         updatedPacking = memoryPackingEntries[idx];
+        const currentPersisted = await getPersistedPackingEntries();
+        const pIdx = currentPersisted.findIndex(p => p.id === packingEntryId);
+        if (pIdx !== -1) {
+          currentPersisted[pIdx] = updatedPacking;
+        } else {
+          currentPersisted.unshift(updatedPacking);
+        }
+        await savePersistedPackingEntries(currentPersisted);
       }
     }
 
@@ -3823,7 +3915,7 @@ export async function updatePackingEntry(
       }, (session.user as any).userId || session.user.id);
     }
 
-    // Update order progress / actual_quantity
+    // Update order progress / results
     if (updatedPacking?.production_order_id && isValidUuid(updatedPacking.production_order_id)) {
       const orderId = updatedPacking.production_order_id;
       const { data: allPackings } = await supabaseAdmin
@@ -3838,7 +3930,6 @@ export async function updatePackingEntry(
       await supabaseAdmin
         .from('production_orders')
         .update({
-          actual_quantity: totalPcs,
           updated_at: new Date().toISOString(),
         })
         .eq('id', orderId);
@@ -3897,10 +3988,12 @@ export async function getPackingEntriesByOrder(orderId: string): Promise<{
       }
     }
 
-    return { success: true, data: memoryPackingEntries.filter(p => p.production_order_id === orderId) };
+    const all = await getMemoryPackingEntries();
+    return { success: true, data: all.filter(p => p.production_order_id === orderId) };
   } catch (err: any) {
     console.error('getPackingEntriesByOrder error:', err);
-    return { success: true, data: memoryPackingEntries.filter(p => p.production_order_id === orderId) };
+    const all = await getMemoryPackingEntries();
+    return { success: true, data: all.filter(p => p.production_order_id === orderId) };
   }
 }
 
@@ -3919,12 +4012,18 @@ export async function getAllPackingEntries(): Promise<{
       .limit(200);
 
     if (error) {
+      const persisted = await getPersistedPackingEntries();
+      if (persisted.length > 0) {
+        memoryPackingEntries = persisted;
+        return { success: true, data: persisted };
+      }
       return { success: true, data: memoryPackingEntries };
     }
     return { success: true, data: data || [] };
   } catch (err: any) {
     console.error('getAllPackingEntries error:', err);
-    return { success: true, data: memoryPackingEntries };
+    const persisted = await getPersistedPackingEntries();
+    return { success: true, data: persisted.length > 0 ? persisted : memoryPackingEntries };
   }
 }
 

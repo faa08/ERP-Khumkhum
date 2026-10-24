@@ -595,6 +595,7 @@ export interface RecordFryingRunCompletionInput {
     wajan_number: number;
     duration_minutes: number;
     oil_temp_celsius?: number;
+    batch_weight_gram?: number;
     notes?: string;
   }[];
   notes?: string;
@@ -1013,42 +1014,90 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
       }
     }
 
-    // 3. Catat Batch Konsolidasi ke Memory / DB agar KPI Card & Longsong Pool Sinkron
-    const runBatchItem: DbFryingBatch = {
-      id: randomUUID(),
-      production_order_id: orderId,
-      wajan_number: Math.round(input.actual_mushroom_kg / 0.8),
-      batch_weight_gram: Math.round(input.actual_mushroom_kg * 1000),
-      output_weight_gram: Math.round(input.output_finished_kg * 1000),
-      longsong_count: input.output_longsong_count,
-      kremesan_weight_gram: 0,
-      notes: input.notes || `Rekap Selesai Masak SPK ${orderBatchNumber}`,
-      operator_id: session.user.id,
-      started_at: nowIso,
-      finished_at: nowIso,
-      timer_started_at: null,
-      created_at: nowIso,
-      operator: { id: session.user.id, name: session.user.name || 'Operator Produksi' },
-    };
+    // 3. Catat Batch ke DB / Memory
+    if (input.batches && input.batches.length > 0) {
+      const perBatchOutputGram = Math.round((input.output_finished_kg * 1000) / input.batches.length);
+      const perBatchLongsong = Math.max(1, Math.round(input.output_longsong_count / input.batches.length));
 
-    try {
-      await supabaseAdmin.from('production_frying_batches').insert({
-        id: runBatchItem.id,
-        production_order_id: isValidUuid(orderId) ? orderId : null,
-        wajan_number: runBatchItem.wajan_number,
-        batch_weight_gram: runBatchItem.batch_weight_gram,
-        output_weight_gram: runBatchItem.output_weight_gram,
-        longsong_count: runBatchItem.longsong_count,
+      for (const b of input.batches) {
+        const batchWeight = b.batch_weight_gram || Math.round((input.actual_mushroom_kg * 1000) / input.batches.length);
+        const batchItem: DbFryingBatch = {
+          id: randomUUID(),
+          production_order_id: orderId,
+          wajan_number: b.wajan_number,
+          batch_weight_gram: batchWeight,
+          output_weight_gram: perBatchOutputGram,
+          longsong_count: perBatchLongsong,
+          kremesan_weight_gram: 0,
+          frying_duration_minutes: b.duration_minutes,
+          oil_temp_celsius: b.oil_temp_celsius || 165,
+          notes: b.notes || input.notes || `SPK ${orderBatchNumber} - Wajan #${b.wajan_number}`,
+          operator_id: session.user.id,
+          started_at: nowIso,
+          finished_at: nowIso,
+          timer_started_at: null,
+          created_at: nowIso,
+          operator: { id: session.user.id, name: session.user.name || 'Operator Produksi' },
+        };
+
+        try {
+          await supabaseAdmin.from('production_frying_batches').insert({
+            id: batchItem.id,
+            production_order_id: isValidUuid(orderId) ? orderId : null,
+            wajan_number: batchItem.wajan_number,
+            batch_weight_gram: batchItem.batch_weight_gram,
+            output_weight_gram: batchItem.output_weight_gram,
+            longsong_count: batchItem.longsong_count,
+            kremesan_weight_gram: 0,
+            frying_duration_minutes: batchItem.frying_duration_minutes,
+            oil_temp_celsius: batchItem.oil_temp_celsius,
+            notes: batchItem.notes,
+            operator_id: session.user.id,
+            started_at: nowIso,
+            finished_at: nowIso,
+            created_at: nowIso,
+          });
+        } catch (_) {}
+
+        memoryFryingBatches.unshift(batchItem);
+      }
+    } else {
+      const runBatchItem: DbFryingBatch = {
+        id: randomUUID(),
+        production_order_id: orderId,
+        wajan_number: Math.round(input.actual_mushroom_kg / 0.8),
+        batch_weight_gram: Math.round(input.actual_mushroom_kg * 1000),
+        output_weight_gram: Math.round(input.output_finished_kg * 1000),
+        longsong_count: input.output_longsong_count,
         kremesan_weight_gram: 0,
-        notes: runBatchItem.notes,
+        notes: input.notes || `Rekap Selesai Masak SPK ${orderBatchNumber}`,
         operator_id: session.user.id,
         started_at: nowIso,
         finished_at: nowIso,
+        timer_started_at: null,
         created_at: nowIso,
-      });
-    } catch (_) {}
+        operator: { id: session.user.id, name: session.user.name || 'Operator Produksi' },
+      };
 
-    memoryFryingBatches.unshift(runBatchItem);
+      try {
+        await supabaseAdmin.from('production_frying_batches').insert({
+          id: runBatchItem.id,
+          production_order_id: isValidUuid(orderId) ? orderId : null,
+          wajan_number: runBatchItem.wajan_number,
+          batch_weight_gram: runBatchItem.batch_weight_gram,
+          output_weight_gram: runBatchItem.output_weight_gram,
+          longsong_count: runBatchItem.longsong_count,
+          kremesan_weight_gram: 0,
+          notes: runBatchItem.notes,
+          operator_id: session.user.id,
+          started_at: nowIso,
+          finished_at: nowIso,
+          created_at: nowIso,
+        });
+      } catch (_) {}
+
+      memoryFryingBatches.unshift(runBatchItem);
+    }
 
     // 4. Log Audit Event
     await logAuditEvent({

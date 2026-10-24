@@ -4959,7 +4959,7 @@ export default function ProductionPage() {
 
             // Standar BOM & estimasi batch wajan berdasarkan jamur yang dimasak
             const { premixRatio, oilRatio, batchWeightKg, defaultBatchGram } = getFryingBomRatios(selectedFryingOrder);
-            const baseMushroomForBom = actualMushroom > 0 ? actualMushroom : maxMushroomAllowed;
+            const baseMushroomForBom = actualMushroom > 0 ? actualMushroom : targetBase;
             const bomPremix = Number((baseMushroomForBom * premixRatio).toFixed(2));
             const bomOil = Number((baseMushroomForBom * oilRatio).toFixed(2));
             const estBatchForMushroom = Math.max(1, Math.round(baseMushroomForBom / batchWeightKg));
@@ -5156,16 +5156,16 @@ export default function ProductionPage() {
                         <button
                           type="button"
                           onClick={() => {
-                            const mushroomToUse = fryingRunForm.actual_mushroom_kg ? parseFloat(fryingRunForm.actual_mushroom_kg) : maxMushroomAllowed;
+                            const mushroomToUse = fryingRunForm.actual_mushroom_kg ? parseFloat(fryingRunForm.actual_mushroom_kg) : targetBase;
                             const calcPremix = Number((mushroomToUse * premixRatio).toFixed(1));
                             const calcOil = Number((mushroomToUse * oilRatio).toFixed(1));
                             setFryingRunForm(f => ({
                               ...f,
-                              actual_mushroom_kg: f.actual_mushroom_kg || String(maxMushroomAllowed),
+                              actual_mushroom_kg: f.actual_mushroom_kg || String(targetBase),
                               actual_premix_kg: String(calcPremix),
                               actual_cooking_oil_liter: String(calcOil),
                             }));
-                            toast.success(`Bahan diisi otomatis sesuai standar BOM (Premix: ${calcPremix} kg, Minyak: ${calcOil} L)`);
+                            toast.success(`Bahan diisi otomatis sesuai standar BOM (Jamur: ${mushroomToUse} kg, Premix: ${calcPremix} kg, Minyak: ${calcOil} L)`);
                           }}
                           style={{
                             fontSize: '11px',
@@ -5190,7 +5190,7 @@ export default function ProductionPage() {
                             max={maxMushroomAllowed}
                             value={fryingRunForm.actual_mushroom_kg}
                             onChange={(e) => handleFryingRunMushroomChange(e.target.value)}
-                            placeholder={`Maks: ${maxMushroomAllowed} kg`}
+                            placeholder={`Target: ${targetBase} kg (Maks: ${maxMushroomAllowed} kg)`}
                             style={{
                               borderColor: fryingStockStatus.mushroom.isShortage ? 'var(--color-danger-500)' : undefined,
                             }}

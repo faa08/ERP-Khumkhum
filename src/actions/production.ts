@@ -719,32 +719,15 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
       } catch (_) {}
     }
 
-    // Sinkronisasi batch wajan & sampel HACCP Time Study jika diinput saat rekap
+    // Catat sampel ke time_study_samples untuk analisis HACCP jika diinput saat rekap
     if (input.batches && input.batches.length > 0) {
       try {
-        const estWeightPerBatch = Math.round((input.actual_mushroom_kg * 1000) / input.batches.length) || 800;
         for (const b of input.batches) {
           const durMin = Number(b.duration_minutes) || 15;
-          const oilTemp = Number(b.oil_temp_celsius) || 170;
+          const oilTemp = Number(b.oil_temp_celsius) || 165;
           const durSec = durMin * 60;
 
-          // Simpan ke production_frying_batches
           if (isValidUuid(orderId)) {
-            await supabaseAdmin.from('production_frying_batches').insert({
-              production_order_id: orderId,
-              wajan_number: b.wajan_number,
-              batch_weight_gram: estWeightPerBatch,
-              oil_temp_celsius: oilTemp,
-              frying_duration_minutes: durMin,
-              output_weight_gram: Math.round((input.output_finished_kg * 1000) / input.batches.length),
-              longsong_count: Math.max(1, Math.round(input.output_longsong_count / input.batches.length)),
-              notes: b.notes || null,
-              operator_id: session.user.id,
-              started_at: new Date(Date.now() - durSec * 1000).toISOString(),
-              finished_at: nowIso,
-            });
-
-            // Catat sampel ke time_study_samples untuk analisis HACCP
             await supabaseAdmin.from('time_study_samples').insert({
               production_order_id: orderId,
               stage: 'FRYING',
@@ -756,27 +739,9 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
               notes: `Wajan #${b.wajan_number} (${oilTemp}°C) - Rekap SPK`,
             });
           }
-
-          // Simpan ke memory fallback
-          memoryFryingBatches.unshift({
-            id: randomUUID(),
-            production_order_id: orderId,
-            wajan_number: b.wajan_number,
-            batch_weight_gram: estWeightPerBatch,
-            oil_temp_celsius: oilTemp,
-            frying_duration_minutes: durMin,
-            output_weight_gram: Math.round((input.output_finished_kg * 1000) / input.batches.length),
-            longsong_count: Math.max(1, Math.round(input.output_longsong_count / input.batches.length)),
-            kremesan_weight_gram: 0,
-            notes: b.notes || null,
-            operator_id: session.user.id,
-            started_at: new Date(Date.now() - durSec * 1000).toISOString(),
-            finished_at: nowIso,
-            created_at: nowIso,
-          });
         }
-      } catch (batchErr) {
-        console.warn('Sync frying batches warning:', batchErr);
+      } catch (sampleErr) {
+        console.warn('Sync time study samples warning:', sampleErr);
       }
     }
 
@@ -1019,9 +984,18 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
     // 3. Catat Batch ke DB / Memory
     if (input.batches && input.batches.length > 0) {
       const perBatchOutputGram = Math.round((input.output_finished_kg * 1000) / input.batches.length);
-      const perBatchLongsong = Math.max(1, Math.round(input.output_longsong_count / input.batches.length));
+      const totalLongsong = Math.max(0, input.output_longsong_count || 0);
+      const baseLongsong = Math.floor(totalLongsong / input.batches.length);
+      const remLongsong = totalLongsong % input.batches.length;
 
-      for (const b of input.batches) {
+      const incomingWajanNumbers = new Set(input.batches.map(b => b.wajan_number));
+      memoryFryingBatches = memoryFryingBatches.filter(
+        mb => !(mb.production_order_id === orderId && incomingWajanNumbers.has(mb.wajan_number))
+      );
+
+      for (let idx = 0; idx < input.batches.length; idx++) {
+        const b = input.batches[idx];
+        const perBatchLongsong = idx < remLongsong ? baseLongsong + 1 : baseLongsong;
         const batchWeight = b.batch_weight_gram || Math.round((input.actual_mushroom_kg * 1000) / input.batches.length);
         const outputWeight = b.output_weight_gram || perBatchOutputGram;
         const batchItem: DbFryingBatch = {
@@ -3098,13 +3072,25 @@ export async function getAllFryingBatches(): Promise<{
       .order('created_at', { ascending: false })
       .limit(200);
 
-    if (error) {
-      return { success: true, data: memoryFryingBatches };
+    const rawList = (!error && data && data.length > 0) ? data : memoryFryingBatches;
+    const seenMap = new Map<string, DbFryingBatch>();
+    for (const b of rawList) {
+      const key = b.production_order_id ? `${b.production_order_id}_${b.wajan_number}` : b.id;
+      if (!seenMap.has(key)) {
+        seenMap.set(key, b);
+      }
     }
-    return { success: true, data: data || [] };
+    return { success: true, data: Array.from(seenMap.values()) };
   } catch (err: any) {
     console.error('getAllFryingBatches error:', err);
-    return { success: true, data: memoryFryingBatches };
+    const seenMap = new Map<string, DbFryingBatch>();
+    for (const b of memoryFryingBatches) {
+      const key = b.production_order_id ? `${b.production_order_id}_${b.wajan_number}` : b.id;
+      if (!seenMap.has(key)) {
+        seenMap.set(key, b);
+      }
+    }
+    return { success: true, data: Array.from(seenMap.values()) };
   }
 }
 

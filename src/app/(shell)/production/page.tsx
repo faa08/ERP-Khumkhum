@@ -1288,11 +1288,29 @@ export default function ProductionPage() {
   const fryingOrdersWithProgress = useMemo(() => {
     return allFryingOrders.map(order => {
       const targetKg = Number(order.target_quantity) || 50;
-      const batches = fryingBatches.filter(b => b.production_order_id === order.id);
+
+      // Wadah longsong fisik yang terasosiasi dengan SPK ini
+      const linkedContainers = longsongContainers.filter(c => c.production_order_id === order.id);
+      const readyContainers = linkedContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL');
+      const availableWeightKg = readyContainers.reduce((s, c) => s + (Number(c.current_weight_kg) || 0), 0);
+
+      // Deduplikasi batch wajan per order
+      const rawBatches = fryingBatches.filter(b => b.production_order_id === order.id);
+      const batchesMap = new Map<number, typeof rawBatches[0]>();
+      for (const b of rawBatches) {
+        if (!batchesMap.has(b.wajan_number) || (b.finished_at && !batchesMap.get(b.wajan_number)?.finished_at)) {
+          batchesMap.set(b.wajan_number, b);
+        }
+      }
+      const batches = Array.from(batchesMap.values()).sort((a, b) => a.wajan_number - b.wajan_number);
       const batchCount = batches.length;
       let realizedKg = batches.reduce((sum, b) => sum + (Number(b.batch_weight_gram) || 800), 0) / 1000;
       let outputKg = batches.reduce((sum, b) => sum + (Number(b.output_weight_gram) || 0), 0) / 1000;
-      let longsongTotal = batches.reduce((sum, b) => sum + (Number(b.longsong_count) || 0), 0);
+
+      // Longsong Total: Utamakan wadah fisik terdaftar jika ada, lalu order.total_longsong_count, baru fallback batches
+      let longsongTotal = linkedContainers.length > 0
+        ? linkedContainers.length
+        : (Number(order.total_longsong_count) || batches.reduce((sum, b) => sum + (Number(b.longsong_count) || 0), 0));
 
       // Jika SPK sudah COMPLETED via rekap langsung
       if (order.status === 'COMPLETED') {
@@ -1302,7 +1320,7 @@ export default function ProductionPage() {
         if (order.output_weight && order.output_weight > outputKg) {
           outputKg = order.output_weight;
         }
-        if (order.total_longsong_count && order.total_longsong_count > longsongTotal) {
+        if (order.total_longsong_count && order.total_longsong_count > longsongTotal && linkedContainers.length === 0) {
           longsongTotal = order.total_longsong_count;
         }
       }
@@ -1331,10 +1349,7 @@ export default function ProductionPage() {
         }
       }
 
-      // Wadah longsong fisik yang terasosiasi dengan SPK ini
-      const linkedContainers = longsongContainers.filter(c => c.production_order_id === order.id);
-      const readyContainers = linkedContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL');
-      const availableWeightKg = readyContainers.reduce((s, c) => s + (Number(c.current_weight_kg) || 0), 0);
+      // Wadah longsong fisik sudah dihitung di atas
 
       return {
         order,
@@ -1744,26 +1759,17 @@ export default function ProductionPage() {
         oil_temp_celsius: string;
         notes?: string;
       }[] = [];
-      const totalOutputGrams = (parseFloat(f.output_finished_kg) || 0) * 1000;
-      const perBatchGram = totalOutputGrams > 0 && safeCount > 0 ? Math.floor(totalOutputGrams / safeCount) : 800;
-      let remainingGrams = totalOutputGrams;
 
       for (let i = 1; i <= safeCount; i++) {
-        const assignedGram = totalOutputGrams > 0
-          ? (i === safeCount ? remainingGrams : perBatchGram)
-          : (currentBatches[i - 1]?.output_weight_gram || '800');
-        if (totalOutputGrams > 0) remainingGrams -= perBatchGram;
-
         if (currentBatches[i - 1]) {
           newBatches.push({
             ...currentBatches[i - 1],
             wajan_number: i,
-            output_weight_gram: currentBatches[i - 1].output_weight_gram || String(assignedGram),
           });
         } else {
           newBatches.push({
             wajan_number: i,
-            output_weight_gram: String(assignedGram),
+            output_weight_gram: '',
             duration_minutes: '',
             oil_temp_celsius: '',
             notes: '',
@@ -1867,25 +1873,10 @@ export default function ProductionPage() {
       toast.warning(`Input jamur matang dibatasi maksimal ${maxOutputWajarKg} kg (Batas wajar BOM ${maxYieldPct}% dari jamur segar ${currentMushroom} kg)`);
     }
 
-    setFryingRunForm(f => {
-      const bCount = f.batches.length;
-      let updatedBatches = f.batches;
-      if (bCount > 0 && finalVal > 0) {
-        const totalGrams = Math.round(finalVal * 1000);
-        const perBatch = Math.floor(totalGrams / bCount);
-        let rem = totalGrams;
-        updatedBatches = f.batches.map((b, idx) => {
-          const w = idx === bCount - 1 ? rem : perBatch;
-          rem -= perBatch;
-          return { ...b, output_weight_gram: String(w) };
-        });
-      }
-      return {
-        ...f,
-        output_finished_kg: finalValStr,
-        batches: updatedBatches,
-      };
-    });
+    setFryingRunForm(f => ({
+      ...f,
+      output_finished_kg: finalValStr,
+    }));
   };
 
   const handleFryingRunLongsongChange = (valStr: string) => {
@@ -2070,19 +2061,14 @@ export default function ProductionPage() {
   const handleAddBatch = () => {
     setFryingRunForm(f => {
       const nextNo = (f.batches.length > 0 ? Math.max(...f.batches.map(b => b.wajan_number)) : 0) + 1;
-      const totalOutputGrams = (parseFloat(f.output_finished_kg) || 0) * 1000;
-      const defaultGram = totalOutputGrams > 0 ? String(Math.round(totalOutputGrams / (f.batches.length + 1))) : '800';
       const updated = [
         ...f.batches,
-        { wajan_number: nextNo, output_weight_gram: defaultGram, duration_minutes: '', oil_temp_celsius: '', notes: '' },
+        { wajan_number: nextNo, output_weight_gram: '', duration_minutes: '', oil_temp_celsius: '', notes: '' },
       ];
-      const sumGrams = updated.reduce((acc, b) => acc + (parseFloat(b.output_weight_gram) || 0), 0);
-      const newTotalKg = sumGrams > 0 ? (sumGrams / 1000).toFixed(2).replace(/\.?0+$/, '') : f.output_finished_kg;
       return {
         ...f,
         batch_count: String(updated.length),
         batches: updated,
-        output_finished_kg: newTotalKg,
       };
     });
   };
@@ -2161,28 +2147,20 @@ export default function ProductionPage() {
       return;
     }
 
-    // Offset nomor wadah longsong jika SPK ini sudah memiliki wadah sebelumnya
-    const existingContainersForThisSpk = longsongContainers.filter(c => c.production_order_id === selectedFryingOrder.id);
-    const containerOffset = existingContainersForThisSpk.length;
-
     const containersPayload = (fryingRunForm.containers && fryingRunForm.containers.length > 0)
       ? fryingRunForm.containers.map(c => ({
-          container_number: c.container_number + containerOffset,
+          container_number: c.container_number,
           weight_kg: parseFloat(c.weight_kg) || 0,
         }))
       : undefined;
 
-    // Offset nomor wajan batch jika SPK ini sudah memiliki wajan sebelumnya
-    const existingBatchesForThisSpk = fryingBatches.filter(b => b.production_order_id === selectedFryingOrder.id);
-    const batchOffset = existingBatchesForThisSpk.length;
-
     const batchesPayload = (fryingRunForm.batches && fryingRunForm.batches.length > 0)
       ? fryingRunForm.batches.map(b => ({
-          wajan_number: b.wajan_number + batchOffset,
-          output_weight_gram: parseFloat(b.output_weight_gram) || Math.round((outputKg * 1000) / (fryingRunForm.batches.length || 1)),
+          wajan_number: b.wajan_number,
+          output_weight_gram: parseFloat(b.output_weight_gram) || 0,
           batch_weight_gram: Math.round((mushroomKg * 1000) / (fryingRunForm.batches.length || 1)),
           duration_minutes: parseFloat(b.duration_minutes) || 15,
-          oil_temp_celsius: parseFloat(b.oil_temp_celsius) || 170,
+          oil_temp_celsius: parseFloat(b.oil_temp_celsius) || 165,
           notes: b.notes || undefined,
         }))
       : undefined;
@@ -3506,7 +3484,7 @@ export default function ProductionPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {fryingOrdersWithProgress.map(({ order, targetKg, realizedKg, realizedBatchesCount, remainingKg, progressPercent, outputKg, longsongTotal, avgDurationMinutes, haccpCompliance, readyContainers, availableWeightKg }) => (
+                    {fryingOrdersWithProgress.map(({ order, targetKg, realizedKg, realizedBatchesCount, batchCount, remainingKg, progressPercent, outputKg, longsongTotal, avgDurationMinutes, haccpCompliance, readyContainers, availableWeightKg }) => (
                       <tr key={order.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                         <td style={{ padding: '10px 12px' }}>
                           <strong style={{ fontFamily: 'monospace', color: 'var(--color-primary-800)' }}>
@@ -3628,7 +3606,7 @@ export default function ProductionPage() {
                         {!isManagement && (
                           <td style={{ padding: '10px 12px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                              <Button
+                                <Button
                                 variant="secondary"
                                 size="sm"
                                 onClick={() => handleOpenSpkBatches(order)}
@@ -3636,7 +3614,7 @@ export default function ProductionPage() {
                                 title="Lihat riwayat rincian batch wajan untuk SPK ini"
                                 style={{ padding: '6px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}
                               >
-                                Rincian Wajan ({fryingBatches.filter(b => b.production_order_id === order.id).length})
+                                Rincian Wajan ({batchCount})
                               </Button>
                               {order.status !== 'COMPLETED' ? (
                                 <Button
@@ -4817,7 +4795,14 @@ export default function ProductionPage() {
         footer={<Button variant="secondary" onClick={() => setSpkBatchesModalOpen(false)}>Tutup</Button>}
       >
         {selectedSpkForBatches && (() => {
-          const orderBatches = fryingBatches.filter(b => b.production_order_id === selectedSpkForBatches.id);
+          const rawBatches = fryingBatches.filter(b => b.production_order_id === selectedSpkForBatches.id);
+          const batchesMap = new Map<number, typeof rawBatches[0]>();
+          for (const b of rawBatches) {
+            if (!batchesMap.has(b.wajan_number) || (b.finished_at && !batchesMap.get(b.wajan_number)?.finished_at)) {
+              batchesMap.set(b.wajan_number, b);
+            }
+          }
+          const orderBatches = Array.from(batchesMap.values()).sort((a, b) => a.wajan_number - b.wajan_number);
           const totalInputMushroomKg = Number(selectedSpkForBatches.input_weight) || 0;
           const targetQtyKg = Number(selectedSpkForBatches.target_quantity) || 50;
 
@@ -5739,7 +5724,7 @@ export default function ProductionPage() {
                                       max="5000"
                                       value={b.output_weight_gram || ''}
                                       onChange={(e) => handleBatchWeightChange(idx, e.target.value)}
-                                      placeholder="800"
+                                      placeholder="cth. 800"
                                       style={{ height: '28px', fontSize: '12px', padding: '2px 6px' }}
                                     />
                                   </div>
@@ -5754,7 +5739,7 @@ export default function ProductionPage() {
                                       max="30"
                                       value={b.duration_minutes}
                                       onChange={(e) => handleBatchDurationChange(idx, e.target.value)}
-                                      placeholder={String(stdDuration)}
+                                      placeholder={`cth. ${stdDuration}`}
                                       style={{ height: '28px', fontSize: '12px', padding: '2px 6px' }}
                                     />
                                   </div>
@@ -5769,7 +5754,7 @@ export default function ProductionPage() {
                                       max="250"
                                       value={b.oil_temp_celsius}
                                       onChange={(e) => handleBatchTempChange(idx, e.target.value)}
-                                      placeholder={String(stdTemp)}
+                                      placeholder={`cth. ${stdTemp}`}
                                       style={{ height: '28px', fontSize: '12px', padding: '2px 6px' }}
                                     />
                                   </div>

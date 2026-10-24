@@ -4033,24 +4033,22 @@ export default function ProductionPage() {
                             {item.order.product_variant || 'Jamur Crispy'}
                           </td>
                           <td style={{ padding: '10px 12px' }}>
-                            {hasPackaged ? (
-                              <>
-                                <span style={{ fontWeight: 600 }}>
-                                  {item.packedCount} / {item.totalLongsongProduced} longsong
-                                </span>
-                                {item.unpackedCount > 0 && (
-                                  <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500 }}>
-                                    {item.unpackedCount} longsong belum packing
-                                  </div>
-                                )}
-                              </>
+                            {item.packedCount > 0 ? (
+                              <div>
+                                <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-800)' }}>
+                                  {item.packedCount} Longsong
+                                </strong>
+                                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  Sudah dipacking
+                                </div>
+                              </div>
                             ) : (
                               <div>
-                                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
-                                  0 / {item.totalLongsongProduced} longsong
+                                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)', fontWeight: 500 }}>
+                                  0 Longsong
                                 </span>
                                 <div style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                                  Belum ada packing
+                                  Belum terpakai
                                 </div>
                               </div>
                             )}

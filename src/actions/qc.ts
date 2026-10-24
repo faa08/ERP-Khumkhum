@@ -160,12 +160,19 @@ export async function getPendingQcBatches(): Promise<{
       if (order.status === 'QC_PENDING' || order.status === 'COMPLETED_WIP' || order.status === 'REWORK') {
         return true;
       }
-      return (packingByOrder[order.id]?.length || 0) > 0;
+      const countById = packingByOrder[order.id]?.length || 0;
+      const countByBatch = order.batch_number ? (packingByOrder[order.batch_number]?.length || 0) : 0;
+      return (countById + countByBatch) > 0;
     });
 
     const enriched: DbProductionOrder[] = filteredOrders.map((order: any) => {
       const res = resultsByOrder[order.id];
-      const packings = packingByOrder[order.id] || [];
+      const byIdPackings = packingByOrder[order.id] || [];
+      const byBatchPackings = order.batch_number ? (packingByOrder[order.batch_number] || []) : [];
+      const packings = [
+        ...byIdPackings,
+        ...byBatchPackings.filter((bp: any) => !byIdPackings.some((ip: any) => ip.id === bp.id)),
+      ];
       const totalPackaged = packings.reduce((sum, p) => sum + (Number(p.packaged_toples_count) || 0), 0);
 
       // Ringkasan varian kemasan
@@ -311,8 +318,11 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
 
         try {
           const memPackings = await getMemoryPackingEntries();
-          const matchedMem = memPackings.filter(p => p.production_order_id === prodOrder.id);
-          matchedMem.forEach(p => {
+          const matchedMem = memPackings.filter((p: any) =>
+            p.production_order_id === prodOrder.id ||
+            (prodOrder.batch_number && p.production_order_id === prodOrder.batch_number)
+          );
+          matchedMem.forEach((p: any) => {
             if (!orderPackings.some(x => x.id === p.id)) orderPackings.push(p);
           });
         } catch {}

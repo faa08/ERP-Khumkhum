@@ -10,6 +10,8 @@ import { Factory, Package, ShieldCheck, ShoppingCart, TrendingUp, AlertTriangle,
 import { format, subDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
 import { getKpiMetrics, getKpiTrend, type KpiFilter, type KpiTrendData } from '@/actions/management';
+import { getAppNotifications } from '@/actions/notifications';
+import type { AppNotification } from '@/types/notification';
 import type { DbKpiMetrics } from '@/types/database';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { useAuth } from '@/hooks/useAuth';
@@ -341,6 +343,27 @@ function ExecutiveDashboard() {
 // OPERATIONAL DASHBOARD (Daily Ops)
 // ─────────────────────────────────────────────
 function OperationalDashboard() {
+  const router = useRouter();
+  const [stockAlerts, setStockAlerts] = useState<AppNotification[]>([]);
+  const [isLoadingStock, setIsLoadingStock] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+    getAppNotifications()
+      .then((res) => {
+        if (mounted && res.success && res.data) {
+          setStockAlerts(res.data.filter((n) => n.category === 'INVENTORY'));
+        }
+      })
+      .catch((err) => console.warn('Failed to load stock alerts:', err))
+      .finally(() => {
+        if (mounted) setIsLoadingStock(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
 
@@ -387,17 +410,69 @@ function OperationalDashboard() {
         </ul>
       </Card>
 
-      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><Package size={18} /><strong>Alert Stok Rendah</strong></div>}>
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-sm)' }}>Kemasan Pouch 50g</span>
-            <StatusBadge status="low_stock" />
-          </li>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-sm)' }}>Bumbu Balado Premix</span>
-            <StatusBadge status="low_stock" />
-          </li>
-        </ul>
+      <Card
+        header={
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <Package size={18} aria-hidden="true" />
+              <strong>Alert Stok Gudang ({stockAlerts.length})</strong>
+            </div>
+            {stockAlerts.some((s) => s.severity === 'danger') && (
+              <span style={{ fontSize: '11px', color: 'var(--color-danger-700)', fontWeight: 700, background: 'var(--color-danger-50)', border: '1px solid var(--color-danger-200)', borderRadius: '4px', padding: '1px 6px' }}>
+                {stockAlerts.filter((s) => s.severity === 'danger').length} Habis
+              </span>
+            )}
+          </div>
+        }
+      >
+        {isLoadingStock ? (
+          <div style={{ padding: 'var(--space-3) 0', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', textAlign: 'center' }}>
+            Memeriksa inventori gudang...
+          </div>
+        ) : stockAlerts.length === 0 ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: 'var(--space-2) 0', color: 'var(--color-success-700)', fontSize: 'var(--text-sm)' }}>
+            <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" />
+            <span>Seluruh stok bahan baku &amp; produk dalam batas aman.</span>
+          </div>
+        ) : (
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            {stockAlerts.slice(0, 5).map((alert) => (
+              <li
+                key={alert.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-md)',
+                  background: alert.severity === 'danger' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                  border: alert.severity === 'danger' ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid rgba(245, 158, 11, 0.25)',
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onClick={() => router.push(alert.link)}
+                title="Klik untuk membuka inventori gudang"
+              >
+                <div style={{ minWidth: 0, paddingRight: '8px' }}>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }}>
+                    {alert.title}
+                  </p>
+                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                    {alert.message}
+                  </p>
+                </div>
+                <StatusBadge status={alert.severity === 'danger' ? 'out_of_stock' : 'low_stock'} />
+              </li>
+            ))}
+            {stockAlerts.length > 5 && (
+              <div style={{ textAlign: 'center', marginTop: '4px' }}>
+                <Button variant="ghost" size="sm" onClick={() => router.push('/warehouse')}>
+                  Lihat {stockAlerts.length - 5} item stok lainnya &rarr;
+                </Button>
+              </div>
+            )}
+          </ul>
+        )}
       </Card>
 
       <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><ShoppingCart size={18} /><strong>Pengiriman Hari Ini</strong></div>}>

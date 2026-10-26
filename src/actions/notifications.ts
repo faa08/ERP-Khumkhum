@@ -19,6 +19,7 @@ export async function getAppNotifications(): Promise<{
       'SALES',
       'SORTING',
       'FARMER',
+      'PREMIX',
     ]);
 
     const userRole = session.user.role;
@@ -105,49 +106,106 @@ export async function getAppNotifications(): Promise<{
     }
 
     // ─────────────────────────────────────────────
-    // 3. INVENTORY & WAREHOUSE ALERTS (Stok Kritis)
+    // 3. INVENTORY & WAREHOUSE ALERTS (Stok Habis & Stok Kritis / Reorder)
     // ─────────────────────────────────────────────
     try {
-      const { data: invData } = await supabaseAdmin
+      // Ambil seluruh data inventori (tidak menyertakan kolom 'uom' yang tidak ada di tabel inventory)
+      const { data: invData, error: invQueryError } = await supabaseAdmin
         .from('inventory')
         .select(`
           id,
           item_id,
           item_type,
           quantity,
-          uom,
+          reorder_point,
           last_updated_at,
-          warehouse:warehouses(name)
-        `)
-        .order('quantity', { ascending: true })
-        .limit(20);
+          warehouse:warehouses(id, name)
+        `);
 
-      if (invData && invData.length > 0) {
+      if (invQueryError) {
+        console.error('Error fetching inventory for notifications:', invQueryError);
+      } else if (invData && invData.length > 0) {
         const rmIds = invData.filter((i) => i.item_type === 'RAW_MATERIAL').map((i) => i.item_id);
-        const { data: rmData } = await supabaseAdmin
-          .from('raw_materials')
-          .select('id, name, min_stock, rop')
-          .in('id', rmIds);
+        const prodIds = invData.filter((i) => i.item_type === 'PRODUCT').map((i) => i.item_id);
 
-        const rmMap = new Map((rmData || []).map((r) => [r.id, r]));
+        const [rmRes, prodRes, settingsRes] = await Promise.all([
+          rmIds.length > 0
+            ? supabaseAdmin
+                .from('raw_materials')
+                .select('id, name, min_stock, rop, uom, material_category')
+                .in('id', rmIds)
+                .is('deleted_at', null)
+            : Promise.resolve({ data: [] as any[] }),
+          prodIds.length > 0
+            ? supabaseAdmin
+                .from('products')
+                .select('id, name')
+                .in('id', prodIds)
+                .is('deleted_at', null)
+            : Promise.resolve({ data: [] as any[] }),
+          supabaseAdmin
+            .from('settings')
+            .select('value')
+            .eq('key', 'product_rops')
+            .maybeSingle(),
+        ]);
+
+        const rmMap = new Map((rmRes.data || []).map((r: any) => [r.id, r]));
+        const prodMap = new Map((prodRes.data || []).map((p: any) => [p.id, p]));
+        const productRops: Record<string, number> = (settingsRes.data as any)?.value || {};
 
         invData.forEach((inv) => {
+          let itemName = '';
+          let uom = 'kg';
+          let rop = Number(inv.reorder_point) || 0;
+          let link = '/warehouse';
+
           if (inv.item_type === 'RAW_MATERIAL') {
             const rm = rmMap.get(inv.item_id);
-            const minStock = rm?.min_stock ?? 20; // default 20 kg threshold
-            if (Number(inv.quantity) <= minStock) {
-              const itemName = rm?.name || 'Bahan Baku';
-              notifications.push({
-                id: `notif-inv-critical-${inv.id}`,
-                title: `Stok Kritis: ${itemName}`,
-                message: `Sisa stok ${Number(inv.quantity).toLocaleString('id-ID')} ${inv.uom || 'kg'} di bawah batas minimum (${minStock} ${inv.uom || 'kg'}).`,
-                category: 'INVENTORY',
-                severity: 'danger',
-                link: '/inventory',
-                timestamp: inv.last_updated_at || new Date().toISOString(),
-                isActionable: true,
-              });
-            }
+            if (!rm) return; // Item master terhapus
+            itemName = rm.name || 'Bahan Baku';
+            uom = rm.uom || 'kg';
+            rop = rop || Number(rm.rop) || Number(rm.min_stock) || 0;
+            link = '/warehouse';
+          } else if (inv.item_type === 'PRODUCT') {
+            const p = prodMap.get(inv.item_id);
+            if (!p) return;
+            itemName = p.name || 'Produk Jadi';
+            uom = 'pcs';
+            rop = rop || Number(productRops[inv.item_id]) || 0;
+            link = '/inventory';
+          } else {
+            return;
+          }
+
+          const qty = Number(inv.quantity) || 0;
+          const whName = (inv.warehouse as any)?.name || 'Gudang';
+
+          // 1. OUT OF STOCK (Stok Habis / <= 0)
+          if (qty <= 0) {
+            notifications.push({
+              id: `notif-inv-outofstock-${inv.id}`,
+              title: `Stok Habis: ${itemName}`,
+              message: `Stok ${itemName} di ${whName} telah HABIS (0 ${uom}). Segera lakukan order atau restock ulang.`,
+              category: 'INVENTORY',
+              severity: 'danger',
+              link,
+              timestamp: inv.last_updated_at || new Date().toISOString(),
+              isActionable: true,
+            });
+          }
+          // 2. LOW STOCK (Stok Menipis / Mencapai atau di Bawah Batas Reorder Point)
+          else if (rop > 0 && qty <= rop) {
+            notifications.push({
+              id: `notif-inv-lowstock-${inv.id}`,
+              title: `Stok Menipis: ${itemName}`,
+              message: `Sisa stok ${qty.toLocaleString('id-ID')} ${uom} telah mencapai/di bawah batas aman ROP (${rop.toLocaleString('id-ID')} ${uom}) di ${whName}. Perlu di-restock.`,
+              category: 'INVENTORY',
+              severity: 'warning',
+              link,
+              timestamp: inv.last_updated_at || new Date().toISOString(),
+              isActionable: true,
+            });
           }
         });
       }
@@ -193,15 +251,20 @@ export async function getAppNotifications(): Promise<{
     } else if (userRole === 'QC') {
       filteredNotifications = notifications.filter((n) => n.category === 'QC' || n.category === 'SYSTEM');
     } else if (userRole === 'PRODUCTION') {
+      // Produksi wajib tahu status stok bahan baku, bumbu, dan kemasan selain SPK produksi
       filteredNotifications = notifications.filter(
-        (n) => n.category === 'PRODUCTION' || (n.category === 'QC' && n.severity === 'danger')
+        (n) => n.category === 'PRODUCTION' || (n.category === 'QC' && n.severity === 'danger') || n.category === 'INVENTORY'
       );
     } else if (userRole === 'WAREHOUSE') {
       filteredNotifications = notifications.filter(
-        (n) => n.category === 'INVENTORY' || n.category === 'RECEIVING'
+        (n) => n.category === 'INVENTORY' || n.category === 'RECEIVING' || n.category === 'SYSTEM'
       );
     } else if (userRole === 'SALES') {
       filteredNotifications = notifications.filter((n) => n.category === 'SALES' || n.category === 'INVENTORY');
+    } else if (userRole === 'PREMIX') {
+      filteredNotifications = notifications.filter(
+        (n) => n.category === 'INVENTORY' || n.category === 'PRODUCTION'
+      );
     } else {
       filteredNotifications = notifications;
     }

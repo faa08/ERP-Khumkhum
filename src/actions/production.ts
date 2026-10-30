@@ -797,6 +797,8 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
           output_weight: totalOutputWeight,
           yield_percentage: accumulatedYieldPct,
           is_yield_compliant: accumulatedIsCompliant,
+          total_longsong_count: totalLongsongs,
+          unpacked_longsong_count: totalUnpackedLongsongs,
           end_date: isPartial ? null : nowIso,
           notes: appendedNotes,
           updated_at: nowIso,
@@ -1902,61 +1904,59 @@ export async function getLongsongContainers(productionOrderId?: string): Promise
       }
     }
 
-    // Fallback from production_orders notes if containers are still empty
-    if (containers.length === 0) {
-      try {
-        const { data: ordersWithNotes } = await supabaseAdmin
-          .from('production_orders')
-          .select('id, batch_number, notes, start_date, output_weight')
-          .not('notes', 'is', null);
+    // Fallback & enrich from production_orders notes for any order not yet represented in containers
+    try {
+      const orderIdsWithContainers = new Set(containers.map(c => c.production_order_id).filter(Boolean));
+      const { data: ordersWithNotes } = await supabaseAdmin
+        .from('production_orders')
+        .select('id, batch_number, notes, start_date, output_weight')
+        .not('notes', 'is', null);
 
-        (ordersWithNotes || []).forEach(o => {
-          if (productionOrderId && o.id !== productionOrderId) return;
-          const match = (o.notes || '').match(/\[Longsongs:\s*(\[.*?\])\]/);
-          if (match) {
-            try {
-              const parsed = JSON.parse(match[1]);
-              parsed.forEach((p: any) => {
-                containers.push({
-                  id: `order-${o.id}-c-${p.no}`,
-                  production_order_id: o.id,
-                  container_number: p.no,
-                  initial_weight_kg: Number(p.kg) || 2.5,
-                  current_weight_kg: Number(p.kg) || 2.5,
-                  status: 'AVAILABLE',
-                  notes: `SPK ${o.batch_number} - Wadah #${p.no}`,
-                  created_at: o.start_date || new Date().toISOString(),
-                  updated_at: o.start_date || new Date().toISOString(),
-                  production_order: { id: o.id, batch_number: o.batch_number, start_date: o.start_date },
-                });
-              });
-            } catch (_) {}
-          } else if (Number(o.output_weight) > 0) {
-            const totalKg = Number(o.output_weight);
-            const count = Math.max(1, Math.round(totalKg / 2.6));
-            const perKg = Number((totalKg / count).toFixed(2));
-            for (let i = 1; i <= count; i++) {
-              containers.push({
-                id: `order-${o.id}-c-${i}`,
+      const newlyDiscovered: DbLongsongContainer[] = [];
+      (ordersWithNotes || []).forEach(o => {
+        if (productionOrderId && o.id !== productionOrderId) return;
+        if (orderIdsWithContainers.has(o.id)) return;
+
+        const match = (o.notes || '').match(/\[Longsongs:\s*(\[.*?\])\]/);
+        if (match) {
+          try {
+            const parsed = JSON.parse(match[1]);
+            parsed.forEach((p: any) => {
+              newlyDiscovered.push({
+                id: `order-${o.id}-c-${p.no}`,
                 production_order_id: o.id,
-                container_number: i,
-                initial_weight_kg: perKg,
-                current_weight_kg: perKg,
+                container_number: p.no,
+                initial_weight_kg: Number(p.kg) || 2.5,
+                current_weight_kg: Number(p.kg) || 2.5,
                 status: 'AVAILABLE',
-                notes: `SPK ${o.batch_number} - Wadah #${i}`,
+                notes: `SPK ${o.batch_number} - Wadah #${p.no}`,
                 created_at: o.start_date || new Date().toISOString(),
                 updated_at: o.start_date || new Date().toISOString(),
                 production_order: { id: o.id, batch_number: o.batch_number, start_date: o.start_date },
               });
-            }
-          }
-        });
-
-        if (containers.length > 0 && !productionOrderId) {
-          await savePersistedContainers(containers);
+            });
+          } catch (_) {}
         }
-      } catch (_) {}
-    }
+      });
+
+      if (newlyDiscovered.length > 0) {
+        containers.push(...newlyDiscovered);
+        try {
+          await supabaseAdmin.from('production_longsong_containers').insert(
+            newlyDiscovered.map(c => ({
+              production_order_id: c.production_order_id,
+              container_number: c.container_number,
+              initial_weight_kg: c.initial_weight_kg,
+              current_weight_kg: c.current_weight_kg,
+              status: c.status,
+              notes: c.notes,
+              created_at: c.created_at,
+              updated_at: c.updated_at,
+            }))
+          );
+        } catch (_) {}
+      }
+    } catch (_) {}
 
     if (containers.length > 0 && !productionOrderId) {
       memoryLongsongContainers = containers;

@@ -1325,10 +1325,20 @@ export default function ProductionPage() {
       // Realisasi hasil goreng berpatokan pada Hasil Jamur Matang (outputKg), fallback ke jamur segar
       let realizedKg = outputKg > 0 ? outputKg : (order.status === 'COMPLETED' ? targetKg : rawMushroomKg);
 
-      // Longsong Total: Utamakan wadah fisik terdaftar jika ada, lalu order.total_longsong_count, baru fallback batches
+      // Longsong Total: Utamakan wadah fisik terdaftar jika ada, lalu order.total_longsong_count, baru fallback batches atau notes
       let longsongTotal = linkedContainers.length > 0
         ? linkedContainers.length
         : (Number(order.total_longsong_count) || batches.reduce((sum, b) => sum + (Number(b.longsong_count) || 0), 0));
+
+      if (longsongTotal <= 0 && order.notes) {
+        const notesMatch = order.notes.match(/\[Longsongs:\s*(\[.*?\])\]/);
+        if (notesMatch) {
+          try {
+            const parsed = JSON.parse(notesMatch[1]);
+            if (Array.isArray(parsed) && parsed.length > 0) longsongTotal = parsed.length;
+          } catch (_) {}
+        }
+      }
 
       // Jika SPK sudah COMPLETED via rekap langsung
       if (order.status === 'COMPLETED') {
@@ -3543,7 +3553,7 @@ export default function ProductionPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {fryingOrdersWithProgress.map(({ order, targetKg, realizedKg, rawMushroomKg, realizedBatchesCount, batchCount, remainingKg, progressPercent, outputKg, longsongTotal, avgDurationMinutes, haccpCompliance, readyContainers, availableWeightKg }) => (
+                    {fryingOrdersWithProgress.map(({ order, targetKg, realizedKg, rawMushroomKg, realizedBatchesCount, batchCount, remainingKg, progressPercent, outputKg, longsongTotal, avgDurationMinutes, haccpCompliance, linkedContainers, readyContainers, availableWeightKg }) => (
                       <tr key={order.id} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                         <td style={{ padding: '10px 12px' }}>
                           <strong style={{ fontFamily: 'monospace', color: 'var(--color-primary-800)' }}>
@@ -3623,7 +3633,7 @@ export default function ProductionPage() {
                                 </div>
                               ) : (
                                 <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                                  Seluruh wadah sudah terpakai packing
+                                  {linkedContainers.length > 0 ? 'Seluruh wadah sudah terpakai packing' : 'Wadah tercatat di rekap SPK'}
                                 </div>
                               )}
                             </div>

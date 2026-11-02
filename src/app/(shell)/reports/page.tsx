@@ -39,14 +39,14 @@ const REPORT_COLUMNS: Record<string, ColumnDef<any>[]> = {
   production: [
     { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
     { accessorKey: 'batch_number', header: 'No Batch Produksi' },
-    { accessorKey: 'status', header: 'Status', cell: ({row}) => <StatusBadge status={row.original.status.toLowerCase()} /> },
+    { accessorKey: 'status', header: 'Status', cell: ({row}) => <StatusBadge status={(row.original.status || 'unknown').toLowerCase()} /> },
     { accessorKey: 'products', header: 'Produk Dihasilkan' },
     { accessorKey: 'total_finished', header: 'Total (kg)' },
     { accessorKey: 'avg_yield', header: 'Rendemen (%)', cell: ({row}) => <strong style={{color: row.original.avg_yield >= 80 ? 'var(--color-success-600)' : 'var(--color-warning-600)'}}>{row.original.avg_yield.toFixed(1)}%</strong> },
   ],
   qc: [
     { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
-    { accessorKey: 'reference_type', header: 'Tahap', cell: ({row}) => <StatusBadge status={row.original.reference_type.toLowerCase()} /> },
+    { accessorKey: 'reference_type', header: 'Tahap', cell: ({row}) => <StatusBadge status={(row.original.reference_type || 'QC').toLowerCase()} /> },
     { accessorKey: 'is_passed', header: 'Status', cell: ({row}) => <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, background: row.original.is_passed === 'Lulus' ? 'var(--color-success-100)' : 'var(--color-danger-100)', color: row.original.is_passed === 'Lulus' ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>{row.original.is_passed}</span> },
     { accessorKey: 'defect_type', header: 'Jenis Cacat' },
     { accessorKey: 'inspector', header: 'Inspektur' },
@@ -56,7 +56,7 @@ const REPORT_COLUMNS: Record<string, ColumnDef<any>[]> = {
     { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
     { accessorKey: 'item_name', header: 'Item', cell: ({row}) => <strong>{row.original.item_name}</strong> },
     { accessorKey: 'warehouse', header: 'Gudang' },
-    { accessorKey: 'movement_type', header: 'Tipe Mutasi', cell: ({row}) => <StatusBadge status={row.original.movement_type.toLowerCase()} /> },
+    { accessorKey: 'movement_type', header: 'Tipe Mutasi', cell: ({row}) => <StatusBadge status={(row.original.movement_type || 'movement').toLowerCase()} /> },
     { accessorKey: 'quantity', header: 'Qty (kg)', cell: ({row}) => {
        const isPos = row.original.quantity > 0 || row.original.movement_type === 'IN';
        return <strong style={{ color: isPos ? 'var(--color-success-600)' : 'var(--color-danger-600)'}}>{isPos ? '+' : '-'}{Math.abs(row.original.quantity)} kg</strong>;
@@ -82,34 +82,55 @@ const REPORT_TITLES: Record<string, string> = {
 };
 
 export default function ReportsPage() {
-  const [reportType, setReportType] = useState<ReportType>('production');
+  const [reportType, setReportType] = useState<ReportType>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('khumkhum_report_type');
+      if (saved && ['receiving', 'sorting', 'production', 'qc', 'inventory', 'sales'].includes(saved)) {
+        return saved as ReportType;
+      }
+    }
+    return 'receiving';
+  });
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [data, setData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const toast = useToast();
 
-  const handleGenerate = async () => {
-    setIsLoading(true);
-    const res = await generateReportData(reportType, startDate, endDate);
-    if (res.success && res.data) {
-      setData(res.data);
-      if (res.data.length === 0) {
-        toast.info('Tidak ada data pada periode ini');
-      } else {
-        toast.success(`Berhasil menarik ${res.data.length} baris data`);
-      }
-    } else {
-      toast.error(res.error || 'Gagal menarik data laporan');
-      setData([]);
-    }
-    setIsLoading(false);
-  };
+  const handleGenerate = useCallback(async (typeToFetch?: ReportType, sDate?: string, eDate?: string, isManualClick = false) => {
+    const targetType = typeToFetch || reportType;
+    const fromDate = sDate !== undefined ? sDate : startDate;
+    const toDate = eDate !== undefined ? eDate : endDate;
 
+    setIsLoading(true);
+    setData([]); // Bersihkan data sebelumnya agar tidak ada mismatch kolom dan baris
+    try {
+      const res = await generateReportData(targetType, fromDate, toDate);
+      if (res.success && res.data) {
+        setData(res.data);
+        if (isManualClick) {
+          if (res.data.length === 0) {
+            toast.info('Tidak ada data pada periode ini');
+          } else {
+            toast.success(`Berhasil menarik ${res.data.length} baris data`);
+          }
+        }
+      } else {
+        if (isManualClick) toast.error(res.error || 'Gagal menarik data laporan');
+        setData([]);
+      }
+    } catch (err: any) {
+      if (isManualClick) toast.error('Terjadi kesalahan saat memuat data laporan');
+      setData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [reportType, startDate, endDate, toast]);
+
+  // Otomatis tarik data saat halaman dibuka atau saat tipe modul laporan berubah
   useEffect(() => {
-    handleGenerate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    handleGenerate(reportType, startDate, endDate, false);
+  }, [reportType]);
 
   const handleExportExcel = async () => {
     if (data.length === 0) {
@@ -611,7 +632,13 @@ export default function ReportsPage() {
             <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px' }}>Pilih Modul Laporan</label>
             <Select
               value={reportType}
-              onChange={(e) => setReportType(e.target.value as ReportType)}
+              onChange={(e) => {
+                const val = e.target.value as ReportType;
+                setReportType(val);
+                if (typeof window !== 'undefined') {
+                  sessionStorage.setItem('khumkhum_report_type', val);
+                }
+              }}
               options={[
                 { value: 'receiving', label: 'Laporan Penerimaan' },
                 { value: 'sorting', label: 'Laporan Sortasi' },
@@ -636,7 +663,7 @@ export default function ReportsPage() {
 
           <Button 
             variant="primary" 
-            onClick={handleGenerate} 
+            onClick={() => handleGenerate(reportType, startDate, endDate, true)} 
             loading={isLoading} 
             leftIcon={<RefreshCw size={18} />}
             style={{ 

@@ -104,6 +104,7 @@ import { supabase } from '@/lib/supabase';
 import { getPpicData } from '@/actions/ppic';
 import type { DbProductionOrder, DbProduct, DbRawMaterial, DbFryingBatch, DbPackingEntry, DbLongsongContainer, ProductionStandardConfig, FlavorVariant, BomRecipe, BomIngredientItem } from '@/types/database';
 import { FLAVOR_VARIANTS, PACKAGING_TYPES, PACKAGING_WEIGHTS, isFryingSpk } from '@/types/database';
+import { getPackingBomComposition, parseNettoGram, isOriginalFlavor as isOriginalFlavorBom, getDefaultSeasoningGram } from '@/lib/packaging-bom';
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -839,10 +840,15 @@ export default function ProductionPage() {
   // Status validasi stok bahan baku warehouse & buffer WIP untuk packing
   const packingValidationStatus = useMemo(() => {
     const pcs = Number(packingForm.packaged_toples_count) || 0;
-    const cleanPackGram = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
-    const neededKg = Number(((pcs * cleanPackGram) / 1000).toFixed(2));
+    const bomComp = getPackingBomComposition({
+      package_weight: packingForm.packaging_weight_gram,
+      flavor_variant: packingForm.flavor_variant,
+      standards: productionStandards?.packaging_bom_standards,
+    });
+    const mushroomPerPack = bomComp.mushroomGram;
+    const neededKg = Number(((pcs * mushroomPerPack) / 1000).toFixed(2));
     const seasoningGramsInput = Number(packingForm.seasoning_used_gram) || 0;
-    const isOriginalVariant = (packingForm.flavor_variant || '').toLowerCase().includes('ori') || (packingForm.flavor_variant || '').toLowerCase() === 'original';
+    const isOriginalVariant = bomComp.isOriginal;
 
     // 1. Stok Kemasan di Warehouse
     const isPackagingSufficient = matchedPackagingInfo.availableStock !== null
@@ -2633,12 +2639,19 @@ export default function ProductionPage() {
 
     // Auto-detect rasa, gramatur & tipe packaging dari varian target SPK (misal Balado 60g atau Original 75g)
     const detected = detectSpkFlavorAndWeight(target.order);
-    const cleanPackGram = parseInt(detected.weight.replace(/\D/g, ''), 10) || 60;
+    const bomComp = getPackingBomComposition({
+      package_weight: detected.weight,
+      flavor_variant: detected.flavor,
+      standards: productionStandards?.packaging_bom_standards,
+    });
+    const cleanPackGram = bomComp.nettoGram;
+    const mushroomPerPack = bomComp.mushroomGram;
     
     // Default pcs = Sisa target SPK (target_quantity - totalPackagedPcs) atau minimal 1
     const spkTargetPcs = target.order.target_quantity || 200;
     const remainingPcs = Math.max(1, spkTargetPcs - (target.totalPackagedPcs || 0));
-    const totalNeededGram = remainingPcs * cleanPackGram;
+    const totalNeededGram = remainingPcs * mushroomPerPack;
+    const defaultSeasoningGram = bomComp.isOriginal ? 0 : Math.round(remainingPcs * bomComp.seasoningGram * 10) / 10;
 
     // Cari raw material bumbu tabur yang cocok di warehouse
     const sLower = detected.flavor.toLowerCase();
@@ -2653,7 +2666,7 @@ export default function ProductionPage() {
       return rmName.includes(sLower);
     });
 
-    const isOri = detected.flavor.toLowerCase().includes('ori') || detected.flavor.toLowerCase() === 'original';
+    const isOri = bomComp.isOriginal;
 
     setPackingForm({
       production_order_id: spkId,
@@ -2665,7 +2678,7 @@ export default function ProductionPage() {
       packaged_toples_count: String(remainingPcs),
       packaging_type: detected.packagingType,
       packaging_weight_gram: detected.weight,
-      seasoning_used_gram: isOri ? '0' : '', // Untuk Original default 0g (tidak butuh bumbu tabur)
+      seasoning_used_gram: isOri ? '0' : String(defaultSeasoningGram),
       longsongs_used_count: '1',
       defect_packaging_count: '0',
       notes: '',
@@ -2691,10 +2704,16 @@ export default function ProductionPage() {
       return;
     }
 
-    const cleanPackGram = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
-    const neededKg = Number(((pcs * cleanPackGram) / 1000).toFixed(2));
-    const fullLongsongs = Math.floor((pcs * cleanPackGram) / 2600);
-    const hasPartial = ((pcs * cleanPackGram) % 2600) >= 100 ? 1 : 0;
+    const bomComp = getPackingBomComposition({
+      package_weight: packingForm.packaging_weight_gram,
+      flavor_variant: packingForm.flavor_variant,
+      standards: productionStandards?.packaging_bom_standards,
+    });
+    const mushroomPerPack = bomComp.mushroomGram;
+    const neededMushroomGram = pcs * mushroomPerPack;
+    const neededKg = Number((neededMushroomGram / 1000).toFixed(2));
+    const fullLongsongs = Math.floor(neededMushroomGram / 2600);
+    const hasPartial = (neededMushroomGram % 2600) >= 100 ? 1 : 0;
     const calcLongsongsCount = (fullLongsongs + hasPartial) || 1;
     const seasoningGram = Number(packingForm.seasoning_used_gram) || 0;
 
@@ -2705,7 +2724,7 @@ export default function ProductionPage() {
         frying_batch_id: packingForm.frying_batch_id || undefined,
         flavor_variant: packingForm.flavor_variant,
         longsong_number: Number(packingForm.longsong_number) || 1,
-        longsong_weight_gram: pcs * cleanPackGram,
+        longsong_weight_gram: neededMushroomGram,
         packaged_toples_count: pcs,
         packaging_type: packingForm.packaging_type,
         packaging_weight_gram: packingForm.packaging_weight_gram,
@@ -6080,10 +6099,20 @@ export default function ProductionPage() {
           const spkCompletedPcs = targetSpk?.totalPackagedPcs || 0;
           const spkRemainingPcs = Math.max(0, spkTargetPcs - spkCompletedPcs);
 
-          const cleanPackGram = parseInt((packingForm.packaging_weight_gram || '60g').replace(/\D/g, ''), 10) || 60;
+          const bomComp = getPackingBomComposition({
+            package_weight: packingForm.packaging_weight_gram,
+            flavor_variant: packingForm.flavor_variant,
+            standards: productionStandards?.packaging_bom_standards,
+          });
+          const cleanPackGram = bomComp.nettoGram;
+          const mushroomPerPack = bomComp.mushroomGram;
+          const seasoningPerPack = bomComp.seasoningGram;
+          const isOriginal = bomComp.isOriginal;
+
           const pcsInput = Number(packingForm.packaged_toples_count) || 0;
-          const neededMushroomGram = pcsInput * cleanPackGram;
+          const neededMushroomGram = pcsInput * mushroomPerPack;
           const neededMushroomKg = Number((neededMushroomGram / 1000).toFixed(2));
+          const totalSeasoningGram = pcsInput * seasoningPerPack;
 
           const activeContainers = longsongContainers.filter(
             c => (c.status === 'AVAILABLE' || c.status === 'PARTIAL') && Number(c.current_weight_kg) > 0
@@ -6354,11 +6383,13 @@ export default function ProductionPage() {
                         onChange={(e) => {
                           const newPcs = e.target.value;
                           const numPcs = Number(newPcs) || 0;
-                          const newWeightGram = numPcs * cleanPackGram;
+                          const newWeightGram = numPcs * mushroomPerPack;
+                          const newDefaultSeasoning = isOriginal ? 0 : Math.round(numPcs * seasoningPerPack * 10) / 10;
                           setPackingForm(prev => ({
                             ...prev,
                             packaged_toples_count: newPcs,
                             longsong_weight_gram: String(newWeightGram),
+                            seasoning_used_gram: isOriginal ? '0' : String(newDefaultSeasoning),
                           }));
                         }}
                         placeholder="200"
@@ -6439,10 +6470,17 @@ export default function ProductionPage() {
                       gap: '8px',
                     }}>
                       <div style={{ background: '#fff', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-primary-200)' }}>
-                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Kalkulasi Kebutuhan Jamur:</div>
-                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-primary-900)', marginTop: '2px' }}>
-                          {pcsInput} pcs × {cleanPackGram}g = <span style={{ color: 'var(--color-primary-700)' }}>{neededMushroomKg.toFixed(1)} kg</span> ({neededMushroomGram.toLocaleString('id-ID')}g)
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                          Kalkulasi Kebutuhan Jamur {isOriginal ? '(Original 100%)' : `(BOM: ${mushroomPerPack}g Jamur + ${seasoningPerPack}g Bumbu)`}:
                         </div>
+                        <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--color-primary-900)', marginTop: '2px' }}>
+                          {pcsInput} pcs × {mushroomPerPack}g = <span style={{ color: 'var(--color-primary-700)' }}>{neededMushroomKg.toFixed(1)} kg</span> ({neededMushroomGram.toLocaleString('id-ID')}g)
+                        </div>
+                        {!isOriginal && (
+                          <div style={{ fontSize: '10.5px', color: 'var(--text-secondary)', marginTop: '3px' }}>
+                            Netto: {cleanPackGram}g | Porsi Bumbu: <strong>{totalSeasoningGram.toLocaleString('id-ID')}g</strong> ({(totalSeasoningGram / 1000).toFixed(2)} kg)
+                          </div>
+                        )}
                       </div>
 
                       <div style={{ background: '#fff', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-primary-200)' }}>

@@ -34,6 +34,14 @@ import {
 } from '@/actions/master';
 import type { DbProduct } from '@/types/database';
 import {
+  getPackingBomComposition,
+  getDefaultSeasoningGram,
+  parseNettoGram,
+  isOriginalFlavor,
+  formatBomTag,
+  parseBomTag,
+} from '@/lib/packaging-bom';
+import {
   BatchProductGeneratorModal,
   generateProductSku,
   generateProductName,
@@ -91,6 +99,8 @@ export default function ProductsPage() {
     packaging_type: 'Standing Pouch',
     flavor_variant: 'Original',
     package_weight: '60g',
+    seasoning_gram: 0,
+    mushroom_gram: 60,
     sku: '',
     name: '',
     description: '',
@@ -98,6 +108,47 @@ export default function ProductsPage() {
     uom: 'pcs',
     rop: 50,
   });
+
+  const handleFlavorChange = (flavor: string) => {
+    setForm(f => {
+      const defaultSeasoning = getDefaultSeasoningGram(f.package_weight, flavor);
+      const netto = parseNettoGram(f.package_weight);
+      const mushroom = Math.max(0, netto - defaultSeasoning);
+      return {
+        ...f,
+        flavor_variant: flavor,
+        seasoning_gram: defaultSeasoning,
+        mushroom_gram: mushroom,
+      };
+    });
+  };
+
+  const handleWeightChange = (weight: string) => {
+    setForm(f => {
+      const defaultSeasoning = getDefaultSeasoningGram(weight, f.flavor_variant);
+      const netto = parseNettoGram(weight);
+      const mushroom = Math.max(0, netto - defaultSeasoning);
+      return {
+        ...f,
+        package_weight: weight,
+        seasoning_gram: defaultSeasoning,
+        mushroom_gram: mushroom,
+      };
+    });
+  };
+
+  const handleSeasoningGramChange = (val: number) => {
+    setForm(f => {
+      const netto = parseNettoGram(f.package_weight);
+      const maxSeasoning = Math.round((netto / 2) * 10) / 10;
+      const seasoning = Math.max(0, Math.min(maxSeasoning, val));
+      return {
+        ...f,
+        seasoning_gram: seasoning,
+        mushroom_gram: Math.max(0, netto - seasoning),
+      };
+    });
+  };
 
   const [isSaving, setIsSaving] = useState(false);
 
@@ -140,11 +191,12 @@ export default function ProductsPage() {
       form.package_weight,
       'Jamur Crispy'
     );
+    const bomTag = formatBomTag(form.mushroom_gram, form.seasoning_gram);
     setForm(f => ({
       ...f,
       sku,
       name,
-      description: f.description || `Produk Jadi Kemasan ${f.packaging_type} (${f.package_weight}), Rasa ${f.flavor_variant}`,
+      description: `Produk Jadi Kemasan ${f.packaging_type} (${f.package_weight}), Rasa ${f.flavor_variant} ${bomTag}`,
     }));
   };
 
@@ -153,14 +205,17 @@ export default function ProductsPage() {
     const initialType = 'Standing Pouch';
     const initialFlavor = 'Original';
     const initialWeight = '60g';
+    const initComp = getPackingBomComposition({ package_weight: initialWeight, flavor_variant: initialFlavor });
 
     setForm({
       packaging_type: initialType,
       flavor_variant: initialFlavor,
       package_weight: initialWeight,
+      seasoning_gram: initComp.seasoningGram,
+      mushroom_gram: initComp.mushroomGram,
       sku: generateProductSku(initialType, initialFlavor, initialWeight, 'FG'),
       name: generateProductName(initialType, initialFlavor, initialWeight, 'Jamur Crispy'),
-      description: `Produk Jadi Kemasan ${initialType} (${initialWeight}), Rasa ${initialFlavor}`,
+      description: `Produk Jadi Kemasan ${initialType} (${initialWeight}), Rasa ${initialFlavor} ${formatBomTag(initComp.mushroomGram, initComp.seasoningGram)}`,
       unit_price: 15000,
       uom: 'pcs',
       rop: 50,
@@ -198,10 +253,20 @@ export default function ProductsPage() {
     const weightMatch = item.name.match(/\d+\s*(?:g|gr|gram|kg)/i);
     const detectedWeight = weightMatch ? weightMatch[0] : '60g';
 
+    const comp = getPackingBomComposition({
+      package_weight: item.package_weight || detectedWeight,
+      flavor_variant: item.flavor_variant || detectedFlavor,
+      seasoning_gram: item.seasoning_gram,
+      mushroom_gram: item.mushroom_gram,
+      description: item.description,
+    });
+
     setForm({
       packaging_type: item.packaging_type || detectedType,
       flavor_variant: item.flavor_variant || detectedFlavor,
       package_weight: item.package_weight || detectedWeight,
+      seasoning_gram: comp.seasoningGram,
+      mushroom_gram: comp.mushroomGram,
       sku: item.sku || '',
       name: item.name || '',
       description: item.description || '',
@@ -219,10 +284,14 @@ export default function ProductsPage() {
     }
     setIsSaving(true);
 
+    const bomTag = formatBomTag(form.mushroom_gram, form.seasoning_gram);
+    const cleanDesc = (form.description || '').replace(/\s*\[BOM:[^\]]+\]/gi, '').trim();
+    const finalDesc = `${cleanDesc || `Produk Jadi Kemasan ${form.packaging_type} (${form.package_weight}), Rasa ${form.flavor_variant}`} ${bomTag}`.trim();
+
     const payload = {
       sku: form.sku.trim(),
       name: form.name.trim(),
-      description: form.description?.trim() || null,
+      description: finalDesc,
       category: 'Barang Jadi',
       uom: form.uom || 'pcs',
       unit_price: Number(form.unit_price) > 0 ? Number(form.unit_price) : null,
@@ -230,6 +299,8 @@ export default function ProductsPage() {
       packaging_type: form.packaging_type,
       flavor_variant: form.flavor_variant,
       package_weight: form.package_weight,
+      seasoning_gram: form.seasoning_gram,
+      mushroom_gram: form.mushroom_gram,
     };
     
     if (selectedItem) {
@@ -376,8 +447,8 @@ export default function ProductsPage() {
                 Rasa {flavor}
               </span>
               {item.description && (
-                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  • {item.description}
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  • {item.description.replace(/\s*\[BOM:[^\]]+\]/gi, '')}
                 </span>
               )}
             </div>
@@ -692,7 +763,7 @@ export default function ProductsPage() {
               <FormField label="Variasi Rasa Target">
                 <select
                   value={form.flavor_variant}
-                  onChange={e => setForm(f => ({ ...f, flavor_variant: e.target.value }))}
+                  onChange={e => handleFlavorChange(e.target.value)}
                   style={{
                     width: '100%',
                     padding: 'var(--space-2) var(--space-3)',
@@ -717,7 +788,7 @@ export default function ProductsPage() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <Input
                   value={form.package_weight}
-                  onChange={e => setForm(f => ({ ...f, package_weight: e.target.value }))}
+                  onChange={e => handleWeightChange(e.target.value)}
                   placeholder="Contoh: 60g, 100g, 75g, 500g, atau 1kg"
                 />
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
@@ -726,7 +797,7 @@ export default function ProductsPage() {
                     <button
                       key={w}
                       type="button"
-                      onClick={() => setForm(f => ({ ...f, package_weight: w }))}
+                      onClick={() => handleWeightChange(w)}
                       style={{
                         padding: '2px 8px',
                         fontSize: '11px',
@@ -744,6 +815,86 @@ export default function ProductsPage() {
                 </div>
               </div>
             </FormField>
+
+            {/* KOTAK BOM RESEP KOMPOSISI KEMASAN */}
+            <div style={{
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-primary-50, #f0fdf4)',
+              border: '1px solid var(--color-primary-200, #bbf7d0)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '6px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--color-primary-900, #14532d)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Layers className="w-3.5 h-3.5 text-primary" aria-hidden="true" />
+                  Komposisi Resep Kemasan (BOM Finishing)
+                </span>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--color-primary-700, #15803d)' }}>
+                  Total Netto: {parseNettoGram(form.package_weight)} gram
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '3px' }}>
+                    🧂 Bumbu Tabur ({form.flavor_variant})
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <input
+                      type="number"
+                      step="0.5"
+                      min="0"
+                      max={parseNettoGram(form.package_weight) / 2}
+                      disabled={isOriginalFlavor(form.flavor_variant)}
+                      value={form.seasoning_gram}
+                      onChange={e => handleSeasoningGramChange(parseFloat(e.target.value) || 0)}
+                      style={{
+                        width: '100%',
+                        padding: '6px 10px',
+                        fontSize: '12.5px',
+                        fontWeight: 600,
+                        border: '1px solid var(--border-default)',
+                        borderRadius: 'var(--radius-sm)',
+                        background: isOriginalFlavor(form.flavor_variant) ? 'var(--bg-subtle)' : 'var(--bg-default)',
+                        color: 'var(--text-primary)',
+                      }}
+                    />
+                    <span style={{ fontSize: '11.5px', fontWeight: 600, color: 'var(--text-tertiary)' }}>gram</span>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: '3px' }}>
+                    🍄 Jamur Crispy Matang (Selongsong)
+                  </label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <div style={{
+                      width: '100%',
+                      padding: '6px 10px',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      border: '1px solid var(--color-primary-300, #86efac)',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'white',
+                      color: 'var(--color-primary-800, #166534)',
+                    }}>
+                      {form.mushroom_gram} gram
+                    </div>
+                    <span style={{ fontSize: '11.5px', color: 'var(--text-tertiary)' }}>🔒 Auto</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ fontSize: '11px', color: 'var(--color-primary-800, #166534)', lineHeight: 1.4 }}>
+                {isOriginalFlavor(form.flavor_variant) ? (
+                  <span>💡 <strong>Varian Original:</strong> 100% Jamur crispy matang ({form.mushroom_gram}g) tanpa bumbu tabur.</span>
+                ) : (
+                  <span>💡 <strong>Formula SOP:</strong> 1 pack {form.flavor_variant} {form.package_weight} = <strong>{form.mushroom_gram}g Jamur Matang</strong> + <strong>{form.seasoning_gram}g Bumbu Tabur</strong> (Total Netto {parseNettoGram(form.package_weight)}g).</span>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* HASIL KODE SKU & NAMA RESMI PRODUK */}

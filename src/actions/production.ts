@@ -7,6 +7,7 @@ import { getProductionStandards } from '@/actions/standards';
 import { format } from 'date-fns';
 import { revalidatePath } from 'next/cache';
 import { randomUUID } from 'crypto';
+import { getPackingBomComposition } from '@/lib/packaging-bom';
 import type {
   DbProductionOrder,
   DbProductionMaterial,
@@ -2509,11 +2510,10 @@ async function deductPackingMaterials(
       (s) => s.variant.toLowerCase() === flavor.toLowerCase()
     );
 
+    const bomComp = getPackingBomComposition({ package_weight: targetWeight, flavor_variant: flavor });
     let seasoningGrams = isOriginalFlavor ? 0 : (Number(input.seasoning_used_gram) || 0);
     if (!isOriginalFlavor && seasoningGrams <= 0 && packCount > 0) {
-      const totalWeightKg = (packCount * weightGramPerPack) / 1000;
-      const ratioPerKg = Number(seasoningConfig?.seasoning_ratio_per_kg) || 0.08;
-      seasoningGrams = Math.round(totalWeightKg * ratioPerKg * 1000);
+      seasoningGrams = Math.round(packCount * bomComp.seasoningGram);
     }
 
     // ── Potong Stok Bumbu Tabur dari Warehouse Bahan Baku ──

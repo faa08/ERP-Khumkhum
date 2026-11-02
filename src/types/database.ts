@@ -62,6 +62,8 @@ export interface DbProduct {
   packaging_type?: string | null;
   flavor_variant?: string | null;
   package_weight?: string | null;
+  seasoning_gram?: number | null;
+  mushroom_gram?: number | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -80,6 +82,8 @@ export interface DbRawMaterial {
   packaging_type?: string | null;
   flavor_variant?: string | null;
   package_weight?: string | null;
+  seasoning_gram?: number | null;
+  mushroom_gram?: number | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -474,6 +478,15 @@ export interface SeasoningConfig {
   packaging_material_id?: string;
 }
 
+export interface PackagingBomStandard {
+  id: string;
+  package_size: string;
+  packaging_type?: string;
+  seasoning_gram: number;
+  mushroom_gram: number;
+  notes?: string;
+}
+
 export interface ProductionStandardConfig {
   min_yield_percentage: number;
   warning_yield_percentage: number;
@@ -489,6 +502,7 @@ export interface ProductionStandardConfig {
   premix_recipes?: PremixRecipe[];
   seasoning_per_variant?: SeasoningConfig[];
   packaging_configs?: PackagingConfig[];
+  packaging_bom_standards?: PackagingBomStandard[];
 }
 
 export interface DefectCategoryConfig {

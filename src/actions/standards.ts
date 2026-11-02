@@ -53,6 +53,24 @@ const DEFAULT_PRODUCTION_STANDARDS: ProductionStandardConfig = {
     { packaging_type: 'Toples 500g', packaging_name: 'Toples KhumKhum 500g', pieces_per_unit: 1 },
     { packaging_type: 'Pouch Bantal 100g', packaging_name: 'Pouch Bantal KhumKhum 100g', pieces_per_unit: 1 },
   ],
+  packaging_bom_standards: [
+    {
+      id: 'bom-75g',
+      package_size: '75g',
+      packaging_type: 'Standing Pouch',
+      seasoning_gram: 0,
+      mushroom_gram: 75,
+      notes: 'Kemasan Utama KhumKhum (71g jamur + 4g bumbu = 75g)',
+    },
+    {
+      id: 'bom-60g',
+      package_size: '60g',
+      packaging_type: 'Standing Pouch',
+      seasoning_gram: 0,
+      mushroom_gram: 60,
+      notes: 'Kemasan Reguler KhumKhum (56.5g jamur + 3.5g bumbu = 60g)',
+    },
+  ],
 };
 
 const DEFAULT_QC_STANDARDS: QcStandardConfig = {
@@ -159,6 +177,10 @@ export async function getProductionStandards(): Promise<{
             packaging_material_id: s.packaging_material_id || (s.packaging_type === 'Toples' ? toplesId : pouchId),
           };
         });
+
+        if (!mergedConfig.packaging_bom_standards || mergedConfig.packaging_bom_standards.length === 0) {
+          mergedConfig.packaging_bom_standards = [...(DEFAULT_PRODUCTION_STANDARDS.packaging_bom_standards || [])];
+        }
 
         // Auto-link premix recipes
         if (!mergedConfig.premix_recipes || mergedConfig.premix_recipes.length === 0) {

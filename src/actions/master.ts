@@ -195,11 +195,56 @@ export async function createProduct(input: Partial<DbProduct> & { rop?: number }
     const { user } = await requireAuth(['WAREHOUSE', 'SUPER_ADMIN']);
     const { rop, ...productInput } = input;
     
-    let { data, error } = await supabaseAdmin
-      .from('products')
-      .insert([productInput])
-      .select()
-      .single();
+    let data: any = null;
+    let error: any = null;
+
+    // Cek apakah ada produk dengan SKU sama (termasuk yang soft-deleted)
+    const cleanSku = (productInput.sku || '').trim();
+    if (cleanSku) {
+      const { data: existingProduct } = await supabaseAdmin
+        .from('products')
+        .select('*')
+        .eq('sku', cleanSku)
+        .maybeSingle();
+
+      if (existingProduct) {
+        if (existingProduct.deleted_at) {
+          // Pulihkan produk yang sebelumnya terhapus (soft-deleted)
+          const { data: restored, error: restoreErr } = await supabaseAdmin
+            .from('products')
+            .update({
+              name: productInput.name,
+              description: productInput.description || null,
+              category: productInput.category || 'Barang Jadi',
+              uom: productInput.uom || 'pcs',
+              unit_price: productInput.unit_price || null,
+              deleted_at: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingProduct.id)
+            .select()
+            .single();
+
+          if (restoreErr) throw restoreErr;
+          data = restored;
+        } else {
+          return {
+            success: false,
+            error: `SKU '${cleanSku}' sudah digunakan oleh produk '${existingProduct.name}'. Gunakan kode SKU lain.`,
+          };
+        }
+      }
+    }
+
+    if (!data) {
+      const insertRes = await supabaseAdmin
+        .from('products')
+        .insert([productInput])
+        .select()
+        .single();
+      data = insertRes.data;
+      error = insertRes.error;
+    }
 
     if (error && (error.message?.includes('column') || error.code === '42703')) {
       const standardInput = {
@@ -335,12 +380,42 @@ export async function createBatchProducts(
     // Ambil SKU yang sudah ada untuk mencegah bentrok unique constraint
     const { data: existingRows } = await supabaseAdmin
       .from('products')
-      .select('sku');
-    const existingSkus = new Set((existingRows || []).map((r: any) => (r.sku || '').toLowerCase().trim()));
+      .select('id, sku, deleted_at');
+
+    const activeSkus = new Set(
+      (existingRows || [])
+        .filter((r: any) => !r.deleted_at)
+        .map((r: any) => (r.sku || '').toLowerCase().trim())
+    );
+    const softDeletedMap = new Map(
+      (existingRows || [])
+        .filter((r: any) => r.deleted_at)
+        .map((r: any) => [(r.sku || '').toLowerCase().trim(), r.id])
+    );
+
+    // Pulihkan produk yang sebelumnya soft-deleted
+    for (const item of inputs) {
+      const s = (item.sku || '').toLowerCase().trim();
+      const deletedId = softDeletedMap.get(s);
+      if (deletedId) {
+        await supabaseAdmin
+          .from('products')
+          .update({
+            name: item.name,
+            description: item.description || null,
+            category: item.category || 'Barang Jadi',
+            uom: item.uom || 'pcs',
+            unit_price: item.unit_price || null,
+            deleted_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', deletedId);
+      }
+    }
 
     const newItems = inputs.filter(item => {
       const s = (item.sku || '').toLowerCase().trim();
-      return s && !existingSkus.has(s);
+      return s && !activeSkus.has(s) && !softDeletedMap.has(s);
     });
 
     if (newItems.length === 0) {

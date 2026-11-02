@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react';
 import { getProductionStandards, saveProductionStandards } from '@/actions/standards';
 import { getProducts, getRawMaterials } from '@/actions/master';
+import { parseNettoGram, DEFAULT_PACKAGING_BOM_MAP } from '@/lib/packaging-bom';
 import type {
   ProductionStandardConfig,
   BomRecipe,
@@ -39,13 +41,14 @@ import type {
   DbRawMaterial,
   SeasoningConfig,
   PackagingConfig,
+  PackagingBomStandard,
 } from '@/types/database';
 
 export default function ProductionStandardsPage() {
   const { user } = useAuth();
   const isManagement = user?.role === 'MANAGEMENT';
 
-  const [activeTab, setActiveTab] = useState<'FRYING' | 'MACHINERY'>('FRYING');
+  const [activeTab, setActiveTab] = useState<'FRYING' | 'MACHINERY' | 'PACKAGING_BOM'>('FRYING');
 
   const [config, setConfig] = useState<ProductionStandardConfig>({
     min_yield_percentage: 80.0,
@@ -71,12 +74,101 @@ export default function ProductionStandardsPage() {
     premix_recipes: [],
     seasoning_per_variant: [],
     packaging_configs: [],
+    packaging_bom_standards: [
+      { id: 'bom-75g', package_size: '75g', packaging_type: 'Standing Pouch', seasoning_gram: 0, mushroom_gram: 75 },
+      { id: 'bom-60g', package_size: '60g', packaging_type: 'Standing Pouch', seasoning_gram: 0, mushroom_gram: 60 },
+    ],
   });
 
   const [products, setProducts] = useState<DbProduct[]>([]);
   const [rawMaterials, setRawMaterials] = useState<DbRawMaterial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Sinkronisasi otomatis ukuran kemasan dari Master Produk Jadi (DbProduct[])
+  const currentBomStandards = useMemo(() => {
+    const existingList: PackagingBomStandard[] = config.packaging_bom_standards && config.packaging_bom_standards.length > 0
+      ? config.packaging_bom_standards
+      : [
+          { id: 'bom-75g', package_size: '75g', packaging_type: 'Standing Pouch', seasoning_gram: 0, mushroom_gram: 75 },
+          { id: 'bom-60g', package_size: '60g', packaging_type: 'Standing Pouch', seasoning_gram: 0, mushroom_gram: 60 },
+        ];
+
+    const map = new Map<string, PackagingBomStandard>();
+    existingList.forEach(item => {
+      const key = `${parseNettoGram(item.package_size)}g`;
+      map.set(key, { ...item, package_size: key });
+    });
+
+    // Otomatis ekstrak dari seluruh produk jadi aktif
+    products.forEach(p => {
+      const weightMatch = (p.name || '').match(/\d+\s*(?:g|gr|gram|kg)/i);
+      const rawWeight = p.package_weight || (weightMatch ? weightMatch[0] : null);
+      if (rawWeight) {
+        const netto = parseNettoGram(rawWeight);
+        if (netto > 0) {
+          const key = `${netto}g`;
+          if (!map.has(key)) {
+            const nameLower = (p.name || '').toLowerCase();
+            const pType = nameLower.includes('toples') ? 'Toples' : nameLower.includes('bantal') ? 'Pouch Bantal' : 'Standing Pouch';
+            // Default awal takaran bumbu 0g, menunggu input dari KhumKhum
+            map.set(key, {
+              id: `bom-${key}`,
+              package_size: key,
+              packaging_type: pType,
+              seasoning_gram: 0,
+              mushroom_gram: netto,
+            });
+          }
+        }
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => parseNettoGram(b.package_size) - parseNettoGram(a.package_size));
+  }, [config.packaging_bom_standards, products]);
+
+  const handleUpdateBomItem = (id: string, field: keyof PackagingBomStandard, val: any) => {
+    const activeList = config.packaging_bom_standards && config.packaging_bom_standards.length > 0
+      ? config.packaging_bom_standards
+      : currentBomStandards;
+    const targetItem = activeList.find(item => item.id === id || item.package_size === id);
+    const netto = parseNettoGram(targetItem?.package_size);
+    const maxSeasoning = Math.round((netto / 2) * 10) / 10;
+
+    let finalVal = val;
+    if (field === 'seasoning_gram') {
+      let num = parseFloat(val);
+      if (isNaN(num) || num < 0) num = 0;
+      if (num > maxSeasoning) {
+        num = maxSeasoning;
+        toast.warning(`Takaran bumbu maksimal 50% dari berat kemasan (maks. ${maxSeasoning}g untuk kemasan ${netto}g)`);
+      }
+      finalVal = num;
+    }
+
+    setConfig(prev => {
+      const list = [...(prev.packaging_bom_standards && prev.packaging_bom_standards.length > 0 ? prev.packaging_bom_standards : currentBomStandards)];
+      const idx = list.findIndex(item => item.id === id || item.package_size === id);
+
+      if (idx === -1) {
+        if (!targetItem) return prev;
+        const current = { ...targetItem, [field]: finalVal };
+        if (field === 'seasoning_gram' || field === 'package_size') {
+          const sGram = Number(current.seasoning_gram) || 0;
+          current.mushroom_gram = Math.max(0, netto - sGram);
+        }
+        return { ...prev, packaging_bom_standards: [...list, current] };
+      }
+
+      const current = { ...list[idx], [field]: finalVal };
+      if (field === 'seasoning_gram' || field === 'package_size') {
+        const sGram = Number(current.seasoning_gram) || 0;
+        current.mushroom_gram = Math.max(0, netto - sGram);
+      }
+      list[idx] = current;
+      return { ...prev, packaging_bom_standards: list };
+    });
+  };
 
   // State tambah bahan wajan baru
   const [selectedFryingRawId, setSelectedFryingRawId] = useState('');
@@ -133,7 +225,11 @@ export default function ProductionStandardsPage() {
     } else {
       updatedBom[0] = baseSynced;
     }
-    const finalConfig = { ...config, bom_recipes: updatedBom };
+    const finalConfig = {
+      ...config,
+      bom_recipes: updatedBom,
+      packaging_bom_standards: config.packaging_bom_standards || currentBomStandards,
+    };
 
     const res = await saveProductionStandards(finalConfig);
     if (res.success) {
@@ -352,6 +448,14 @@ export default function ProductionStandardsPage() {
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Suhu Penggorengan &amp; Target Rendemen Min 80%</span>
               </div>
             </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--color-primary-100, #dcfce7)', color: 'var(--color-primary-800, #166534)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '13px' }}>3</div>
+              <div>
+                <strong style={{ display: 'block', fontSize: 'var(--text-sm)' }}>Kemasan &amp; Bumbu (Level 3)</strong>
+                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Proporsi Netto Jamur &amp; Bumbu Tabur per Pack</span>
+              </div>
+            </div>
           </div>
         </div>
       </Card>
@@ -371,6 +475,13 @@ export default function ProductionStandardsPage() {
           leftIcon={<Sliders className="w-4 h-4" aria-hidden="true" />}
         >
           Standar Mesin &amp; Rendemen
+        </Button>
+        <Button
+          variant={activeTab === 'PACKAGING_BOM' ? 'primary' : 'ghost'}
+          onClick={() => setActiveTab('PACKAGING_BOM')}
+          leftIcon={<Package className="w-4 h-4" aria-hidden="true" />}
+        >
+          Komposisi Kemasan &amp; Bumbu (BOM Level 3)
         </Button>
       </div>
 
@@ -845,6 +956,149 @@ export default function ProductionStandardsPage() {
           </Card>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════ */}
+      {/* ── TAB 3: KOMPOSISI KEMASAN & BUMBU (BOM LEVEL 3) ── */}
+      {/* ═══════════════════════════════════════════════════════ */}
+      {activeTab === 'PACKAGING_BOM' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <Card
+            header={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Package className="w-5 h-5 text-primary" aria-hidden="true" />
+                <div>
+                  <h3 style={{ fontSize: '15px', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                    Standar Acuan Netto &amp; Proporsi Bumbu Kemasan KhumKhum (BOM Level 3)
+                  </h3>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Ubah takaran gram bumbu pada baris yang diinginkan. Tekan tombol <strong>Simpan Perubahan Standar</strong> di pojok kanan atas untuk menyimpan.
+                  </div>
+                </div>
+              </div>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+              <div style={{
+                padding: 'var(--space-3)',
+                borderRadius: 'var(--radius-md)',
+                background: 'var(--color-info-50, #eff6ff)',
+                border: '1px solid var(--color-info-200, #bfdbfe)',
+                display: 'flex',
+                gap: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                color: 'var(--color-info-900, #1e3a8a)',
+                lineHeight: 1.5,
+              }}>
+                <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" aria-hidden="true" />
+                <div>
+                  <strong>Sinkronisasi Otomatis:</strong> Ukuran kemasan di bawah ini terhubung langsung dengan Master Produk Jadi. Jika Anda menambahkan produk dengan ukuran baru (contoh: 30g) di menu Produk Jadi, ukuran tersebut otomatis muncul di tabel ini. Anda dapat langsung mengatur takaran bumbu tabur per kemasan di bawah ini.
+                </div>
+              </div>
+
+              {/* TABEL INTERAKTIF & EDITABLE ACUAN UKURAN KEMASAN */}
+              <div style={{ overflowX: 'auto', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+                      <th style={{ padding: '10px 14px', fontWeight: 600, width: '130px' }}>Ukuran Netto</th>
+                      <th style={{ padding: '10px 14px', fontWeight: 600, width: '180px' }}>Tipe Kemasan</th>
+                      <th style={{ padding: '10px 14px', fontWeight: 600, width: '220px' }}>Takaran Bumbu Tabur (Gram)</th>
+                      <th style={{ padding: '10px 14px', fontWeight: 600, width: '220px' }}>Porsi Jamur Matang</th>
+                      <th style={{ padding: '10px 14px', fontWeight: 600 }}>Varian Original (Polos)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {currentBomStandards.map((item, idx) => {
+                      const netto = parseNettoGram(item.package_size);
+                      return (
+                        <tr key={item.id} style={{ borderBottom: idx < currentBomStandards.length - 1 ? '1px solid var(--border-subtle)' : 'none', background: idx % 2 === 0 ? 'transparent' : 'var(--bg-subtle)' }}>
+                          {/* 1. Ukuran Netto */}
+                          <td style={{ padding: '10px 14px' }}>
+                            <span style={{
+                              display: 'inline-block',
+                              padding: '4px 10px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: 'var(--bg-card)',
+                              border: '1px solid var(--border-default)',
+                              fontWeight: 700,
+                              fontSize: '13px',
+                              color: 'var(--text-primary)',
+                            }}>
+                              {item.package_size}
+                            </span>
+                          </td>
+
+                          {/* 2. Tipe Kemasan */}
+                          <td style={{ padding: '10px 14px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+                            {item.packaging_type || 'Standing Pouch'}
+                          </td>
+
+                          {/* 3. Input Bumbu Tabur (Gram) */}
+                          <td style={{ padding: '10px 14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <input
+                                type="number"
+                                step="0.5"
+                                min="0"
+                                max={netto / 2}
+                                disabled={isManagement}
+                                value={item.seasoning_gram}
+                                onChange={e => handleUpdateBomItem(item.id, 'seasoning_gram', e.target.value)}
+                                style={{
+                                  width: '80px',
+                                  padding: '6px 10px',
+                                  fontSize: '13px',
+                                  fontWeight: 700,
+                                  color: '#b45309',
+                                  border: '2px solid #f59e0b',
+                                  borderRadius: 'var(--radius-sm)',
+                                  background: isManagement ? 'var(--bg-subtle)' : '#fffbeb',
+                                  textAlign: 'center',
+                                }}
+                              />
+                              <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-tertiary)' }}>gram</span>
+                            </div>
+                            <div style={{ fontSize: '10.5px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                              Maks. {netto / 2}g (50%)
+                            </div>
+                          </td>
+
+                          {/* 4. Jamur Matang (Auto Calculated) */}
+                          <td style={{ padding: '10px 14px' }}>
+                            <div style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              padding: '6px 10px',
+                              borderRadius: 'var(--radius-sm)',
+                              background: 'var(--color-primary-50, #f0fdf4)',
+                              border: '1px solid var(--color-primary-300, #86efac)',
+                              color: 'var(--color-primary-800, #166534)',
+                              fontWeight: 700,
+                              fontSize: '12.5px',
+                            }}>
+                              <span>{item.mushroom_gram} gram</span>
+                              <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 500 }}>
+                                ({netto}g - {item.seasoning_gram}g)
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* 5. Original */}
+                          <td style={{ padding: '10px 14px', fontSize: '12.5px', color: 'var(--text-secondary)' }}>
+                            {netto} gram (100% Jamur)
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
     </div>
   );
 }

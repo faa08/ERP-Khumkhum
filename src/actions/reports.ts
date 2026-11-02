@@ -183,7 +183,7 @@ export async function generateReportData(
     } else if (type === 'qc') {
       processedData = data.map((qc: any) => ({
          date: qc.inspection_date,
-         reference_type: qc.reference_type,
+         reference_type: qc.reference_type || 'QC',
          is_passed: qc.is_passed ? 'Lulus' : 'Gagal',
          defect_type: qc.defect_type || '-',
          notes: qc.notes,

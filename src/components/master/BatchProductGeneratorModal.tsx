@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { createBatchProducts } from '@/actions/master';
 import type { DbProduct } from '@/types/database';
+import { getPackingBomComposition, formatBomTag } from '@/lib/packaging-bom';
 
 interface BatchProductGeneratorModalProps {
   isOpen: boolean;
@@ -358,18 +359,24 @@ export function BatchProductGeneratorModal({
 
     setIsSubmitting(true);
     try {
-      const payload = itemsToCreate.map(item => ({
-        sku: item.sku,
-        name: item.name,
-        category: 'Barang Jadi',
-        uom: 'pcs',
-        unit_price: 15000,
-        description: `Produk Jadi Kemasan ${item.packaging_type} (${item.package_weight}), Rasa ${item.flavor_variant}`,
-        rop: 50,
-        packaging_type: item.packaging_type,
-        flavor_variant: item.flavor_variant,
-        package_weight: item.package_weight,
-      }));
+      const payload = itemsToCreate.map(item => {
+        const bom = getPackingBomComposition({ package_weight: item.package_weight, flavor_variant: item.flavor_variant });
+        const bomTag = formatBomTag(bom.mushroomGram, bom.seasoningGram);
+        return {
+          sku: item.sku,
+          name: item.name,
+          category: 'Barang Jadi',
+          uom: 'pcs',
+          unit_price: 15000,
+          description: `Produk Jadi Kemasan ${item.packaging_type} (${item.package_weight}), Rasa ${item.flavor_variant} ${bomTag}`,
+          rop: 50,
+          packaging_type: item.packaging_type,
+          flavor_variant: item.flavor_variant,
+          package_weight: item.package_weight,
+          seasoning_gram: bom.seasoningGram,
+          mushroom_gram: bom.mushroomGram,
+        };
+      });
 
       const res = await createBatchProducts(payload);
 

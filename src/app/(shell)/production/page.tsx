@@ -3636,7 +3636,7 @@ export default function ProductionPage() {
                             </div>
                           ) : (
                             <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                              Belum ada batch selesai
+                              {order.status === 'COMPLETED' ? 'Rekapitulasi output tercatat' : 'Belum ada batch selesai'}
                             </div>
                           )}
                         </td>
@@ -3702,7 +3702,7 @@ export default function ProductionPage() {
                                 title="Lihat riwayat rincian batch wajan untuk SPK ini"
                                 style={{ padding: '6px 10px', fontSize: '11px', whiteSpace: 'nowrap' }}
                               >
-                                Rincian Wajan ({batchCount})
+                                {order.status === 'COMPLETED' && batchCount === 0 ? 'Rekap Langsung' : `Rincian Wajan (${batchCount})`}
                               </Button>
                               {order.status !== 'COMPLETED' ? (
                                 <Button
@@ -4259,6 +4259,7 @@ export default function ProductionPage() {
         isOpen={createRegularFryingOpen}
         onClose={() => setCreateRegularFryingOpen(false)}
         closeOnOverlayClick={false}
+        zIndex={1100}
         title={`Goreng Jamur (Tanpa SPK) — Wajan #${regularFryingForm.wajan_number}`}
         size="md"
         footer={
@@ -4769,6 +4770,7 @@ export default function ProductionPage() {
         isOpen={completeFryingOpen}
         onClose={() => setCompleteFryingOpen(false)}
         closeOnOverlayClick={false}
+        zIndex={1100}
         title={`${selectedFryingBatch?.finished_at ? 'Edit Hasil Goreng' : 'Input Hasil Goreng'} — Wajan #${selectedFryingBatch?.wajan_number}`}
         size="md"
         footer={
@@ -4976,6 +4978,28 @@ export default function ProductionPage() {
                   </Button>
                 )}
               </div>
+
+              {orderBatches.length === 0 && (
+                <div style={{
+                  padding: '12px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  background: 'var(--color-primary-50)',
+                  border: '1px solid var(--color-primary-200)',
+                  color: 'var(--color-primary-900)',
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '10px',
+                }}>
+                  <Info className="w-5 h-5 text-[var(--color-primary-600)] shrink-0 mt-0.5" aria-hidden="true" />
+                  <div>
+                    <strong>Pencatatan Rekapitulasi Output Langsung</strong>
+                    <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: 1.5 }}>
+                      SPK ini diselesaikan melalui pencatatan rekapitulasi output langsung tanpa data stopwatch individual per wajan. Seluruh output jamur matang dan alokasi longsong telah tercatat pada ringkasan SPK.
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Tabel Wajan Khusus SPK Ini */}
               <div style={{ maxHeight: '420px', overflowY: 'auto' }}>

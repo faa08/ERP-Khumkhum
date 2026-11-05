@@ -17,6 +17,8 @@ export interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
+  overlayClassName?: string;
+  zIndex?: number;
   closeOnOverlayClick?: boolean;
   showCloseButton?: boolean;
 }
@@ -34,6 +36,8 @@ export function Modal({
   children,
   footer,
   className,
+  overlayClassName,
+  zIndex,
   closeOnOverlayClick = true,
   showCloseButton = true,
 }: ModalProps) {
@@ -63,7 +67,12 @@ export function Modal({
   if (!isOpen) return null;
 
   return (
-    <div className={styles.overlay} role="presentation" onClick={closeOnOverlayClick ? onClose : undefined}>
+    <div
+      className={cn(styles.overlay, overlayClassName)}
+      style={zIndex ? { zIndex } : undefined}
+      role="presentation"
+      onClick={closeOnOverlayClick ? onClose : undefined}
+    >
       <div
         ref={dialogRef}
         role="dialog"

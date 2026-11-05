@@ -862,7 +862,7 @@ export async function recordFryingRunCompletion(input: RecordFryingRunCompletion
       initial_weight_kg: c.weight_kg,
       current_weight_kg: c.weight_kg,
       status: 'AVAILABLE',
-      notes: `SPK ${orderBatchNumber} - Wadah #${c.container_number}`,
+      notes: `SPK ${orderBatchNumber} - Longsong #${c.container_number}`,
       created_at: nowIso,
       updated_at: nowIso,
       production_order: { id: orderId, batch_number: orderBatchNumber, start_date: nowIso },
@@ -1930,7 +1930,7 @@ export async function getLongsongContainers(productionOrderId?: string): Promise
                 initial_weight_kg: Number(p.kg) || 2.5,
                 current_weight_kg: Number(p.kg) || 2.5,
                 status: 'AVAILABLE',
-                notes: `SPK ${o.batch_number} - Wadah #${p.no}`,
+                notes: `SPK ${o.batch_number} - Longsong #${p.no}`,
                 created_at: o.start_date || new Date().toISOString(),
                 updated_at: o.start_date || new Date().toISOString(),
                 production_order: { id: o.id, batch_number: o.batch_number, start_date: o.start_date },
@@ -3225,7 +3225,7 @@ export async function getFryingBatchesByOrder(orderId: string): Promise<{
 
     const { data, error } = await supabaseAdmin
       .from('production_frying_batches')
-      .select('*, operator:users!production_frying_batches_operator_id_fkey(id, name)')
+      .select('*')
       .eq('production_order_id', orderId)
       .order('wajan_number', { ascending: true });
 
@@ -3233,7 +3233,19 @@ export async function getFryingBatchesByOrder(orderId: string): Promise<{
       const fallback = memoryFryingBatches.filter(b => b.production_order_id === orderId);
       return { success: true, data: fallback };
     }
-    return { success: true, data: data || [] };
+
+    let enriched = data || [];
+    const opIds = Array.from(new Set(enriched.map(b => b.operator_id).filter(Boolean)));
+    if (opIds.length > 0) {
+      const { data: users } = await supabaseAdmin.from('users').select('id, name').in('id', opIds);
+      const userMap = new Map((users || []).map(u => [u.id, u]));
+      enriched = enriched.map(b => ({
+        ...b,
+        operator: b.operator_id ? userMap.get(b.operator_id) || null : null,
+      }));
+    }
+
+    return { success: true, data: enriched };
   } catch (err: any) {
     console.error('getFryingBatchesByOrder error:', err);
     return { success: true, data: memoryFryingBatches.filter(b => b.production_order_id === orderId) };
@@ -3250,11 +3262,22 @@ export async function getAllFryingBatches(): Promise<{
 
     const { data, error } = await supabaseAdmin
       .from('production_frying_batches')
-      .select('*, operator:users!production_frying_batches_operator_id_fkey(id, name)')
+      .select('*')
       .order('created_at', { ascending: false })
-      .limit(200);
+      .limit(1000);
 
-    const rawList = (!error && data && data.length > 0) ? data : memoryFryingBatches;
+    let rawList = (!error && data && data.length > 0) ? data : memoryFryingBatches;
+
+    const opIds = Array.from(new Set(rawList.map(b => b.operator_id).filter(Boolean)));
+    if (opIds.length > 0) {
+      const { data: users } = await supabaseAdmin.from('users').select('id, name').in('id', opIds);
+      const userMap = new Map((users || []).map(u => [u.id, u]));
+      rawList = rawList.map(b => ({
+        ...b,
+        operator: b.operator_id ? userMap.get(b.operator_id) || null : null,
+      }));
+    }
+
     const seenMap = new Map<string, DbFryingBatch>();
     for (const b of rawList) {
       const key = b.production_order_id ? `${b.production_order_id}_${b.wajan_number}` : b.id;

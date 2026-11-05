@@ -19,6 +19,7 @@ export interface CreateUserInput {
 export interface UpdateUserInput {
   name?: string;
   email?: string;
+  password?: string;
   role?: UserRole;
   whatsapp_number?: string;
   is_active?: boolean;
@@ -120,6 +121,9 @@ export async function updateUserAction(
     if (input.role !== undefined) updatePayload.role = input.role;
     if (input.whatsapp_number !== undefined) updatePayload.whatsapp_number = input.whatsapp_number;
     if (input.is_active !== undefined) updatePayload.is_active = input.is_active;
+    if (input.password && input.password.trim().length > 0) {
+      updatePayload.password = await bcrypt.hash(input.password.trim(), 10);
+    }
 
     const { data, error } = await supabaseAdmin
       .from('users')

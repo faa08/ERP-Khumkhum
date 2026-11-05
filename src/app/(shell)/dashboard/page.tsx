@@ -6,10 +6,10 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Tabs } from '@/components/ui/Tabs';
-import { Factory, Package, ShieldCheck, ShoppingCart, TrendingUp, AlertTriangle, RefreshCw, BarChart3, Settings, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Factory, Package, ShieldCheck, ShoppingCart, TrendingUp, AlertTriangle, RefreshCw, BarChart3, Settings, AlertCircle, CheckCircle2, Sprout, ArrowRight, Boxes } from 'lucide-react';
 import { format, subDays } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { getKpiMetrics, getKpiTrend, type KpiFilter, type KpiTrendData } from '@/actions/management';
+import { getKpiMetrics, getKpiTrend, getOperationalOverview, type KpiFilter, type KpiTrendData } from '@/actions/management';
 import { getAppNotifications } from '@/actions/notifications';
 import type { AppNotification } from '@/types/notification';
 import type { DbKpiMetrics } from '@/types/database';
@@ -282,49 +282,127 @@ function ExecutiveDashboard() {
             </Card>
 
             <Card header={<strong>Indikator Kualitas (Pencapaian Target)</strong>}>
-              <div style={{ height: 320, marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-6)' }}>
+              <div style={{ height: 320, marginTop: 'var(--space-2)', display: 'flex', flexDirection: 'column', justifyContent: 'space-around', gap: 'var(--space-4)' }}>
                 {/* Yield Bar */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Rata-rata Rendemen</span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Target: ≥{trendData.targets.yield || 80}%</span>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Rata-rata Rendemen</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginLeft: '8px' }}>Target: ≥{trendData.targets.yield || 80}%</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <strong style={{ fontSize: '1.1rem', color: metrics.avg_yield_percentage >= (trendData.targets.yield || 80) ? 'var(--color-success-600)' : 'var(--color-danger-600)' }}>
+                        {metrics.avg_yield_percentage.toFixed(1)}%
+                      </strong>
+                      <span style={{
+                        padding: '1px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        background: metrics.avg_yield_percentage >= (trendData.targets.yield || 80) ? 'var(--color-success-50)' : 'var(--color-danger-50)',
+                        color: metrics.avg_yield_percentage >= (trendData.targets.yield || 80) ? 'var(--color-success-700)' : 'var(--color-danger-700)',
+                        border: `1px solid ${metrics.avg_yield_percentage >= (trendData.targets.yield || 80) ? 'var(--color-success-200)' : 'var(--color-danger-200)'}`,
+                      }}>
+                        {metrics.avg_yield_percentage >= (trendData.targets.yield || 80) ? 'Memenuhi Standar' : 'Di Bawah Standar'}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ height: 60 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[{ name: 'Rendemen', actual: metrics.avg_yield_percentage, target: trendData.targets.yield || 80 }]} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
-                        <XAxis type="number" domain={[0, 100]} hide />
-                        <YAxis type="category" dataKey="name" hide />
-                        <Tooltip cursor={false} contentStyle={{ borderRadius: '8px' }} />
-                        <Bar dataKey="actual" barSize={24} radius={[0, 4, 4, 0]}>
-                          <Cell fill={metrics.avg_yield_percentage >= (trendData.targets.yield || 80) ? 'var(--color-success-500)' : 'var(--color-danger-500)'} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  {/* Progress Track */}
+                  <div style={{ position: 'relative', width: '100%', height: '20px', background: 'var(--bg-subtle)', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${Math.min(100, Math.max(0, metrics.avg_yield_percentage))}%`,
+                        background: metrics.avg_yield_percentage >= (trendData.targets.yield || 80) ? 'var(--color-success-500)' : 'var(--color-danger-500)',
+                        borderRadius: '4px',
+                        transition: 'width 0.6s ease',
+                      }}
+                    />
+                    {/* Target line at 80% */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        left: `${trendData.targets.yield || 80}%`,
+                        width: '2px',
+                        background: '#1e293b',
+                        opacity: 0.6,
+                        zIndex: 2,
+                      }}
+                      title={`Garis Target: ${trendData.targets.yield || 80}%`}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                    <span>0%</span>
+                    <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Target: {trendData.targets.yield || 80}%</span>
+                    <span>100%</span>
                   </div>
                 </div>
-                
+
                 {/* Defect Bar */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Defect Rate</span>
-                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)' }}>Batas: ≤{trendData.targets.defectRate || 5}%</span>
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <div>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>Defect Rate</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginLeft: '8px' }}>Batas: ≤{trendData.targets.defectRate || 5}%</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <strong style={{ fontSize: '1.1rem', color: metrics.overall_defect_rate <= (trendData.targets.defectRate || 5) ? 'var(--color-success-600)' : 'var(--color-danger-600)' }}>
+                        {metrics.overall_defect_rate.toFixed(2)}%
+                      </strong>
+                      <span style={{
+                        padding: '1px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        background: metrics.overall_defect_rate <= (trendData.targets.defectRate || 5) ? 'var(--color-success-50)' : 'var(--color-danger-50)',
+                        color: metrics.overall_defect_rate <= (trendData.targets.defectRate || 5) ? 'var(--color-success-700)' : 'var(--color-danger-700)',
+                        border: `1px solid ${metrics.overall_defect_rate <= (trendData.targets.defectRate || 5) ? 'var(--color-success-200)' : 'var(--color-danger-200)'}`,
+                      }}>
+                        {metrics.overall_defect_rate === 0
+                          ? 'Sempurna (Nihil Cacat)'
+                          : metrics.overall_defect_rate <= (trendData.targets.defectRate || 5)
+                          ? 'Bagus (Toleransi Aman)'
+                          : 'Cacat Melebihi Batas'}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ height: 60 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={[{ name: 'Defect', actual: metrics.overall_defect_rate, target: trendData.targets.defectRate || 5 }]} layout="vertical" margin={{ top: 0, right: 10, left: 0, bottom: 0 }}>
-                        <XAxis type="number" domain={[0, (trendData.targets.defectRate || 5) * 2]} hide />
-                        <YAxis type="category" dataKey="name" hide />
-                        <Tooltip cursor={false} contentStyle={{ borderRadius: '8px' }} />
-                        <Bar dataKey="actual" barSize={24} radius={[0, 4, 4, 0]}>
-                          <Cell fill={metrics.overall_defect_rate <= (trendData.targets.defectRate || 5) ? 'var(--color-success-500)' : 'var(--color-danger-500)'} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  {/* Progress Track */}
+                  <div style={{ position: 'relative', width: '100%', height: '20px', background: 'var(--bg-subtle)', borderRadius: '6px', overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${Math.min(100, Math.max(metrics.overall_defect_rate === 0 ? 0 : 2, (metrics.overall_defect_rate / ((trendData.targets.defectRate || 5) * 2)) * 100))}%`,
+                        background: metrics.overall_defect_rate <= (trendData.targets.defectRate || 5) ? 'var(--color-success-500)' : 'var(--color-danger-500)',
+                        borderRadius: '4px',
+                        transition: 'width 0.6s ease',
+                      }}
+                    />
+                    {/* Limit line at 50% (which represents the 5% threshold out of 10% max) */}
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        left: '50%',
+                        width: '2px',
+                        background: '#dc2626',
+                        opacity: 0.6,
+                        zIndex: 2,
+                      }}
+                      title={`Batas Toleransi: ${trendData.targets.defectRate || 5}%`}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                    <span>0% (Ideal)</span>
+                    <span style={{ fontWeight: 600, color: '#dc2626' }}>Batas: {trendData.targets.defectRate || 5}%</span>
+                    <span>10% (Kritis)</span>
                   </div>
                 </div>
-                
+
                 <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-                  Warna merepresentasikan sentimen (Merah = Gagal mencapai standar operasional perusahaan).
+                  Indikator visual mutu operasional: Rendemen semakin tinggi semakin baik (≥80%), Defect rate semakin rendah semakin baik (≤5%).
                 </p>
               </div>
             </Card>
@@ -345,147 +423,419 @@ function ExecutiveDashboard() {
 function OperationalDashboard() {
   const router = useRouter();
   const [stockAlerts, setStockAlerts] = useState<AppNotification[]>([]);
-  const [isLoadingStock, setIsLoadingStock] = useState(true);
+  const [opsData, setOpsData] = useState<{
+    activeBatches: {
+      id: string;
+      batch_number: string;
+      status: string;
+      product_name: string;
+      target_quantity: number;
+      created_at: string;
+    }[];
+    actionQueues: {
+      pendingReceivingCount: number;
+      pendingQcCount: number;
+      pendingDeliveryCount: number;
+    };
+    stockSummary: {
+      rawMaterialKg: number;
+      finishedGoodsPcs: number;
+    };
+    recentDeliveries: {
+      id: string;
+      order_number: string;
+      total_amount: number;
+      customer_name: string;
+      status: string;
+      created_at: string;
+    }[];
+  } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
+    setIsLoading(true);
     let mounted = true;
-    getAppNotifications()
-      .then((res) => {
-        if (mounted && res.success && res.data) {
-          setStockAlerts(res.data.filter((n) => n.category === 'INVENTORY'));
+    Promise.all([
+      getAppNotifications(),
+      getOperationalOverview(),
+    ])
+      .then(([notifRes, opsRes]) => {
+        if (!mounted) return;
+        if (notifRes.success && notifRes.data) {
+          setStockAlerts(notifRes.data.filter((n) => n.category === 'INVENTORY'));
+        }
+        if (opsRes.success && opsRes.data) {
+          setOpsData(opsRes.data);
         }
       })
-      .catch((err) => console.warn('Failed to load stock alerts:', err))
+      .catch((err) => console.warn('Failed to load operational data:', err))
       .finally(() => {
-        if (mounted) setIsLoadingStock(false);
+        if (mounted) setIsLoading(false);
       });
     return () => {
       mounted = false;
     };
   }, []);
 
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const mapBatchStatus = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === 'wip') return 'in_progress';
+    if (s === 'completed') return 'completed';
+    if (s === 'cancelled') return 'cancelled';
+    return 'planned';
+  };
+
+  const mapOrderStatus = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === 'delivered') return 'delivered';
+    if (s === 'shipped') return 'shipped';
+    if (s === 'processing') return 'in_progress';
+    if (s === 'pending') return 'pending';
+    return 'neutral';
+  };
+
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
-
-      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><Factory size={18} /><strong>Batch Produksi Aktif</strong></div>}>
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <p style={{ margin: 0, fontWeight: 500 }}>PRD-{format(new Date(), 'yyyyMMdd')}-001 — Balado</p>
-              <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Input: 25 kg</p>
-            </div>
-            <StatusBadge status="in_progress" />
-          </li>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <p style={{ margin: 0, fontWeight: 500 }}>PRD-{format(new Date(), 'yyyyMMdd')}-002 — Original</p>
-              <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Input: 30 kg</p>
-            </div>
-            <StatusBadge status="planned" />
-          </li>
-        </ul>
-      </Card>
-
-      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><AlertTriangle size={18} /><strong>Antrean Tindakan & Pengingat</strong></div>}>
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-warning-50)', padding: '8px', borderRadius: '4px', border: '1px solid var(--color-warning-200)' }}>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-               <AlertCircle size={16} color="var(--color-warning-600)" />
-               <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--color-warning-700)' }}>Jadwal Stock Opname Akhir Bulan</span>
-            </div>
-            <Button variant="secondary" size="sm" onClick={() => window.location.href='/inventory'}>Mulai Opname</Button>
-          </li>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-sm)' }}>2 Penerimaan menunggu sortasi</span>
-            <StatusBadge status="pending" />
-          </li>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-sm)' }}>3 Batch WIP menunggu QC</span>
-            <StatusBadge status="pending" />
-          </li>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: 'var(--text-sm)' }}>1 SO menunggu konfirmasi pengiriman</span>
-            <StatusBadge status="pending" />
-          </li>
-        </ul>
-      </Card>
-
-      <Card
-        header={
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-              <Package size={18} aria-hidden="true" />
-              <strong>Alert Stok Gudang ({stockAlerts.length})</strong>
-            </div>
-            {stockAlerts.some((s) => s.severity === 'danger') && (
-              <span style={{ fontSize: '11px', color: 'var(--color-danger-700)', fontWeight: 700, background: 'var(--color-danger-50)', border: '1px solid var(--color-danger-200)', borderRadius: '4px', padding: '1px 6px' }}>
-                {stockAlerts.filter((s) => s.severity === 'danger').length} Habis
-              </span>
-            )}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+      {/* ── Ringkasan Cepat Stok Fisik ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-4)' }}>
+        <div style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-4)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+        }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-primary-50)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-primary-600)',
+          }}>
+            <Sprout className="w-5 h-5 text-currentColor" aria-hidden="true" />
           </div>
-        }
-      >
-        {isLoadingStock ? (
-          <div style={{ padding: 'var(--space-3) 0', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', textAlign: 'center' }}>
-            Memeriksa inventori gudang...
+          <div>
+            <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 500 }}>
+              Stok Jamur Segar (Bahan Baku)
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              {isLoading ? '...' : `${(opsData?.stockSummary.rawMaterialKg ?? 0).toLocaleString('id-ID')} kg`}
+            </p>
           </div>
-        ) : stockAlerts.length === 0 ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: 'var(--space-2) 0', color: 'var(--color-success-700)', fontSize: 'var(--text-sm)' }}>
-            <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" />
-            <span>Seluruh stok bahan baku &amp; produk dalam batas aman.</span>
+        </div>
+
+        <div style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-4)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+        }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: 'var(--radius-md)',
+            background: 'rgba(37, 99, 235, 0.08)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#2563EB',
+          }}>
+            <Boxes className="w-5 h-5 text-currentColor" aria-hidden="true" />
           </div>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-            {stockAlerts.slice(0, 5).map((alert) => (
-              <li
-                key={alert.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '8px 10px',
-                  borderRadius: 'var(--radius-md)',
-                  background: alert.severity === 'danger' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)',
-                  border: alert.severity === 'danger' ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid rgba(245, 158, 11, 0.25)',
-                  cursor: 'pointer',
-                  transition: 'background-color 0.15s ease',
-                }}
-                onClick={() => router.push(alert.link)}
-                title="Klik untuk membuka inventori gudang"
-              >
-                <div style={{ minWidth: 0, paddingRight: '8px' }}>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }}>
-                    {alert.title}
-                  </p>
-                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
-                    {alert.message}
-                  </p>
-                </div>
-                <StatusBadge status={alert.severity === 'danger' ? 'out_of_stock' : 'low_stock'} />
-              </li>
-            ))}
-            {stockAlerts.length > 5 && (
-              <div style={{ textAlign: 'center', marginTop: '4px' }}>
-                <Button variant="ghost" size="sm" onClick={() => router.push('/warehouse')}>
-                  Lihat {stockAlerts.length - 5} item stok lainnya &rarr;
-                </Button>
+          <div>
+            <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 500 }}>
+              Stok Produk Jadi Siap Jual
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              {isLoading ? '...' : `${(opsData?.stockSummary.finishedGoodsPcs ?? 0).toLocaleString('id-ID')} pcs`}
+            </p>
+          </div>
+        </div>
+
+        <div style={{
+          background: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 'var(--space-4)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-3)',
+        }}>
+          <div style={{
+            width: '42px',
+            height: '42px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-warning-50)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--color-warning-600)',
+          }}>
+            <AlertTriangle className="w-5 h-5 text-currentColor" aria-hidden="true" />
+          </div>
+          <div>
+            <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontWeight: 500 }}>
+              Total Antrean Operasional
+            </p>
+            <p style={{ margin: '2px 0 0', fontSize: '1.25rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+              {isLoading
+                ? '...'
+                : `${(opsData?.actionQueues.pendingReceivingCount ?? 0) + (opsData?.actionQueues.pendingQcCount ?? 0) + (opsData?.actionQueues.pendingDeliveryCount ?? 0)} antrean`}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 4 Kartu Operasional Utama ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 'var(--space-4)' }}>
+        
+        {/* Batch Produksi Aktif */}
+        <Card
+          header={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <Factory className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                <strong>Batch Produksi Terkini</strong>
               </div>
-            )}
-          </ul>
-        )}
-      </Card>
-
-      <Card header={<div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}><ShoppingCart size={18} /><strong>Pengiriman Hari Ini</strong></div>}>
-        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-          <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <p style={{ margin: 0, fontWeight: 500 }}>SO-{format(new Date(), 'yyyyMMdd')}-001 — Swalayan Maju</p>
-              <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>50 pcs Balado</p>
+              <Button variant="ghost" size="sm" onClick={() => router.push('/production')}>
+                Buka SPK
+              </Button>
             </div>
-            <StatusBadge status="shipped" />
-          </li>
-        </ul>
-      </Card>
+          }
+        >
+          {isLoading ? (
+            <div style={{ padding: 'var(--space-4) 0', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', textAlign: 'center' }}>
+              Memuat data batch...
+            </div>
+          ) : !opsData?.activeBatches.length ? (
+            <div style={{ padding: 'var(--space-3) 0', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+              Belum ada batch produksi aktif.
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {opsData.activeBatches.slice(0, 4).map((b) => (
+                <li
+                  key={b.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-subtle)',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => router.push('/production')}
+                  title="Buka detail produksi"
+                >
+                  <div style={{ minWidth: 0, paddingRight: '8px' }}>
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }}>
+                      {b.batch_number} — {b.product_name}
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      Target: {b.target_quantity} pcs &bull; {format(new Date(b.created_at), 'd MMM yyyy', { locale: idLocale })}
+                    </p>
+                  </div>
+                  <StatusBadge status={mapBatchStatus(b.status)} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        {/* Antrean Tindakan & Pengingat */}
+        <Card
+          header={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <AlertTriangle className="w-4 h-4 text-currentColor" aria-hidden="true" />
+              <strong>Antrean Tindakan &amp; Pengingat</strong>
+            </div>
+          }
+        >
+          <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+            <li style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--color-warning-50)', padding: '8px 10px', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-warning-200)' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <AlertCircle className="w-4 h-4 text-currentColor" color="var(--color-warning-600)" aria-hidden="true" />
+                <span style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--color-warning-700)' }}>Jadwal Stock Opname Berkala</span>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => router.push('/inventory')}>
+                Mulai
+              </Button>
+            </li>
+            
+            <li
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 4px', cursor: 'pointer' }}
+              onClick={() => router.push('/sorting')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                  {opsData?.actionQueues.pendingReceivingCount ?? 0} Penerimaan menunggu sortasi
+                </span>
+              </div>
+              <StatusBadge status={(opsData?.actionQueues.pendingReceivingCount ?? 0) > 0 ? 'pending' : 'completed'} />
+            </li>
+
+            <li
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 4px', cursor: 'pointer' }}
+              onClick={() => router.push('/quality-control')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                  {opsData?.actionQueues.pendingQcCount ?? 0} Batch SPK siap inspeksi QC
+                </span>
+              </div>
+              <StatusBadge status={(opsData?.actionQueues.pendingQcCount ?? 0) > 0 ? 'pending' : 'completed'} />
+            </li>
+
+            <li
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 4px', cursor: 'pointer' }}
+              onClick={() => router.push('/sales')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+                  {opsData?.actionQueues.pendingDeliveryCount ?? 0} Pesanan dalam proses
+                </span>
+              </div>
+              <StatusBadge status={(opsData?.actionQueues.pendingDeliveryCount ?? 0) > 0 ? 'pending' : 'completed'} />
+            </li>
+          </ul>
+        </Card>
+
+        {/* Alert Stok Gudang */}
+        <Card
+          header={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <Package className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                <strong>Alert Stok Gudang ({stockAlerts.length})</strong>
+              </div>
+              {stockAlerts.some((s) => s.severity === 'danger') && (
+                <span style={{ fontSize: '11px', color: 'var(--color-danger-700)', fontWeight: 700, background: 'var(--color-danger-50)', border: '1px solid var(--color-danger-200)', borderRadius: '4px', padding: '1px 6px' }}>
+                  {stockAlerts.filter((s) => s.severity === 'danger').length} Habis
+                </span>
+              )}
+            </div>
+          }
+        >
+          {isLoading ? (
+            <div style={{ padding: 'var(--space-3) 0', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', textAlign: 'center' }}>
+              Memeriksa inventori gudang...
+            </div>
+          ) : stockAlerts.length === 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: 'var(--space-3) 0', color: 'var(--color-success-700)', fontSize: 'var(--text-sm)' }}>
+              <CheckCircle2 className="w-4 h-4 text-currentColor" aria-hidden="true" />
+              <span>Seluruh stok bahan baku &amp; produk dalam batas aman.</span>
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+              {stockAlerts.slice(0, 4).map((alert) => (
+                <li
+                  key={alert.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-md)',
+                    background: alert.severity === 'danger' ? 'rgba(239, 68, 68, 0.08)' : 'rgba(245, 158, 11, 0.08)',
+                    border: alert.severity === 'danger' ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid rgba(245, 158, 11, 0.25)',
+                    cursor: 'pointer',
+                    transition: 'background-color 0.15s ease',
+                  }}
+                  onClick={() => router.push(alert.link)}
+                  title="Klik untuk membuka inventori gudang"
+                >
+                  <div style={{ minWidth: 0, paddingRight: '8px' }}>
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }}>
+                      {alert.title}
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.3 }}>
+                      {alert.message}
+                    </p>
+                  </div>
+                  <StatusBadge status={alert.severity === 'danger' ? 'out_of_stock' : 'low_stock'} />
+                </li>
+              ))}
+              {stockAlerts.length > 4 && (
+                <div style={{ textAlign: 'center', marginTop: '4px' }}>
+                  <Button variant="ghost" size="sm" onClick={() => router.push('/inventory')}>
+                    Lihat {stockAlerts.length - 4} item stok lainnya &rarr;
+                  </Button>
+                </div>
+              )}
+            </ul>
+          )}
+        </Card>
+
+        {/* Pengiriman & Penjualan Terbaru */}
+        <Card
+          header={
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                <ShoppingCart className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                <strong>Pesanan Penjualan Terbaru</strong>
+              </div>
+              <Button variant="ghost" size="sm" onClick={() => router.push('/sales')}>
+                Buka Sales
+              </Button>
+            </div>
+          }
+        >
+          {isLoading ? (
+            <div style={{ padding: 'var(--space-4) 0', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', textAlign: 'center' }}>
+              Memuat data penjualan...
+            </div>
+          ) : !opsData?.recentDeliveries.length ? (
+            <div style={{ padding: 'var(--space-3) 0', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
+              Belum ada data pesanan penjualan.
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {opsData.recentDeliveries.map((order) => (
+                <li
+                  key={order.id}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '8px 10px',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-subtle)',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => router.push('/sales')}
+                  title="Buka manajemen penjualan"
+                >
+                  <div style={{ minWidth: 0, paddingRight: '8px' }}>
+                    <p style={{ margin: 0, fontWeight: 600, fontSize: 'var(--text-xs)', color: 'var(--text-primary)' }}>
+                      {order.order_number} &bull; {order.customer_name}
+                    </p>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--text-secondary)' }}>
+                      Rp {order.total_amount.toLocaleString('id-ID')} &bull; {format(new Date(order.created_at), 'd MMM yyyy', { locale: idLocale })}
+                    </p>
+                  </div>
+                  <StatusBadge status={mapOrderStatus(order.status)} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+      </div>
     </div>
   );
 }

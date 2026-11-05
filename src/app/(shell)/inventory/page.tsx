@@ -13,7 +13,7 @@ import { Select } from '@/components/ui/Select';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
-import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info, Filter, Layers, Tag, Lock } from 'lucide-react';
+import { Package, AlertTriangle, TrendingDown, Plus, Save, BarChart3, ClipboardList, Search, CheckCircle2, Sprout, MoreVertical, Edit, Trash2, Info, Filter, Layers, Tag, Lock, ArrowRightLeft } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
 import { getInventorySummary, getStockMovements, updateStockMovement, deleteStockMovement, deleteMultipleStockMovements, receiveNonMushroomItem, saveStockOpname, getLossReport, transferToConsignment, updateInventoryItem, deleteInventoryItem, syncInventoryWithMaster } from '@/actions/inventory';
@@ -143,6 +143,17 @@ export default function InventoryPage() {
 
   const toast = useToast();
 
+  const handleOpenTransfer = (inv: DbInventory) => {
+    setTransferInv(inv);
+    setTransferForm({ quantity: 0, target_warehouse_id: '', notes: '' });
+    setTransferOpen(true);
+    if (warehouses.length === 0) {
+      getWarehouses().then(r => {
+        if (r.success && r.data) setWarehouses(r.data);
+      });
+    }
+  };
+
   const loadData = useCallback(async () => {
     setIsLoading(true);
     const targetType = isWarehouseMode ? 'RAW_MATERIAL' : 'PRODUCT';
@@ -151,28 +162,27 @@ export default function InventoryPage() {
     const invRes = await getInventorySummary(targetType);
     if (invRes.success && invRes.data) {
       setInventoryData(invRes.data);
-      setIsLoading(false); // Tabel langsung terbuka tanpa menunggu query sekunder!
     }
+    setIsLoading(false); // Tabel langsung terbuka tanpa menunggu query sekunder!
 
-    // 2. Muat data pendukung (pergerakan stok, opname, data master) secara paralel di latar belakang
-    const [mvRes, lossRes, rmRes, prodRes, whRes] = await Promise.all([
+    // 2. Muat data pendukung (pergerakan stok, opname, data master) secara paralel di latar belakang (non-blocking)
+    Promise.all([
       getStockMovements(),
       getLossReport(),
       isWarehouseMode ? getRawMaterials() : Promise.resolve({ success: true, data: [] }),
       !isWarehouseMode ? getProducts() : Promise.resolve({ success: true, data: [] }),
-      getWarehouses(),
-    ]);
-
-    if (mvRes.success && mvRes.data && invRes.data) {
-      const invIds = new Set(invRes.data.map(i => i.id));
-      const filteredMv = mvRes.data.filter(m => invIds.has(m.inventory_id));
-      setMovements(filteredMv);
-    }
-    if (lossRes.success && lossRes.data) setLossData(lossRes.data);
-    if (rmRes.success && rmRes.data) setMasterRawMaterials(rmRes.data as DbRawMaterial[]);
-    if (prodRes.success && prodRes.data) setMasterProducts(prodRes.data as DbProduct[]);
-    if (whRes.success && whRes.data) setWarehouses(whRes.data);
-    setIsLoading(false);
+    ]).then(([mvRes, lossRes, rmRes, prodRes]) => {
+      if (mvRes.success && mvRes.data && invRes.data) {
+        const invIds = new Set(invRes.data.map(i => i.id));
+        const filteredMv = mvRes.data.filter(m => invIds.has(m.inventory_id));
+        setMovements(filteredMv);
+      }
+      if (lossRes.success && lossRes.data) setLossData(lossRes.data);
+      if (rmRes.success && rmRes.data) setMasterRawMaterials(rmRes.data as DbRawMaterial[]);
+      if (prodRes.success && prodRes.data) setMasterProducts(prodRes.data as DbProduct[]);
+    }).catch(err => {
+      console.error('Error loading secondary inventory data:', err);
+    });
   }, [isWarehouseMode]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -398,23 +408,52 @@ export default function InventoryPage() {
 
     return configs.map(cfg => {
       const items = categoryMap[cfg.id] || [];
-      const total = items.reduce((s, i) => s + (i.quantity || 0), 0);
       const belowRop = items.filter(i => {
         const rop = i.reorder_point || (i as any).master_rop || 0;
         return (i.quantity || 0) < rop;
       }).length;
 
+      let total = items.reduce((s, i) => s + (i.quantity || 0), 0);
       let totalDisplay = `${total.toLocaleString('id-ID')} ${cfg.defaultUom}`;
       let subDetail: string | undefined = undefined;
 
       if (cfg.id === 'UTAMA') {
-        const kgItems = items.filter(i => (i.uom || '').toLowerCase() !== 'liter');
-        const literItems = items.filter(i => (i.uom || '').toLowerCase() === 'liter');
-        const kgTotal = kgItems.reduce((s, i) => s + (i.quantity || 0), 0);
-        const literTotal = literItems.reduce((s, i) => s + (i.quantity || 0), 0);
-        totalDisplay = `${kgTotal.toLocaleString('id-ID')} kg`;
-        if (literTotal > 0) {
-          subDetail = `+ ${literTotal.toLocaleString('id-ID')} liter minyak`;
+        let kgSum = 0;
+        let literSum = 0;
+
+        for (const i of items) {
+          const uom = (i.uom || '').toLowerCase().trim();
+          const qty = Number(i.quantity) || 0;
+          if (uom === 'liter' || uom === 'l') {
+            literSum += qty;
+          } else if (uom === 'gram' || uom === 'g' || uom === 'gr') {
+            kgSum += qty / 1000;
+          } else if (uom === 'mg') {
+            kgSum += qty / 1000000;
+          } else if (uom === 'ons') {
+            kgSum += qty / 10;
+          } else {
+            kgSum += qty;
+          }
+        }
+
+        total = kgSum;
+        totalDisplay = `${kgSum.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} kg`;
+        if (literSum > 0) {
+          subDetail = `+ ${literSum.toLocaleString('id-ID', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} liter minyak`;
+        }
+      } else if (cfg.id === 'PACKAGING') {
+        const roundedTotal = Math.round(total);
+        total = roundedTotal;
+        totalDisplay = `${roundedTotal.toLocaleString('id-ID')} pcs`;
+      } else if (cfg.id === 'BUMBU') {
+        totalDisplay = `${Math.round(total).toLocaleString('id-ID')} gram`;
+      } else if (cfg.id === 'LAINNYA') {
+        if (items.length > 0 && items.every(i => (i.uom || '').toLowerCase() === (items[0].uom || '').toLowerCase())) {
+          const uom = items[0].uom || 'item';
+          totalDisplay = `${total.toLocaleString('id-ID')} ${uom}`;
+        } else {
+          totalDisplay = `${total.toLocaleString('id-ID')} item`;
         }
       }
 
@@ -549,10 +588,12 @@ export default function InventoryPage() {
         const uom = row.original.uom || (isWarehouseMode ? 'kg' : 'pcs');
         const rop = row.original.reorder_point || (row.original as any).master_rop || 0;
         const low = row.original.quantity < rop;
+        const isPcs = uom.toLowerCase() === 'pcs';
+        const formattedQty = isPcs ? Math.round(row.original.quantity) : row.original.quantity;
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontWeight: 600, color: low ? 'var(--color-danger-600)' : 'var(--text-primary)' }}>
-              {row.original.quantity.toLocaleString('id-ID')} {uom}
+              {formattedQty.toLocaleString('id-ID')} {uom}
             </span>
             {low && (
               <div style={{ 
@@ -616,8 +657,9 @@ export default function InventoryPage() {
               </Button>
             }
             items={[
-              { id: 'info', label: 'Info Detail', icon: <Info size={14} />, onClick: () => { setInfoInv(row.original); setInfoOpen(true); } },
-              { id: 'edit', label: 'Edit Data', icon: <Edit size={14} />, onClick: () => { 
+              { id: 'info', label: 'Info Detail', icon: <Info size={14} aria-hidden="true" />, onClick: () => { setInfoInv(row.original); setInfoOpen(true); } },
+              { id: 'transfer', label: 'Kirim Konsinyasi', icon: <ArrowRightLeft size={14} aria-hidden="true" />, onClick: () => handleOpenTransfer(row.original) },
+              { id: 'edit', label: 'Edit Data', icon: <Edit size={14} aria-hidden="true" />, onClick: () => { 
                   setEditInv(row.original); 
                   setEditForm({ 
                     quantity: row.original.quantity || 0, 
@@ -627,7 +669,7 @@ export default function InventoryPage() {
                   setEditOpen(true); 
               } },
               { id: 'div', label: '', divider: true },
-              { id: 'delete', label: 'Hapus Item', icon: <Trash2 size={14} />, danger: true, onClick: () => { setDeleteInv(row.original); setDeleteOpen(true); } },
+              { id: 'delete', label: 'Hapus Item', icon: <Trash2 size={14} aria-hidden="true" />, danger: true, onClick: () => { setDeleteInv(row.original); setDeleteOpen(true); } },
             ]}
           />
         );
@@ -707,7 +749,10 @@ export default function InventoryPage() {
     { id: 'warehouse', header: 'Gudang', cell: ({ row }) => row.original.inventory?.warehouse?.name || '-' },
     { accessorKey: 'system_quantity', header: 'Stok Sistem' },
     { accessorKey: 'physical_quantity', header: 'Stok Fisik' },
-    { accessorKey: 'difference', header: 'Selisih Minus', cell: ({ row }) => <strong style={{ color: 'var(--color-danger-600)' }}>{row.original.difference} kg</strong> },
+    { accessorKey: 'difference', header: 'Selisih Minus', cell: ({ row }) => {
+      const uom = row.original.inventory?.item_type === 'PRODUCT' ? 'pcs' : (row.original.inventory?.uom || 'kg');
+      return <strong style={{ color: 'var(--color-danger-600)' }}>{row.original.difference} {uom}</strong>;
+    }},
     { accessorKey: 'notes', header: 'Catatan', cell: ({ row }) => row.original.notes || '-' },
   ], []);
 
@@ -963,7 +1008,7 @@ export default function InventoryPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           <div style={{ padding: 'var(--space-3)', background: 'var(--bg-subtle)', borderRadius: 'var(--radius-md)' }}>
             <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Stok Saat Ini</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>{transferInv?.quantity.toLocaleString('id-ID')} kg</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 600 }}>{transferInv?.quantity.toLocaleString('id-ID')} {transferInv?.uom || (transferInv?.item_type === 'PRODUCT' ? 'pcs' : 'kg')}</div>
           </div>
           <FormField label="Gudang Tujuan (Konsinyasi)" required>
             <Select
@@ -1066,7 +1111,7 @@ export default function InventoryPage() {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
               <strong style={{ color: 'var(--text-secondary)' }}>Stok Saat Ini:</strong>
-              <span>{infoInv.quantity.toLocaleString('id-ID')} kg</span>
+              <span>{infoInv.quantity.toLocaleString('id-ID')} {infoInv.uom || (infoInv.item_type === 'PRODUCT' ? 'pcs' : 'kg')}</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 'var(--space-2)' }}>
               <strong style={{ color: 'var(--text-secondary)' }}>Update Terakhir:</strong>
@@ -1371,12 +1416,12 @@ export default function InventoryPage() {
                 </div>
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Sistem</div>
-                  <strong>{inv.quantity} kg</strong>
+                  <strong>{inv.quantity.toLocaleString('id-ID')} {inv.uom || (isWarehouseMode ? 'kg' : 'pcs')}</strong>
                 </div>
                 <div>
                   <Input
                     type="number" step="0.01" min="0"
-                    placeholder="Fisik (kg)"
+                    placeholder={`Fisik (${inv.uom || (isWarehouseMode ? 'kg' : 'pcs')})`}
                     value={physicalInputs[inv.id] || ''}
                     disabled={isReadOnly}
                     onChange={e => setPhysicalInputs(prev => ({ ...prev, [inv.id]: e.target.value }))}
@@ -1390,7 +1435,7 @@ export default function InventoryPage() {
                         color: Math.abs(parseFloat(physicalInputs[inv.id]) - inv.quantity) < 0.01
                           ? 'var(--color-success-600)' : 'var(--color-danger-600)'
                       }}>
-                        {(parseFloat(physicalInputs[inv.id]) - inv.quantity).toFixed(2)} kg
+                        {(parseFloat(physicalInputs[inv.id]) - inv.quantity).toFixed(2)} {inv.uom || (isWarehouseMode ? 'kg' : 'pcs')}
                       </strong>
                     </div>
                   )}
@@ -1464,7 +1509,14 @@ export default function InventoryPage() {
               </span>
             )}
             {!isReadOnly && (
-              <Button leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />} onClick={() => setInboundDrawerOpen(true)}>
+              <Button leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />} onClick={() => {
+                if (isWarehouseMode && masterRawMaterials.length === 0) {
+                  getRawMaterials().then(r => { if (r.success && r.data) setMasterRawMaterials(r.data as DbRawMaterial[]); });
+                } else if (!isWarehouseMode && masterProducts.length === 0) {
+                  getProducts().then(r => { if (r.success && r.data) setMasterProducts(r.data as DbProduct[]); });
+                }
+                setInboundDrawerOpen(true);
+              }}>
                 {isWarehouseMode ? "Penerimaan Bahan Baku" : "Penerimaan Produk Jadi"}
               </Button>
             )}

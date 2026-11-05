@@ -818,3 +818,113 @@ export async function getFarmerRanking(): Promise<{
     };
   }
 }
+
+export async function getOperationalOverview(): Promise<{
+  success: boolean;
+  data?: {
+    activeBatches: {
+      id: string;
+      batch_number: string;
+      status: string;
+      product_name: string;
+      target_quantity: number;
+      created_at: string;
+    }[];
+    actionQueues: {
+      pendingReceivingCount: number;
+      pendingQcCount: number;
+      pendingDeliveryCount: number;
+    };
+    stockSummary: {
+      rawMaterialKg: number;
+      finishedGoodsPcs: number;
+    };
+    recentDeliveries: {
+      id: string;
+      order_number: string;
+      total_amount: number;
+      customer_name: string;
+      status: string;
+      created_at: string;
+    }[];
+  };
+  error?: string;
+}> {
+  try {
+    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'WAREHOUSE']);
+
+    const [batchesRes, recCountRes, qcCountRes, soCountRes, invRmRes, invFgRes, soRecentRes] = await Promise.all([
+      supabaseAdmin
+        .from('production_orders')
+        .select('id, batch_number, status, target_quantity, created_at, product_variant, product:products(name)')
+        .order('created_at', { ascending: false })
+        .limit(5),
+      supabaseAdmin
+        .from('receivings')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'PENDING'),
+      supabaseAdmin
+        .from('production_orders')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['COMPLETED', 'WIP']),
+      supabaseAdmin
+        .from('sales_orders')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['PENDING', 'PROCESSING']),
+      supabaseAdmin
+        .from('inventory')
+        .select('quantity')
+        .eq('item_type', 'RAW_MATERIAL'),
+      supabaseAdmin
+        .from('inventory')
+        .select('quantity')
+        .eq('item_type', 'PRODUCT'),
+      supabaseAdmin
+        .from('sales_orders')
+        .select('id, order_number, total_amount, status, created_at, customer:customers(name)')
+        .order('created_at', { ascending: false })
+        .limit(3),
+    ]);
+
+    const activeBatches = (batchesRes.data || []).map((b: any) => ({
+      id: b.id,
+      batch_number: b.batch_number,
+      status: b.status,
+      product_name: (Array.isArray(b.product) ? b.product[0]?.name : b.product?.name) || b.product_variant || 'Jamur Crispy',
+      target_quantity: Number(b.target_quantity) || 0,
+      created_at: b.created_at,
+    }));
+
+    const recentDeliveries = (soRecentRes.data || []).map((o: any) => ({
+      id: o.id,
+      order_number: o.order_number,
+      total_amount: Number(o.total_amount) || 0,
+      customer_name: (Array.isArray(o.customer) ? o.customer[0]?.name : o.customer?.name) || 'Pelanggan Retail',
+      status: o.status,
+      created_at: o.created_at,
+    }));
+
+    const rawMaterialKg = (invRmRes.data || []).reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+    const finishedGoodsPcs = (invFgRes.data || []).reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+
+    return {
+      success: true,
+      data: {
+        activeBatches,
+        actionQueues: {
+          pendingReceivingCount: recCountRes.count || 0,
+          pendingQcCount: qcCountRes.count || 0,
+          pendingDeliveryCount: soCountRes.count || 0,
+        },
+        stockSummary: {
+          rawMaterialKg: parseFloat(rawMaterialKg.toFixed(1)),
+          finishedGoodsPcs: Math.round(finishedGoodsPcs),
+        },
+        recentDeliveries,
+      },
+    };
+  } catch (err: any) {
+    console.error('getOperationalOverview error:', err);
+    return { success: false, error: err.message };
+  }
+}

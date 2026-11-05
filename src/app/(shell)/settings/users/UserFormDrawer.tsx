@@ -12,7 +12,8 @@ import { FormField } from '@/components/form/FormField';
 import { ROLE_LABELS, type UserRole, type User } from '@/types/auth';
 
 const userSchema = z.object({
-  username: z.string().min(3, 'Username minimal 3 karakter'),
+  name: z.string().min(2, 'Nama lengkap minimal 2 karakter'),
+  username: z.string().min(3, 'Username / Email minimal 3 karakter'),
   password: z.string().optional(),
   role: z.string().min(1, 'Role wajib diisi'),
   whatsappNumber: z.string().max(20, 'Nomor terlalu panjang').optional().or(z.literal('')),
@@ -24,7 +25,7 @@ interface UserFormDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   user?: User | null;
-  onSubmit: (data: Partial<User>) => Promise<void>;
+  onSubmit: (data: Partial<User> & { password?: string }) => Promise<void>;
 }
 
 export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDrawerProps) {
@@ -34,6 +35,7 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
   const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<UserFormData>({
     resolver: zodResolver(userSchema),
     defaultValues: {
+      name: '',
       username: '',
       password: '',
       role: '',
@@ -45,13 +47,14 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
     if (isOpen) {
       if (user) {
         reset({
-          username: user.email, // Map existing email to username field
+          name: user.name || '',
+          username: user.email,
           password: '',
           role: user.role,
           whatsappNumber: user.whatsappNumber || '',
         });
       } else {
-        reset({ username: '', password: '', role: '', whatsappNumber: '' });
+        reset({ name: '', username: '', password: '', role: '', whatsappNumber: '' });
       }
     }
   }, [isOpen, user, reset]);
@@ -66,16 +69,15 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
   const handleFormSubmit = async (data: UserFormData) => {
     setIsSubmitting(true);
     try {
-      const submitData: Partial<User> = {
-        email: data.username, // Map username back to email for DB compatibility
-        name: data.username,  // Fallback name to username
+      const submitData: Partial<User> & { password?: string } = {
+        name: data.name.trim(),
+        email: data.username.trim().toLowerCase(),
         role: data.role as UserRole,
         whatsappNumber: data.whatsappNumber || undefined,
       };
       
-      // Inject password for creation
-      if (!isEditing && data.password) {
-        (submitData as any).password = data.password;
+      if (data.password && data.password.trim().length > 0) {
+        submitData.password = data.password.trim();
       }
       
       await onSubmit(submitData);
@@ -90,7 +92,7 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
       isOpen={isOpen}
       onClose={onClose}
       title={isEditing ? 'Edit Pengguna' : 'Buat Pengguna Baru'}
-      description={isEditing ? 'Perbarui informasi dan hak akses pengguna.' : 'Tambahkan pengguna baru ke sistem ERP.'}
+      description={isEditing ? 'Perbarui nama, kredensial, dan hak akses pengguna.' : 'Tambahkan akun pengguna baru ke sistem ERP.'}
       size="md"
       footer={
         <>
@@ -102,15 +104,25 @@ export function UserFormDrawer({ isOpen, onClose, user, onSubmit }: UserFormDraw
       }
     >
       <form onSubmit={handleSubmit(handleFormSubmit)} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-        <FormField label="Username" required error={errors.username?.message}>
-          <Input fullWidth {...register('username')} placeholder="Masukkan username" />
+        <FormField label="Nama Lengkap Karyawan" required error={errors.name?.message}>
+          <Input fullWidth {...register('name')} placeholder="Misal: Budi Santoso (Operator Goreng)" />
+        </FormField>
+
+        <FormField label="Username / Email Login" required error={errors.username?.message}>
+          <Input fullWidth {...register('username')} placeholder="Misal: produksi@khumkhum.com" />
         </FormField>
         
-        {!isEditing && (
-          <FormField label="Kata Sandi" error={errors.password?.message}>
-            <Input fullWidth type="text" {...register('password')} placeholder="Kosongkan untuk default 'password123'" />
-          </FormField>
-        )}
+        <FormField 
+          label={isEditing ? 'Ubah Kata Sandi Baru (Opsional)' : 'Kata Sandi'} 
+          error={errors.password?.message}
+        >
+          <Input 
+            fullWidth 
+            type="text" 
+            {...register('password')} 
+            placeholder={isEditing ? 'Kosongkan jika tidak ingin mengubah kata sandi' : "Kosongkan untuk default 'password123'"} 
+          />
+        </FormField>
         
         <FormField label="Peran (Role)" required error={errors.role?.message}>
           <Combobox

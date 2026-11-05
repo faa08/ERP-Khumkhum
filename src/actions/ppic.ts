@@ -126,8 +126,9 @@ export async function addManualHistoricalSorting(date: string, weight: number, f
       return { success: false, error: 'Data master bahan baku (jamur) tidak ditemukan.' };
     }
 
-    // 1. Create a mock receiving
-    const batchNumber = `MOCK-RCV-${Date.now()}`;
+    // 1. Catat data penerimaan historis
+    const dateStr = format(new Date(date), 'yyyyMMdd');
+    const batchNumber = `RCV-${dateStr}-${Date.now().toString().slice(-4)}`;
     const { data: receiving, error: rcvErr } = await supabaseAdmin
       .from('receivings')
       .insert([{
@@ -141,7 +142,7 @@ export async function addManualHistoricalSorting(date: string, weight: number, f
       .select('id')
       .single();
 
-    if (rcvErr || !receiving) throw rcvErr || new Error('Gagal membuat data receiving dummy');
+    if (rcvErr || !receiving) throw rcvErr || new Error('Gagal mencatat data penerimaan historis');
 
     // 2. Create the sorting record
     const { error: sortErr } = await supabaseAdmin

@@ -347,7 +347,15 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
             // Fallback jika tidak ada breakdown packing spesifik
             const targetProductId = prodOrder.results?.[0]?.product_id || prodOrder.product_id;
             const fgQty = prodOrder.results?.[0]?.finished_goods_quantity || prodOrder.target_quantity || 500;
-            const fgWarehouseId = '44444444-0000-0000-0000-000000000002'; // Gudang Produk Jadi Siap Jual
+            
+            // Resolusi Gudang Utama / Siap Jual secara dinamis (hindari hardcode ID yang tidak valid)
+            const { data: whs } = await supabaseAdmin.from('warehouses').select('id, name');
+            const foundWh = (whs || []).find((w: any) =>
+              w.name.toLowerCase().includes('utama') ||
+              w.name.toLowerCase().includes('produk jadi') ||
+              w.name.toLowerCase().includes('siap jual')
+            ) || whs?.[0];
+            const fgWarehouseId = foundWh?.id || 'c2716e40-6e5f-43ab-a831-162076ecbe88';
 
             if (targetProductId) {
               const { data: existingInv } = await supabaseAdmin
@@ -427,8 +435,13 @@ export async function createQcInspection(input: CreateQcInspectionInput): Promis
           // Hapus dari stok sales
           await removeMemoryPackedStockByBatch(prodOrder.batch_number);
 
-          // Alihkan ke Gudang Karantina & Afkir
-          const quarantineWhId = '44444444-0000-0000-0000-000000000003';
+          // Alihkan ke Gudang Karantina & Afkir (dinamis)
+          const { data: qWhs } = await supabaseAdmin.from('warehouses').select('id, name');
+          const foundQWh = (qWhs || []).find((w: any) =>
+            w.name.toLowerCase().includes('karantina') ||
+            w.name.toLowerCase().includes('afkir')
+          ) || (qWhs || []).find((w: any) => w.name.toLowerCase().includes('utama')) || qWhs?.[0];
+          const quarantineWhId = foundQWh?.id || 'c2716e40-6e5f-43ab-a831-162076ecbe88';
           const targetProductId = prodOrder.results?.[0]?.product_id || prodOrder.product_id;
           const rejectQty = orderPackings.reduce((s, p) => s + (Number(p.packaged_toples_count) || 0), 0)
             || prodOrder.results?.[0]?.finished_goods_quantity

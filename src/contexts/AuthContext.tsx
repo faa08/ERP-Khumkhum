@@ -101,6 +101,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const res = await loginAction({
         username: credentials.username,
         password: credentials.password,
+        rememberMe: credentials.rememberMe,
       });
 
       if (res.success && res.user) {

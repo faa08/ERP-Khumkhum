@@ -27,6 +27,7 @@ export interface DropdownProps {
 export function Dropdown({ trigger, items, position = 'bottom-right', className }: DropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0, right: 0, bottom: 0 });
+  const [actualPlacement, setActualPlacement] = useState<'bottom' | 'top'>('bottom');
   const triggerRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   
@@ -58,10 +59,17 @@ export function Dropdown({ trigger, items, position = 'bottom-right', className 
 
   useKeyboard({ Escape: () => setIsOpen(false) }, isOpen);
 
-  // Update coords when open
+  // Update coords when open & auto-flip if space below is limited
   useEffect(() => {
     if (isOpen && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      const estimatedHeight = Math.max(160, items.length * 40 + 16);
+      
+      const shouldFlipUp = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+      setActualPlacement(shouldFlipUp ? 'top' : 'bottom');
+
       setCoords({
         top: rect.bottom + 4,
         bottom: window.innerHeight - rect.top + 4,
@@ -69,11 +77,15 @@ export function Dropdown({ trigger, items, position = 'bottom-right', className 
         right: window.innerWidth - rect.right
       });
     }
-  }, [isOpen]);
+  }, [isOpen, items.length]);
 
+  const isTop = position.startsWith('top') || actualPlacement === 'top';
   const menuStyle: React.CSSProperties = {
     position: 'fixed',
-    ...(position.includes('bottom') ? { top: coords.top } : { bottom: coords.bottom }),
+    zIndex: 9999,
+    maxHeight: 'calc(100vh - 32px)',
+    overflowY: 'auto',
+    ...(isTop ? { bottom: coords.bottom } : { top: coords.top }),
     ...(position.includes('right') ? { right: coords.right } : { left: coords.left })
   };
 

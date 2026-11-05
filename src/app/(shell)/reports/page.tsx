@@ -57,9 +57,10 @@ const REPORT_COLUMNS: Record<string, ColumnDef<any>[]> = {
     { accessorKey: 'item_name', header: 'Item', cell: ({row}) => <strong>{row.original.item_name}</strong> },
     { accessorKey: 'warehouse', header: 'Gudang' },
     { accessorKey: 'movement_type', header: 'Tipe Mutasi', cell: ({row}) => <StatusBadge status={(row.original.movement_type || 'movement').toLowerCase()} /> },
-    { accessorKey: 'quantity', header: 'Qty (kg)', cell: ({row}) => {
+    { accessorKey: 'quantity', header: 'Kuantitas', cell: ({row}) => {
        const isPos = row.original.quantity > 0 || row.original.movement_type === 'IN';
-       return <strong style={{ color: isPos ? 'var(--color-success-600)' : 'var(--color-danger-600)'}}>{isPos ? '+' : '-'}{Math.abs(row.original.quantity)} kg</strong>;
+       const unit = row.original.uom || 'kg';
+       return <strong style={{ color: isPos ? 'var(--color-success-600)' : 'var(--color-danger-600)'}}>{isPos ? '+' : '-'}{Math.abs(row.original.quantity)} {unit}</strong>;
     }},
     { accessorKey: 'notes', header: 'Referensi' },
   ],
@@ -176,7 +177,13 @@ export default function ReportsPage() {
         const rowData = tableColumns.map(c => {
            const key = (c as any).accessorKey;
            let val = row[key];
-           if (key === 'date') val = format(new Date(val), 'dd/MM/yyyy HH:mm');
+           if (key === 'date') {
+             try {
+               val = val ? format(new Date(val), 'dd/MM/yyyy HH:mm') : '-';
+             } catch (_) {
+               val = '-';
+             }
+           }
            return val || '-';
         });
         const excelRow = sheet.addRow(rowData);
@@ -542,7 +549,13 @@ export default function ReportsPage() {
       return REPORT_COLUMNS[reportType].map(c => {
          const key = (c as any).accessorKey;
          let val = row[key];
-         if (key === 'date') val = format(new Date(val), 'dd/MM/yyyy HH:mm');
+         if (key === 'date') {
+           try {
+             val = val ? format(new Date(val), 'dd/MM/yyyy HH:mm') : '-';
+           } catch (_) {
+             val = '-';
+           }
+         }
          return val || '-';
       });
     });

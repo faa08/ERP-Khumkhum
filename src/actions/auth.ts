@@ -83,10 +83,9 @@ async function ensureSuperAdminExists(): Promise<void> {
 export async function loginAction(credentials: {
   username: string;
   password: string;
+  rememberMe?: boolean;
 }): Promise<LoginResult> {
   try {
-    await ensureSuperAdminExists();
-
     let normalizedInput = credentials.username.trim().toLowerCase();
     if (normalizedInput === 'maintanance' || normalizedInput === 'maintanance@khumkhum.id') {
       normalizedInput = 'maintenance@khumkhum.id';
@@ -105,7 +104,17 @@ export async function loginAction(credentials: {
       query = query.or(`email.ilike.${normalizedInput},email.ilike.${normalizedInput}@khumkhum.id`);
     }
 
-    const { data: users, error } = await query;
+    let { data: users, error } = await query;
+
+    // Fallback: If no user found and attempting admin/maintenance login, run seeding once and retry
+    if ((!users || users.length === 0) && (normalizedInput === 'admin' || normalizedInput.includes('admin') || normalizedInput.includes('maintenance'))) {
+      await ensureSuperAdminExists();
+      const retryQuery = await supabaseAdmin.from('users').select('*').or('email.ilike.admin@khumkhum.id,email.ilike.admin');
+      if (retryQuery.data && retryQuery.data.length > 0) {
+        users = retryQuery.data;
+        error = null;
+      }
+    }
 
     if (error || !users || users.length === 0) {
       return { success: false, error: 'Email atau username tidak terdaftar' };
@@ -139,13 +148,16 @@ export async function loginAction(credentials: {
       ? 'PREMIX'
       : user.role;
 
-    // Set signed JWT Session Cookie
-    await createSession({
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      role: sessionRole as UserRole,
-    });
+    // Set signed JWT Session Cookie with dynamic expiration based on rememberMe
+    await createSession(
+      {
+        userId: user.id,
+        email: user.email,
+        name: user.name,
+        role: sessionRole as UserRole,
+      },
+      !!credentials.rememberMe
+    );
 
     // Record login audit
     await logAuditEvent({

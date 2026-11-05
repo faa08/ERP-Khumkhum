@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Dropdown, type DropdownItem } from '@/components/ui/Dropdown';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/hooks/useToast';
-import { Plus, MoreVertical, Edit2, Key, Ban, CheckCircle, Eye, Trash2 } from 'lucide-react';
+import { Plus, MoreVertical, Edit2, Key, KeyRound, Ban, CheckCircle, Eye, Trash2 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { ROLE_LABELS, type User, type UserRole } from '@/types/auth';
 import type { UserRole as DbUserRole } from '@/types/database';
@@ -98,24 +98,28 @@ export default function UsersPage() {
     setDetailModalOpen(true);
   };
 
-  const handleFormSubmit = async (data: Partial<User>) => {
+  const handleFormSubmit = async (data: Partial<User> & { password?: string }) => {
     if (selectedUser) {
       const res = await updateUserAction(selectedUser.id, {
         name: data.name,
         email: data.email,
         role: data.role as DbUserRole,
         whatsapp_number: data.whatsappNumber,
+        password: data.password,
       });
 
       if (res.success) {
-        toast.success('Pengguna berhasil diperbarui');
+        toast.success(
+          data.password
+            ? 'Data pengguna dan kata sandi berhasil diperbarui'
+            : 'Pengguna berhasil diperbarui'
+        );
         fetchUsers();
       } else {
         toast.error(res.error || 'Gagal memperbarui pengguna');
       }
     } else {
-      // @ts-ignore - password is not in User type but we pass it from the form
-      const password = (data as any).password || 'password123';
+      const password = data.password || 'password123';
       
       const res = await createUserAction({
         name: data.name || '',
@@ -317,6 +321,36 @@ export default function UsersPage() {
           </Button>
         }
       />
+
+      {/* Callout Info Kredensial */}
+      <div style={{
+        marginBottom: '1.25rem',
+        padding: '0.875rem 1.25rem',
+        borderRadius: '0.75rem',
+        background: 'rgba(211, 31, 38, 0.05)',
+        border: '1px solid rgba(211, 31, 38, 0.2)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.75rem',
+        color: '#2A1810',
+        fontSize: '0.875rem',
+      }}>
+        <div style={{
+          padding: '0.5rem',
+          borderRadius: '0.5rem',
+          background: 'rgba(211, 31, 38, 0.1)',
+          color: '#D31F26',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}>
+          <KeyRound className="w-5 h-5 text-currentColor" aria-hidden="true" />
+        </div>
+        <div>
+          <strong style={{ color: '#D31F26' }}>Informasi Kredensial Pengguna:</strong> Seluruh akun operasional pabrik memiliki kata sandi default <code>password123</code>. Jika ada staf yang lupa kata sandi, Super Admin dapat menekan menu aksi <strong>(⋮) ➔ Reset Kata Sandi</strong> untuk mengembalikannya ke <code>password123</code>, atau tentukan kata sandi baru lewat menu <strong>Edit Pengguna</strong>.
+        </div>
+      </div>
 
       <DataTable
         columns={columns}

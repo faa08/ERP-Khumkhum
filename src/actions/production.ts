@@ -3436,11 +3436,13 @@ export async function syncPackedGoodsToSalesInventory(
 
     // 5. Update / Insert ke tabel inventory Supabase
     try {
-      let fgWarehouseId = '44444444-0000-0000-0000-000000000002'; // default Gudang Produk Jadi
+      let fgWarehouseId = 'c2716e40-6e5f-43ab-a831-162076ecbe88'; // fallback Gudang Utama
       const { data: whs } = await supabaseAdmin.from('warehouses').select('id, name');
       const foundWh = (whs || []).find((w: any) =>
-        w.name.toLowerCase().includes('produk jadi') || w.name.toLowerCase().includes('siap jual')
-      );
+        w.name.toLowerCase().includes('utama') ||
+        w.name.toLowerCase().includes('produk jadi') ||
+        w.name.toLowerCase().includes('siap jual')
+      ) || whs?.[0];
       if (foundWh?.id) fgWarehouseId = foundWh.id;
 
       const { data: existingInv } = await supabaseAdmin

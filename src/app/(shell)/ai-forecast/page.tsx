@@ -170,6 +170,7 @@ export default function AiForecastPage() {
   const [insights, setInsights] = useState<OperationalInsight[]>([]);
   const [historicalData, setHistoricalData] = useState<number[]>([]);
   const [historicalLabels, setHistoricalLabels] = useState<string[]>([]);
+  const [historicalFitted, setHistoricalFitted] = useState<number[]>([]);
   const [avgDemandKg, setAvgDemandKg] = useState<number>(0);
   const [metadata, setMetadata] = useState<ForecastMetadata | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -189,6 +190,7 @@ export default function AiForecastPage() {
         setMaterials(forecastRes.data.materialRequirements || []);
         setHistoricalData(forecastRes.data.historicalWeeklyVolumes || []);
         setHistoricalLabels(forecastRes.data.historicalWeekLabels || []);
+        setHistoricalFitted(forecastRes.data.historicalFittedVolumes || []);
         setAvgDemandKg(forecastRes.data.avgDemandKg || 0);
         setMetadata(forecastRes.data.metadata || null);
       }
@@ -238,14 +240,21 @@ export default function AiForecastPage() {
     }
   }, [availableYears, selectedYear]);
 
-  // Build chart data: historical + projected
+  // Build chart data: historical + modelFit + projected
   const chartData = useMemo(() => {
-    const data: { name: string; historis: number | null; proyeksi: number | null }[] = [];
+    const data: {
+      name: string;
+      historis: number | null;
+      modelFit: number | null;
+      proyeksi: number | null;
+    }[] = [];
     let lastIncludedHistoricalKg = 0;
+    let lastIncludedFittedKg = 0;
 
     // Historical data points
     historicalData.forEach((kg, i) => {
       const label = historicalLabels[i] || `H-${historicalData.length - i}`;
+      const fittedKg = historicalFitted[i];
       let shouldInclude = true;
 
       if (selectedYear) {
@@ -260,9 +269,11 @@ export default function AiForecastPage() {
         data.push({
           name: label,
           historis: kg > 0 ? kg : null,
+          modelFit: fittedKg !== undefined && fittedKg > 0 ? fittedKg : null,
           proyeksi: null,
         });
         if (kg > 0) lastIncludedHistoricalKg = kg;
+        if (fittedKg !== undefined && fittedKg > 0) lastIncludedFittedKg = fittedKg;
       }
     });
 
@@ -270,28 +281,30 @@ export default function AiForecastPage() {
     const shouldShowProjections = selectedYear === latestYear;
 
     if (shouldShowProjections) {
-      // Bridge point: last historical = first projection connection
+      // Bridge point: sambungkan titik proyeksi pertama langsung dari titik fitted/historis terakhir
       if (data.length > 0 && projections.length > 0) {
-        if (lastIncludedHistoricalKg > 0) {
+        const bridgeVal = lastIncludedFittedKg > 0 ? lastIncludedFittedKg : lastIncludedHistoricalKg;
+        if (bridgeVal > 0) {
           data[data.length - 1] = {
             ...data[data.length - 1],
-            proyeksi: lastIncludedHistoricalKg,
+            proyeksi: bridgeVal,
           };
         }
       }
 
-      // Projection data points
+      // Projection data points (4 minggu ke depan)
       projections.forEach((p) => {
         data.push({
           name: p.week.replace('Minggu ke-', 'P-'),
           historis: null,
+          modelFit: null,
           proyeksi: p.projected_kg,
         });
       });
     }
 
     return data;
-  }, [historicalData, historicalLabels, projections, selectedYear, availableYears]);
+  }, [historicalData, historicalLabels, historicalFitted, projections, selectedYear, availableYears]);
 
   // Build material breakdown chart data
   const materialChartData = useMemo(() => {
@@ -579,12 +592,12 @@ export default function AiForecastPage() {
             <AreaChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
               <defs>
                 <linearGradient id="gradHistoris" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--color-primary-500)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="var(--color-primary-500)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#2563EB" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="gradProyeksi" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--color-success-500)" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="var(--color-success-500)" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#DC2626" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#DC2626" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
@@ -599,22 +612,30 @@ export default function AiForecastPage() {
                 }}
                 itemStyle={{ color: 'var(--text-primary)' }}
                 formatter={(value: any, name: string) => {
-                  const label = name === 'historis' ? 'Data Aktual' : 'Prediksi AI';
+                  const label = 
+                    name === 'historis' ? 'Data Aktual Penjualan' :
+                    name === 'modelFit' ? 'Prediksi Model AI (Historis)' :
+                    'Proyeksi Masa Depan (AI)';
                   return [value ? `${Number(value).toLocaleString('id-ID')} kg` : '-', label];
                 }}
               />
               <Legend
                 formatter={(value: string) => (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', verticalAlign: 'middle' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '12px', verticalAlign: 'middle', marginRight: '12px' }}>
                     {value === 'historis' ? (
                       <>
-                        <BarChart3 className="w-3.5 h-3.5 text-current inline" aria-hidden="true" />
-                        <span>Data Historis (Aktual)</span>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: '#2563EB', display: 'inline-block' }} />
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Data Aktual (Penjualan)</span>
+                      </>
+                    ) : value === 'modelFit' ? (
+                      <>
+                        <span style={{ width: 14, height: 3, backgroundColor: '#DC2626', display: 'inline-block', borderRadius: 2 }} />
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Prediksi Model AI (Historis)</span>
                       </>
                     ) : (
                       <>
-                        <Sparkles className="w-3.5 h-3.5 text-current inline" aria-hidden="true" />
-                        <span>Proyeksi AI</span>
+                        <span style={{ width: 14, height: 3, borderTop: '2px dashed #DC2626', display: 'inline-block' }} />
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>Proyeksi AI 4 Minggu (Forecast)</span>
                       </>
                     )}
                   </span>
@@ -623,21 +644,34 @@ export default function AiForecastPage() {
               <Area
                 type="monotone"
                 dataKey="historis"
-                stroke="var(--color-primary-600)"
-                strokeWidth={2.5}
+                name="historis"
+                stroke="#2563EB"
+                strokeWidth={2}
                 fill="url(#gradHistoris)"
-                dot={{ r: 4, fill: 'var(--color-primary-600)' }}
-                activeDot={{ r: 6 }}
+                dot={{ r: 2.5, fill: '#2563EB' }}
+                activeDot={{ r: 5 }}
+                connectNulls={false}
+              />
+              <Area
+                type="monotone"
+                dataKey="modelFit"
+                name="modelFit"
+                stroke="#DC2626"
+                strokeWidth={2.5}
+                fill="none"
+                dot={false}
+                activeDot={{ r: 5, fill: '#DC2626' }}
                 connectNulls={false}
               />
               <Area
                 type="monotone"
                 dataKey="proyeksi"
-                stroke="var(--color-success-600)"
+                name="proyeksi"
+                stroke="#DC2626"
                 strokeWidth={2.5}
-                strokeDasharray="8 4"
+                strokeDasharray="6 4"
                 fill="url(#gradProyeksi)"
-                dot={{ r: 4, fill: 'var(--color-success-600)', strokeDasharray: '0' }}
+                dot={{ r: 4, fill: '#DC2626', strokeDasharray: '0' }}
                 activeDot={{ r: 6 }}
                 connectNulls={false}
               />
@@ -825,7 +859,42 @@ export default function AiForecastPage() {
                       {m.notes}
                     </div>
                   </div>
-                  <ConfidenceBadge level={m.confidence} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                    {m.total_procurement_needed === 0 ? (
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        background: 'var(--color-success-50)',
+                        color: 'var(--color-success-700)',
+                        border: '1px solid var(--color-success-200)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}>
+                        <CheckCircle2 className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                        <span>Stok Aman (Cukup)</span>
+                      </span>
+                    ) : (
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        fontSize: '11px',
+                        fontWeight: 600,
+                        background: 'var(--color-warning-50)',
+                        color: 'var(--color-warning-700)',
+                        border: '1px solid var(--color-warning-200)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}>
+                        <ShoppingCart className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                        <span>Perlu Pengadaan</span>
+                      </span>
+                    )}
+                    <ConfidenceBadge level={m.confidence} />
+                  </div>
                 </div>
 
                 {/* Row 2: Numbers grid — now includes stock and net requirement */}

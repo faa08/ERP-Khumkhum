@@ -9,7 +9,7 @@ import { DataTable } from '@/components/data-table/DataTable';
 import { useToast } from '@/hooks/useToast';
 import { Search, ArrowRight, ArrowLeft, CheckCircle, Clock, AlertTriangle, Trophy } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
-import { searchTraceability, getFarmerRanking } from '@/actions/traceability';
+import { searchTraceability, getFarmerRanking, getSampleTraceabilityBatches } from '@/actions/traceability';
 import type { TraceabilityResult, TraceabilityNode, FarmerRanking } from '@/types/database';
 
 /** DataTable requires { id?: string | number } — extend FarmerRanking with id */
@@ -42,22 +42,31 @@ export default function TraceabilityPage() {
   const [searchInput, setSearchInput] = useState('');
   const [result, setResult] = useState<TraceabilityResult | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [sampleBatches, setSampleBatches] = useState<{ rcv: string; prd: string }>({
+    rcv: 'RCV-20261027-6864',
+    prd: 'PRD-20261103-5435',
+  });
   const [farmerRanking, setFarmerRanking] = useState<FarmerRanking[]>([]);
   const [loadingRanking, setLoadingRanking] = useState(true);
   const toast = useToast();
 
   const loadRanking = useCallback(async () => {
     setLoadingRanking(true);
-    const res = await getFarmerRanking();
-    if (res.success && res.data) setFarmerRanking(res.data);
+    const [rankRes, sampleRes] = await Promise.all([
+      getFarmerRanking(),
+      getSampleTraceabilityBatches(),
+    ]);
+    if (rankRes.success && rankRes.data) setFarmerRanking(rankRes.data);
+    if (sampleRes.success && sampleRes.samples) setSampleBatches(sampleRes.samples);
     setLoadingRanking(false);
   }, []);
 
   useEffect(() => { loadRanking(); }, [loadRanking]);
 
-  const handleSearch = async () => {
-    const kw = searchInput.trim();
+  const handleSearch = async (overrideKw?: string) => {
+    const kw = (overrideKw || searchInput).trim();
     if (!kw) { toast.error('Masukkan nomor batch untuk dicari'); return; }
+    if (overrideKw) setSearchInput(overrideKw);
     setIsSearching(true);
     const res = await searchTraceability(kw);
     if (res.success && res.data) {
@@ -128,31 +137,35 @@ export default function TraceabilityPage() {
           <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                Nomor Batch (RM-xxx untuk Forward, PRD-xxx untuk Backward)
+                Nomor Batch (RCV-xxx untuk Forward, PRD-xxx untuk Backward)
               </label>
               <Input
-                placeholder="Contoh: RM-20260812-001 atau PRD-20260812-001"
+                placeholder={`Contoh: ${sampleBatches.rcv} atau ${sampleBatches.prd}`}
                 value={searchInput}
                 onChange={e => setSearchInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSearch()}
               />
             </div>
-            <Button variant="primary" onClick={handleSearch} loading={isSearching} leftIcon={<Search size={16} />}>
+            <Button variant="primary" onClick={() => handleSearch()} loading={isSearching} leftIcon={<Search size={16} aria-hidden="true" />}>
               Lacak
             </Button>
           </div>
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-            {['RM-20260812-001', 'PRD-20260812-001'].map(ex => (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Contoh batch aktif:</span>
+            {[
+              { label: `Forward: ${sampleBatches.rcv}`, val: sampleBatches.rcv },
+              { label: `Backward: ${sampleBatches.prd}`, val: sampleBatches.prd },
+            ].map(ex => (
               <button
-                key={ex}
-                onClick={() => setSearchInput(ex)}
+                key={ex.val}
+                onClick={() => handleSearch(ex.val)}
                 style={{
-                  padding: '2px 10px', borderRadius: '999px', border: '1px solid var(--border-default)',
-                  background: 'transparent', cursor: 'pointer', fontSize: 'var(--text-xs)',
-                  color: 'var(--color-primary-600)',
+                  padding: '3px 12px', borderRadius: '999px', border: '1px solid var(--border-default)',
+                  background: 'var(--color-primary-50)', cursor: 'pointer', fontSize: 'var(--text-xs)',
+                  color: 'var(--color-primary-700)', fontWeight: 600,
                 }}
               >
-                {ex}
+                {ex.label}
               </button>
             ))}
           </div>

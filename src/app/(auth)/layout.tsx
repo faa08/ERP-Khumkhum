@@ -1,5 +1,7 @@
 import React from 'react';
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { getSession } from '@/lib/session';
 import styles from './auth.module.css';
 import '../globals.css';
 
@@ -8,7 +10,12 @@ export const metadata: Metadata = {
   description: 'Sistem ERP Terintegrasi KhumKhum: Manajemen Rantai Pasok, Produksi, & Pengendalian Mutu Jamur Crispy',
 };
 
-export default function AuthLayout({ children }: { children: React.ReactNode }) {
+export default async function AuthLayout({ children }: { children: React.ReactNode }) {
+  const session = await getSession();
+  if (session?.userId) {
+    redirect('/dashboard');
+  }
+
   return (
     <div className={styles.layout}>
       {/* Left Login Form Panel */}

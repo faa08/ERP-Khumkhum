@@ -6,12 +6,12 @@ import React, { useState, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import Link from 'next/link';
 import { Eye, EyeOff, LogIn, Mail, Lock } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { loginSchema, type LoginFormData } from '@/lib/validations';
 import { ROUTES } from '@/lib/constants';
 import { Alert } from '@/components/ui/Alert';
+import { SplashScreen } from '@/components/ui/SplashScreen/SplashScreen';
 import styles from './login.module.css';
 
 function LoginForm() {
@@ -23,14 +23,36 @@ function LoginForm() {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: { username: '', password: '', rememberMe: false },
   });
 
+  // Pre-fill username if remembered
+  React.useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem('khumkhum_saved_username');
+      if (savedUser) {
+        setValue('username', savedUser);
+        setValue('rememberMe', true);
+      }
+    } catch {}
+  }, [setValue]);
+
   const onSubmit = async (data: LoginFormData) => {
     clearError();
+
+    // Handle remember me persistence in client
+    try {
+      if (data.rememberMe) {
+        localStorage.setItem('khumkhum_saved_username', data.username.trim());
+      } else {
+        localStorage.removeItem('khumkhum_saved_username');
+      }
+    } catch {}
+
     const success = await login(data);
     if (success) {
       let redirectUrl = searchParams.get('redirect');
@@ -42,7 +64,7 @@ function LoginForm() {
       if (redirectUrl && redirectUrl.startsWith('/')) {
         window.location.href = redirectUrl;
       } else {
-        router.push(ROUTES.DASHBOARD);
+        window.location.href = ROUTES.DASHBOARD;
       }
     }
   };
@@ -126,7 +148,7 @@ function LoginForm() {
           )}
         </div>
 
-        {/* Remember me & Forgot Password */}
+        {/* Remember me */}
         <div className={styles.row}>
           <label htmlFor="rememberMe" className={styles.rememberWrap}>
             <input
@@ -137,9 +159,6 @@ function LoginForm() {
             />
             <span>Ingat saya</span>
           </label>
-          <Link href={ROUTES.FORGOT_PASSWORD} className={styles.forgotLink}>
-            Lupa kata sandi?
-          </Link>
         </div>
 
         {/* Submit Button */}
@@ -164,8 +183,11 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <LoginForm />
-    </Suspense>
+    <>
+      <SplashScreen />
+      <Suspense fallback={<div>Loading...</div>}>
+        <LoginForm />
+      </Suspense>
+    </>
   );
 }

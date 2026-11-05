@@ -18,11 +18,14 @@ export interface SessionPayload {
 /**
  * Create and set HTTP-only session cookie
  */
-export async function createSession(payload: SessionPayload): Promise<string> {
+export async function createSession(payload: SessionPayload, rememberMe: boolean = false): Promise<string> {
+  const expiresIn = rememberMe ? '30d' : '1d';
+  const maxAge = rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24;
+
   const token = await new SignJWT(payload)
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
-    .setExpirationTime('7d')
+    .setExpirationTime(expiresIn)
     .sign(SECRET_KEY);
 
   const cookieStore = await cookies();
@@ -31,7 +34,7 @@ export async function createSession(payload: SessionPayload): Promise<string> {
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
     path: '/',
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    maxAge,
   });
 
   return token;

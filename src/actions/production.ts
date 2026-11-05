@@ -4639,14 +4639,14 @@ export async function getFryingPackingMetrics(): Promise<{
     let packedToples = 0;
     let totalSeasoning = 0;
 
-    // Frying batches today
+    // Frying batches (utamakan hari ini jika ada batch baru, fallback ke rekap sesi terkini agar kartu tidak kosong 0)
     try {
       const { data: fryingToday, error: fryingErr } = await supabaseAdmin
         .from('production_frying_batches')
         .select('output_weight_gram, batch_weight_gram, kremesan_weight_gram')
         .gte('created_at', todayISO);
 
-      if (!fryingErr && fryingToday) {
+      if (!fryingErr && fryingToday && fryingToday.length > 0) {
         activeFrying = fryingToday.length;
         totalKremesan = fryingToday.reduce((s, b) => s + (b.kremesan_weight_gram || 0), 0);
         totalOutputGram = fryingToday.reduce((s, b) => s + (b.output_weight_gram || 0), 0);
@@ -4657,15 +4657,33 @@ export async function getFryingPackingMetrics(): Promise<{
           ? Number((yieldsToday.reduce((s, y) => s + y, 0) / yieldsToday.length).toFixed(1))
           : 0;
       } else {
-        activeFrying = memoryFryingBatches.length;
-        totalKremesan = memoryFryingBatches.reduce((s, b) => s + (b.kremesan_weight_gram || 0), 0);
-        totalOutputGram = memoryFryingBatches.reduce((s, b) => s + (b.output_weight_gram || 0), 0);
-        const yieldsToday = memoryFryingBatches
-          .filter(b => b.output_weight_gram && b.batch_weight_gram)
-          .map(b => ((b.output_weight_gram || 0) / b.batch_weight_gram) * 100);
-        avgYield = yieldsToday.length > 0
-          ? Number((yieldsToday.reduce((s, y) => s + y, 0) / yieldsToday.length).toFixed(1))
-          : 0;
+        const { data: allFrying } = await supabaseAdmin
+          .from('production_frying_batches')
+          .select('output_weight_gram, batch_weight_gram, kremesan_weight_gram')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (allFrying && allFrying.length > 0) {
+          activeFrying = allFrying.length;
+          totalKremesan = allFrying.reduce((s, b) => s + (b.kremesan_weight_gram || 0), 0);
+          totalOutputGram = allFrying.reduce((s, b) => s + (b.output_weight_gram || 0), 0);
+          const allYields = allFrying
+            .filter(b => b.output_weight_gram && b.batch_weight_gram)
+            .map(b => ((b.output_weight_gram || 0) / b.batch_weight_gram) * 100);
+          avgYield = allYields.length > 0
+            ? Number((allYields.reduce((s, y) => s + y, 0) / allYields.length).toFixed(1))
+            : 0;
+        } else {
+          activeFrying = memoryFryingBatches.length;
+          totalKremesan = memoryFryingBatches.reduce((s, b) => s + (b.kremesan_weight_gram || 0), 0);
+          totalOutputGram = memoryFryingBatches.reduce((s, b) => s + (b.output_weight_gram || 0), 0);
+          const yieldsToday = memoryFryingBatches
+            .filter(b => b.output_weight_gram && b.batch_weight_gram)
+            .map(b => ((b.output_weight_gram || 0) / b.batch_weight_gram) * 100);
+          avgYield = yieldsToday.length > 0
+            ? Number((yieldsToday.reduce((s, y) => s + y, 0) / yieldsToday.length).toFixed(1))
+            : 0;
+        }
       }
     } catch (_) {}
 
@@ -4716,13 +4734,25 @@ export async function getFryingPackingMetrics(): Promise<{
         totalLongsongPacked = allPacking.filter(p => p.is_packed).length;
 
         const packingToday = allPacking.filter(p => p.is_packed && p.created_at && p.created_at >= todayISO);
-        packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
-        totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
+        if (packingToday.length > 0) {
+          packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
+          totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
+        } else {
+          const packedItems = allPacking.filter(p => p.is_packed);
+          packedToples = packedItems.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
+          totalSeasoning = packedItems.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
+        }
       } else {
         totalLongsongPacked = memoryPackingEntries.filter(p => p.is_packed).length;
         const packingToday = memoryPackingEntries.filter(p => p.is_packed && p.created_at && p.created_at >= todayISO);
-        packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
-        totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
+        if (packingToday.length > 0) {
+          packedToples = packingToday.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
+          totalSeasoning = packingToday.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
+        } else {
+          const packedItems = memoryPackingEntries.filter(p => p.is_packed);
+          packedToples = packedItems.reduce((s, p) => s + (p.packaged_toples_count || 0), 0);
+          totalSeasoning = packedItems.reduce((s, p) => s + Number(p.seasoning_used_gram || 0), 0);
+        }
       }
     } catch (_) {
       totalLongsongPacked = memoryPackingEntries.filter(p => p.is_packed).length;

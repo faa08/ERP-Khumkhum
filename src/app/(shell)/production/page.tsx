@@ -865,7 +865,7 @@ export default function ProductionPage() {
       ? true
       : (currentSeasoningRm ? currentSeasoningStockGram >= seasoningGramsInput && seasoningGramsInput > 0 : seasoningGramsInput > 0);
 
-    // 3. Stok Wadah Jamur Selongsong di Buffer WIP
+    // 3. Stok Jamur Selongsong di Buffer WIP
     const activeContainers = longsongContainers.filter(
       c => (c.status === 'AVAILABLE' || c.status === 'PARTIAL') && Number(c.current_weight_kg) > 0
     );
@@ -993,7 +993,7 @@ export default function ProductionPage() {
     };
   }, [rawMaterials, fryingRunForm.actual_mushroom_kg, fryingRunForm.actual_premix_kg, fryingRunForm.actual_cooking_oil_liter]);
 
-  // Validasi apakah seluruh formulir (Bahan, Wadah Longsong, dan Batch Wajan) sudah terisi lengkap & valid
+  // Validasi apakah seluruh formulir (Bahan, Rincian Longsong, dan Batch Wajan) sudah terisi lengkap & valid
   const fryingRunValidation = useMemo(() => {
     const mushroom = parseFloat(fryingRunForm.actual_mushroom_kg);
     const premix = parseFloat(fryingRunForm.actual_premix_kg);
@@ -1011,21 +1011,21 @@ export default function ProductionPage() {
     if (isNaN(output) || output <= 0) missing.push('Hasil Jamur Matang');
     if (isNaN(batchCount) || batchCount <= 0) missing.push('Jumlah Batch');
 
-    // Tab 2: Wadah Longsong
+    // Tab 2: Rincian Longsong
     const totalContainersKg = fryingRunForm.containers.reduce((acc, c) => acc + (parseFloat(c.weight_kg) || 0), 0);
     if (isNaN(longsongCount) || longsongCount <= 0) {
-      missing.push('Jumlah Wadah Longsong (Tab 2)');
+      missing.push('Jumlah Longsong (Tab 2)');
     } else if (
       fryingRunForm.containers.length !== longsongCount ||
       fryingRunForm.containers.some(c => !c.weight_kg || isNaN(parseFloat(c.weight_kg)) || parseFloat(c.weight_kg) <= 0)
     ) {
-      missing.push('Bobot Wadah Longsong (Tab 2)');
+      missing.push('Bobot Longsong (Tab 2)');
     } else if (!isNaN(output) && output > 0 && Math.abs(totalContainersKg - output) > 0.05) {
       const diff = Number((output - totalContainersKg).toFixed(2));
       if (diff > 0) {
-        missing.push(`Alokasi Wadah Kurang ${diff} kg dari Total Output (${output} kg)`);
+        missing.push(`Alokasi Longsong Kurang ${diff} kg dari Total Output (${output} kg)`);
       } else {
-        missing.push(`Alokasi Wadah Melebihi ${Math.abs(diff)} kg dari Total Output (${output} kg)`);
+        missing.push(`Alokasi Longsong Melebihi ${Math.abs(diff)} kg dari Total Output (${output} kg)`);
       }
     }
 
@@ -1987,7 +1987,7 @@ export default function ProductionPage() {
       if (totalOutput > 0 && !isNaN(inputNum) && inputNum > maxForThis) {
         finalStr = String(maxForThis);
         toast.warning(
-          `Bobot Wadah #${f.containers[index]?.container_number || index + 1} dipatok maksimal ${maxForThis.toFixed(2)} kg sesuai sisa total output (${totalOutput.toFixed(2)} kg).`
+          `Bobot Longsong #${f.containers[index]?.container_number || index + 1} dipatok maksimal ${maxForThis.toFixed(2)} kg sesuai sisa total output (${totalOutput.toFixed(2)} kg).`
         );
       }
 
@@ -2034,16 +2034,16 @@ export default function ProductionPage() {
         return f;
       }
       if (count <= 0) {
-        toast.warning('Isi jumlah wadah longsong terlebih dahulu di Tab 2');
+        toast.warning('Isi jumlah longsong terlebih dahulu di Tab 2');
         return f;
       }
-      const perWadah = Number((total / count).toFixed(2));
+      const perLongsong = Number((total / count).toFixed(2));
       let remaining = total;
       const balanced = [];
       for (let i = 1; i <= count; i++) {
-        const w = i === count ? Number(remaining.toFixed(2)) : perWadah;
+        const w = i === count ? Number(remaining.toFixed(2)) : perLongsong;
         balanced.push({ container_number: i, weight_kg: String(w) });
-        remaining -= perWadah;
+        remaining -= perLongsong;
       }
       return {
         ...f,
@@ -2051,7 +2051,7 @@ export default function ProductionPage() {
         containers: balanced,
       };
     });
-    toast.info('Berat wadah longsong berhasil dibagi rata otomatis');
+    toast.info('Berat longsong berhasil dibagi rata otomatis');
   };
 
   const handleBatchWeightChange = (index: number, val: string) => {
@@ -2185,7 +2185,7 @@ export default function ProductionPage() {
     const maxOutputWajarKg = Number(((mushroomKg * maxYieldAllowedPct) / 100).toFixed(2));
 
     if (!mushroomKg || mushroomKg <= 0 || isNaN(premixKg) || isNaN(oilLiter) || !outputKg || outputKg <= 0 || !longsongCount || longsongCount <= 0 || !batchCount || batchCount <= 0) {
-      toast.error('Mohon lengkapi seluruh rincian bahan aktual, hasil jamur matang, wadah longsong, dan batch wajan.');
+      toast.error('Mohon lengkapi seluruh rincian bahan aktual, hasil jamur matang, rincian longsong, dan batch wajan.');
       return;
     }
 
@@ -2245,7 +2245,7 @@ export default function ProductionPage() {
 
       if (res.success) {
         if (isPartial) {
-          toast.success(`Catatan sementara SPK ${selectedFryingOrder.batch_number} tersimpan! Sesi ini: ${outputKg}kg (${longsongCount} wadah baru). Status SPK tetap Sedang Berjalan.`);
+          toast.success(`Catatan sementara SPK ${selectedFryingOrder.batch_number} tersimpan! Sesi ini: ${outputKg}kg (${longsongCount} longsong baru). Status SPK tetap Sedang Berjalan.`);
         } else {
           toast.success(`SPK ${selectedFryingOrder.batch_number} selesai tuntas! Total: ${res.data?.accumulatedOutput || outputKg}kg (Rendemen: ${res.data?.yieldPercentage}%)`);
         }
@@ -2360,7 +2360,7 @@ export default function ProductionPage() {
     });
   };
 
-  // Handler: Edit Wadah Longsong
+  // Handler: Edit Longsong
   const handleOpenEditLongsong = (c: DbLongsongContainer) => {
     setSelectedLongsongForEdit(c);
     setEditLongsongForm({
@@ -2386,29 +2386,29 @@ export default function ProductionPage() {
     });
     setIsUpdatingLongsong(false);
     if (res.success) {
-      toast.success(`Wadah #${selectedLongsongForEdit.container_number} berhasil diperbarui!`);
+      toast.success(`Longsong #${selectedLongsongForEdit.container_number} berhasil diperbarui!`);
       setEditLongsongOpen(false);
       loadData();
     } else {
-      toast.error(res.error || 'Gagal memperbarui wadah');
+      toast.error(res.error || 'Gagal memperbarui longsong');
     }
   };
 
-  // Handler: Hapus Wadah Longsong
+  // Handler: Hapus Longsong
   const handleDeleteLongsong = (c: DbLongsongContainer) => {
     setConfirmDialog({
       isOpen: true,
-      title: `Hapus Wadah #${c.container_number}`,
-      description: `Apakah Anda yakin ingin menghapus kartu wadah longsong #${c.container_number} (Sisa: ${c.current_weight_kg} kg)? Data stok wadah ini akan ditiadakan.`,
+      title: `Hapus Longsong #${c.container_number}`,
+      description: `Apakah Anda yakin ingin menghapus kartu longsong #${c.container_number} (Sisa: ${c.current_weight_kg} kg)? Data stok longsong ini akan ditiadakan.`,
       variant: 'danger',
       onConfirm: async () => {
         setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         const res = await deleteLongsongContainer(c.id);
         if (res.success) {
-          toast.success(`Wadah #${c.container_number} berhasil dihapus`);
+          toast.success(`Longsong #${c.container_number} berhasil dihapus`);
           loadData();
         } else {
-          toast.error(res.error || 'Gagal menghapus wadah');
+          toast.error(res.error || 'Gagal menghapus longsong');
         }
       },
     });
@@ -3494,7 +3494,7 @@ export default function ProductionPage() {
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-2)' }}>
                 <Flame className="w-5 h-5 text-[var(--color-danger-600)]" aria-hidden="true" />
-                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Batch Goreng Hari Ini</span>
+                <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Batch Goreng</span>
               </div>
               <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-primary-700)' }}>
                 {fryingMetrics.activeFryingBatchesToday} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>Batch</span>
@@ -3507,7 +3507,7 @@ export default function ProductionPage() {
                 <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Rata-rata Rendemen</span>
               </div>
               <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-success-700)' }}>
-                {fryingMetrics.avgYieldToday || '-'}%
+                {fryingMetrics.avgYieldToday ? `${fryingMetrics.avgYieldToday}%` : '0%'}
               </div>
             </Card>
 
@@ -3530,7 +3530,7 @@ export default function ProductionPage() {
                 <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Longsong yang Tersedia</span>
               </div>
               <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-primary-700)' }}>
-                {unpackedLongsongCount} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>wadah</span>
+                {unpackedLongsongCount} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>longsong</span>
               </div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>
                 {unpackedLongsongCount > 0 ? 'Siap untuk tahap packing rasa' : 'Semua longsong sudah dipacking'}
@@ -3644,15 +3644,15 @@ export default function ProductionPage() {
                           {longsongTotal > 0 || outputKg > 0 ? (
                             <div>
                               <div style={{ fontWeight: 600, color: 'var(--color-primary-800)' }}>
-                                {longsongTotal} Wadah ({outputKg.toFixed(1)} kg)
+                                {longsongTotal} Longsong ({outputKg.toFixed(1)} kg)
                               </div>
                               {readyContainers.length > 0 ? (
                                 <div style={{ fontSize: '11px', color: 'var(--color-success-700)', fontWeight: 600, marginTop: '2px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                  <Box className="w-3.5 h-3.5 shrink-0" /> {availableWeightKg.toFixed(1)} kg Siap Packing ({readyContainers.length} wadah)
+                                  <Box className="w-3.5 h-3.5 shrink-0" /> {availableWeightKg.toFixed(1)} kg Siap Packing ({readyContainers.length} longsong)
                                 </div>
                               ) : (
                                 <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
-                                  {linkedContainers.length > 0 ? 'Seluruh wadah sudah terpakai packing' : 'Wadah tercatat di rekap SPK'}
+                                  {linkedContainers.length > 0 ? 'Seluruh longsong sudah terpakai packing' : 'Longsong tercatat di rekap SPK'}
                                 </div>
                               )}
                             </div>
@@ -3777,7 +3777,7 @@ export default function ProductionPage() {
                   Buffer WIP: Kartu Stok Longsong (Jamur Matang)
                 </h3>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  Daftar wadah fisik jamur matang hasil penggorengan per SPK dengan pencatatan berat aktual per wadah.
+                  Daftar longsong fisik jamur matang hasil penggorengan per SPK dengan pencatatan berat aktual per longsong.
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -3801,7 +3801,7 @@ export default function ProductionPage() {
                   fontWeight: 600,
                   border: '1px solid var(--border-default)',
                 }}>
-                  {longsongContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL').length} Wadah Aktif
+                  {longsongContainers.filter(c => c.status === 'AVAILABLE' || c.status === 'PARTIAL').length} Longsong Aktif
                 </span>
               </div>
             </div>
@@ -3816,7 +3816,7 @@ export default function ProductionPage() {
                   fontSize: 'var(--text-sm)',
                 }}
               >
-                Belum ada kartu wadah longsong terdaftar. Selesaikan penggorengan SPK untuk menghasilkan kartu stok wadah longsong fisik.
+                Belum ada kartu longsong terdaftar. Selesaikan penggorengan SPK untuk menghasilkan kartu stok longsong fisik.
               </div>
             ) : (
               <div
@@ -3865,7 +3865,7 @@ export default function ProductionPage() {
                             fontSize: '13px',
                             color: isAvailable ? 'var(--color-success-900)' : isPartial ? 'var(--color-warning-900)' : 'var(--text-secondary)',
                           }}>
-                            Wadah #{c.container_number}
+                            Longsong #{c.container_number}
                           </span>
                           <span style={{
                             padding: '2px 6px',
@@ -3901,7 +3901,7 @@ export default function ProductionPage() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenEditLongsong(c)}
-                                title="Edit Wadah Longsong"
+                                title="Edit Longsong"
                                 style={{
                                   border: '1px solid var(--border-default)',
                                   background: 'var(--bg-surface)',
@@ -3918,7 +3918,7 @@ export default function ProductionPage() {
                               <button
                                 type="button"
                                 onClick={() => handleDeleteLongsong(c)}
-                                title="Hapus Wadah Longsong"
+                                title="Hapus Longsong"
                                 style={{
                                   border: '1px solid var(--color-danger-300)',
                                   background: 'var(--color-danger-50)',
@@ -3994,10 +3994,10 @@ export default function ProductionPage() {
                 <span style={{ fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>Longsong yang Tersedia</span>
               </div>
               <div style={{ fontSize: '1.875rem', fontWeight: 700, color: 'var(--color-primary-700)' }}>
-                {unpackedLongsongCount} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>wadah</span>
+                {unpackedLongsongCount} <span style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>longsong</span>
               </div>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 'var(--space-1)' }}>
-                {unpackedLongsongCount > 0 ? 'Wadah jamur matang siap dibumbui' : 'Tidak ada wadah siap packing'}
+                {unpackedLongsongCount > 0 ? 'Longsong jamur matang siap dibumbui' : 'Tidak ada longsong siap packing'}
               </div>
             </Card>
           </div>
@@ -5178,7 +5178,7 @@ export default function ProductionPage() {
                       id: 'LONGSONG',
                       label: '2. Longsong',
                       icon: <Box size={14} />,
-                      badge: fryingRunForm.output_longsong_count ? `${fryingRunForm.output_longsong_count} wadah` : undefined,
+                      badge: fryingRunForm.output_longsong_count ? `${fryingRunForm.output_longsong_count} longsong` : undefined,
                     },
                     {
                       id: 'BATCH',
@@ -5470,7 +5470,7 @@ export default function ProductionPage() {
                   </div>
                 )}
 
-                {/* ── TAB 2: RINCIAN WADAH LONGSONG ── */}
+                {/* ── TAB 2: RINCIAN LONGSONG ── */}
                 {fryingRunTab === 'LONGSONG' && (() => {
                   const accumulatedContainersKg = fryingRunForm.containers.reduce((acc, c) => acc + (parseFloat(c.weight_kg) || 0), 0);
                   const remainingUnallocatedKg = Number((outputFinished - accumulatedContainersKg).toFixed(2));
@@ -5506,13 +5506,13 @@ export default function ProductionPage() {
                             gap: '8px',
                             flexWrap: 'wrap',
                           }}>
-                            <span>Terbagi ke dalam {fryingRunForm.containers.length} wadah</span>
+                            <span>Terbagi ke dalam {fryingRunForm.containers.length} longsong</span>
                             <span>•</span>
                             <span>Teralokasi: <strong>{accumulatedContainersKg.toFixed(2)} kg</strong></span>
                             <span>•</span>
                             <span>
                               {isFullyAllocated ? (
-                                <strong style={{ color: 'var(--color-success-700)' }}>Semua Wadah Pas 100%</strong>
+                                <strong style={{ color: 'var(--color-success-700)' }}>Semua Longsong Pas 100%</strong>
                               ) : isOverAllocated ? (
                                 <strong style={{ color: 'var(--color-danger-700)' }}>Kelebihan {Math.abs(remainingUnallocatedKg).toFixed(2)} kg!</strong>
                               ) : (
@@ -5527,7 +5527,7 @@ export default function ProductionPage() {
                             variant="secondary"
                             size="sm"
                             onClick={handleAutoBalanceContainers}
-                            title="Bagi rata total berat output ke setiap wadah"
+                            title="Bagi rata total berat output ke setiap longsong"
                           >
                             Bagi Rata Otomatis
                           </Button>
@@ -5535,7 +5535,7 @@ export default function ProductionPage() {
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', alignItems: 'center' }}>
-                        <FormField label="Jumlah Wadah Longsong yang Terisi" required>
+                        <FormField label="Jumlah Longsong yang Terisi" required>
                           <Input
                             type="number"
                             min="1"
@@ -5544,7 +5544,7 @@ export default function ProductionPage() {
                             placeholder={`Misal: ${Math.max(1, Math.round((actualMushroom * 0.67) / 2.5))}`}
                           />
                           <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
-                            Input manual bobot wadah, atau klik &quot;Bagi Rata Otomatis&quot; di atas.
+                            Input manual bobot longsong, atau klik &quot;Bagi Rata Otomatis&quot; di atas.
                           </span>
                         </FormField>
 
@@ -5558,20 +5558,20 @@ export default function ProductionPage() {
                         }}>
                           <div>Rata-rata per Longsong: <strong>{(outputFinished / (longsongCount || 1)).toFixed(2)} kg</strong></div>
                           <div style={{ marginTop: '2px', color: 'var(--text-tertiary)' }}>
-                            Standar wadah fisik longsong di pabrik: ~2.4 kg - 2.6 kg per wadah.
+                            Standar fisik longsong di pabrik: ~2.4 kg - 2.6 kg per longsong.
                           </div>
                         </div>
                       </div>
 
-                      {/* Grid Input Berat Wadah */}
+                      {/* Grid Input Berat Longsong */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span style={{ fontSize: 'var(--text-xs)', fontWeight: 700, color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                            Berat Aktual Masing-Masing Wadah Longsong:
+                            Berat Aktual Masing-Masing Longsong:
                           </span>
                           {fryingRunForm.containers.length > 0 && (
                             <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
-                              {fryingRunForm.containers.filter(c => parseFloat(c.weight_kg) > 0).length} dari {fryingRunForm.containers.length} wadah terisi
+                              {fryingRunForm.containers.filter(c => parseFloat(c.weight_kg) > 0).length} dari {fryingRunForm.containers.length} longsong terisi
                             </span>
                           )}
                         </div>
@@ -5601,7 +5601,7 @@ export default function ProductionPage() {
                               >
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                   <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                                    Wadah #{c.container_number}
+                                    Longsong #{c.container_number}
                                   </div>
                                   {canTakeMore && (
                                     <button
@@ -5617,7 +5617,7 @@ export default function ProductionPage() {
                                         cursor: 'pointer',
                                         fontWeight: 600,
                                       }}
-                                      title={`Isi otomatis wadah #${c.container_number} dengan sisa ${remainingUnallocatedKg.toFixed(2)} kg`}
+                                      title={`Isi otomatis longsong #${c.container_number} dengan sisa ${remainingUnallocatedKg.toFixed(2)} kg`}
                                     >
                                       + Sisa ({remainingUnallocatedKg.toFixed(2)})
                                     </button>
@@ -5657,7 +5657,7 @@ export default function ProductionPage() {
                           gap: '6px',
                         }}>
                           <span>Total Target Output: <strong>{outputFinished.toFixed(2)} kg</strong></span>
-                          <span>Akumulasi Wadah: <strong>{accumulatedContainersKg.toFixed(2)} kg</strong></span>
+                          <span>Akumulasi Longsong: <strong>{accumulatedContainersKg.toFixed(2)} kg</strong></span>
                           <span>
                             {isFullyAllocated ? (
                               <strong style={{ color: 'var(--color-success-700)' }}>Alokasi Sempurna (100%)</strong>
@@ -6427,7 +6427,7 @@ export default function ProductionPage() {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, color: 'var(--color-primary-950)' }}>
                         <Scale className="w-4 h-4 text-[var(--color-primary-600)]" aria-hidden="true" />
-                        <span>Kebutuhan Jamur Matang (Wadah Selongsong Buffer WIP)</span>
+                        <span>Kebutuhan Jamur Matang (Longsong Buffer WIP)</span>
                       </div>
                       {isMushroomSufficient ? (
                         <span style={{
@@ -6443,7 +6443,7 @@ export default function ProductionPage() {
                           fontWeight: 600,
                         }}>
                           <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
-                          Selongsong Cukup
+                          Longsong Cukup
                         </span>
                       ) : (
                         <span style={{
@@ -6459,7 +6459,7 @@ export default function ProductionPage() {
                           fontWeight: 600,
                         }}>
                           <AlertTriangle className="w-3.5 h-3.5" aria-hidden="true" />
-                          Stok Wadah Kurang
+                          Stok Longsong Kurang
                         </span>
                       )}
                     </div>
@@ -6484,16 +6484,16 @@ export default function ProductionPage() {
                       </div>
 
                       <div style={{ background: '#fff', padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-primary-200)' }}>
-                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Ketersediaan di Buffer Selongsong:</div>
+                        <div style={{ color: 'var(--text-tertiary)', fontSize: '11px' }}>Ketersediaan di Buffer Longsong:</div>
                         <div style={{ fontSize: '13px', fontWeight: 700, color: isMushroomSufficient ? 'var(--color-success-700)' : 'var(--color-warning-700)', marginTop: '2px' }}>
-                          {totalContainerKg.toFixed(1)} kg <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>({activeContainers.length} wadah aktif)</span>
+                          {totalContainerKg.toFixed(1)} kg <span style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>({activeContainers.length} longsong aktif)</span>
                         </div>
                       </div>
                     </div>
 
                     <div style={{ color: 'var(--color-primary-800)', fontSize: '11px', lineHeight: 1.4, borderTop: '1px dashed var(--color-primary-200)', paddingTop: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Zap className="w-3.5 h-3.5 text-primary-600 shrink-0" />
-                      <span>Saat disimpan, sistem secara otomatis memotong <strong>{neededMushroomKg.toFixed(1)} kg jamur matang</strong> dari wadah selongsong secara urut (FIFO) dan memotong <strong>{matchedPackagingInfo.neededPcs} pcs kemasan</strong> dari Warehouse.</span>
+                      <span>Saat disimpan, sistem secara otomatis memotong <strong>{neededMushroomKg.toFixed(1)} kg jamur matang</strong> dari longsong secara urut (FIFO) dan memotong <strong>{matchedPackagingInfo.neededPcs} pcs kemasan</strong> dari Warehouse.</span>
                     </div>
                   </div>
                 </div>
@@ -7223,12 +7223,12 @@ export default function ProductionPage() {
         </div>
       </Modal>
 
-      {/* Modal: Edit Wadah Longsong */}
+      {/* Modal: Edit Longsong */}
       <Modal
         isOpen={editLongsongOpen}
         onClose={() => setEditLongsongOpen(false)}
         closeOnOverlayClick={false}
-        title={`Edit Wadah #${selectedLongsongForEdit?.container_number || ''}`}
+        title={`Edit Longsong #${selectedLongsongForEdit?.container_number || ''}`}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
             <Button variant="ghost" onClick={() => setEditLongsongOpen(false)}>
@@ -7261,7 +7261,7 @@ export default function ProductionPage() {
               }}
             />
           </FormField>
-          <FormField label="Status Wadah" required>
+          <FormField label="Status Longsong" required>
             <Select
               options={[
                 { value: 'AVAILABLE', label: 'Tersedia (Penuh / Siap Packing)' },
@@ -7272,7 +7272,7 @@ export default function ProductionPage() {
               onChange={(e) => setEditLongsongForm({ ...editLongsongForm, status: e.target.value as 'AVAILABLE' | 'PARTIAL' | 'EMPTY' })}
             />
           </FormField>
-          <FormField label="Catatan Wadah (Opsional)">
+          <FormField label="Catatan Longsong (Opsional)">
             <Input
               value={editLongsongForm.notes}
               onChange={(e) => setEditLongsongForm({ ...editLongsongForm, notes: e.target.value })}

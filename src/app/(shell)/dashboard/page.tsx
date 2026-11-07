@@ -38,6 +38,11 @@ export default function DashboardPage() {
 
   if (user?.role === 'SORTING') return null;
 
+  // Role operasional (PRODUCTION, WAREHOUSE, PREMIX) default ke Daily Operations
+  // Role manajemen / lainnya default ke Executive Overview
+  const isOpsRole = user?.role === 'PRODUCTION' || user?.role === 'WAREHOUSE' || user?.role === 'PREMIX';
+  const defaultTab = isOpsRole ? 'operational' : 'executive';
+
   return (
     <div>
       <PageHeader
@@ -47,6 +52,8 @@ export default function DashboardPage() {
       />
 
       <Tabs
+        key={user?.role || 'default'}
+        defaultTab={defaultTab}
         tabs={[
           { id: 'executive', label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><BarChart3 size={16} /> Executive Overview</span>, content: <ExecutiveDashboard /> },
           { id: 'operational', label: <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Settings size={16} /> Daily Operations</span>, content: <OperationalDashboard /> },
@@ -410,7 +417,25 @@ function ExecutiveDashboard() {
         </>
           );
         })()
-      ) : null}
+      ) : (
+        <div style={{
+          padding: 'var(--space-8)',
+          textAlign: 'center',
+          background: 'var(--bg-surface)',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--border-subtle)',
+          marginTop: 'var(--space-4)',
+        }}>
+          <AlertCircle size={32} style={{ color: 'var(--text-tertiary)', margin: '0 auto var(--space-2)' }} />
+          <h4 style={{ margin: '0 0 var(--space-1)', color: 'var(--text-primary)' }}>Data Metrik Tidak Ditemukan</h4>
+          <p style={{ margin: 0, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
+            Belum ada catatan transaksi operasional untuk rentang periode ini.
+          </p>
+          <Button variant="secondary" size="sm" onClick={loadMetrics} style={{ marginTop: 'var(--space-3)' }} leftIcon={<RefreshCw size={14} />}>
+            Muat Ulang
+          </Button>
+        </div>
+      )}
 
 
     </div>

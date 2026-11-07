@@ -93,7 +93,16 @@ export async function getKpiMetrics(filter: KpiFilter = { range: 'month' }): Pro
   error?: string;
 }> {
   try {
-    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN']);
+    await requireAuth([
+      'MANAGEMENT',
+      'SUPER_ADMIN',
+      'QC',
+      'WAREHOUSE',
+      'PRODUCTION',
+      'SALES',
+      'PREMIX',
+      'IT_MAINTENANCE',
+    ]);
 
     const { from, to } = getDateRange(filter);
 
@@ -338,7 +347,16 @@ export async function getKpiTrend(filter: KpiFilter = { range: 'month' }): Promi
   error?: string;
 }> {
   try {
-    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN']);
+    await requireAuth([
+      'MANAGEMENT',
+      'SUPER_ADMIN',
+      'QC',
+      'WAREHOUSE',
+      'PRODUCTION',
+      'SALES',
+      'PREMIX',
+      'IT_MAINTENANCE',
+    ]);
 
     const { from, to } = getDateRange(filter);
 
@@ -483,7 +501,15 @@ export async function searchTraceability(keyword: string): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN', 'WAREHOUSE', 'QC', 'PRODUCTION']);
+    await requireAuth([
+      'MANAGEMENT',
+      'SUPER_ADMIN',
+      'WAREHOUSE',
+      'QC',
+      'PRODUCTION',
+      'SALES',
+      'IT_MAINTENANCE',
+    ]);
 
     const kw = keyword.trim().toUpperCase();
     const isForward = kw.startsWith('RM-');
@@ -734,7 +760,16 @@ export async function getFarmerRanking(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN']);
+    await requireAuth([
+      'MANAGEMENT',
+      'SUPER_ADMIN',
+      'QC',
+      'WAREHOUSE',
+      'PRODUCTION',
+      'SALES',
+      'PREMIX',
+      'IT_MAINTENANCE',
+    ]);
 
     const { data: receivings } = await supabaseAdmin
       .from('receivings')
@@ -851,9 +886,18 @@ export async function getOperationalOverview(): Promise<{
   error?: string;
 }> {
   try {
-    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN', 'PRODUCTION', 'QC', 'WAREHOUSE']);
+    await requireAuth([
+      'MANAGEMENT',
+      'SUPER_ADMIN',
+      'PRODUCTION',
+      'QC',
+      'WAREHOUSE',
+      'SALES',
+      'PREMIX',
+      'IT_MAINTENANCE',
+    ]);
 
-    const [batchesRes, recCountRes, qcCountRes, soCountRes, invRmRes, invFgRes, soRecentRes] = await Promise.all([
+    const [batchesRes, recCountRes, qcCountRes, soCountRes, rawJamurRes, invFgRes, soRecentRes] = await Promise.all([
       supabaseAdmin
         .from('production_orders')
         .select('id, batch_number, status, target_quantity, created_at, product_variant, product:products(name)')
@@ -872,9 +916,10 @@ export async function getOperationalOverview(): Promise<{
         .select('id', { count: 'exact', head: true })
         .in('status', ['PENDING', 'PROCESSING']),
       supabaseAdmin
-        .from('inventory')
-        .select('quantity')
-        .eq('item_type', 'RAW_MATERIAL'),
+        .from('raw_materials')
+        .select('id')
+        .is('deleted_at', null)
+        .or('code.eq.JMR-TRM,name.ilike.%jamur tiram%'),
       supabaseAdmin
         .from('inventory')
         .select('quantity')
@@ -904,7 +949,16 @@ export async function getOperationalOverview(): Promise<{
       created_at: o.created_at,
     }));
 
-    const rawMaterialKg = (invRmRes.data || []).reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+    const mushroomIds = (rawJamurRes.data || []).map((r: any) => r.id);
+    let rawMaterialKg = 0;
+    if (mushroomIds.length > 0) {
+      const { data: invMushroom } = await supabaseAdmin
+        .from('inventory')
+        .select('quantity')
+        .eq('item_type', 'RAW_MATERIAL')
+        .in('item_id', mushroomIds);
+      rawMaterialKg = (invMushroom || []).reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
+    }
     const finishedGoodsPcs = (invFgRes.data || []).reduce((s, i) => s + (Number(i.quantity) || 0), 0);
 
     return {

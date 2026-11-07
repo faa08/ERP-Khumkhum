@@ -11,7 +11,7 @@ export async function generateReportData(
   endDate?: string
 ): Promise<{ success: boolean; data?: any[]; error?: string }> {
   try {
-    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN']);
+    await requireAuth(['MANAGEMENT', 'SUPER_ADMIN', 'QC', 'WAREHOUSE']);
 
     let query: any;
     

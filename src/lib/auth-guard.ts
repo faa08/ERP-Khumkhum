@@ -71,9 +71,9 @@ export async function requireAuth(allowedRoles?: UserRole[]): Promise<AuthGuardR
     throw new Error('UNAUTHORIZED: Akun Anda tidak aktif atau tidak ditemukan');
   }
 
-  // Check role authorization (SUPER_ADMIN always has access)
+  // Check role authorization (SUPER_ADMIN and IT_MAINTENANCE always have access)
   if (allowedRoles && allowedRoles.length > 0) {
-    if (dbUserRole !== 'SUPER_ADMIN' && !allowedRoles.includes(dbUserRole as UserRole)) {
+    if (dbUserRole !== 'SUPER_ADMIN' && dbUserRole !== 'IT_MAINTENANCE' && !allowedRoles.includes(dbUserRole as UserRole)) {
       throw new Error(`FORBIDDEN: Peran ${dbUserRole} tidak memiliki hak akses ke modul ini`);
     }
   }

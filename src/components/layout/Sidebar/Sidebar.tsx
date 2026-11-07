@@ -70,7 +70,7 @@ const NAV_GROUPS: ProtectedNavGroup[] = [
         children: [
           { id: 'receiving',  label: 'Inbound (Penerimaan)',  href: '/receiving',  icon: 'ClipboardList', requiredPermission: 'receiving' },
           { id: 'sorting',    label: 'Sortasi & Grading',    href: '/sorting',    icon: 'Scale',         requiredPermission: 'sorting' },
-          { id: 'premix',     label: 'Peracikan Tepung Premix', href: '/production/premix', icon: 'Sparkles', requiredPermission: 'premix' },
+          { id: 'premix',     label: 'Peracikan Tepung Premix', href: '/production/premix', icon: 'Sparkles', requiredPermission: 'premix', allowedRoles: ['PREMIX', 'PRODUCTION', 'SUPER_ADMIN'] },
           { id: 'warehouse',  label: 'Warehouse (Bahan Baku)', href: '/warehouse', icon: 'Database', requiredPermission: 'warehouse' },
           { id: 'ppic',       label: 'PPIC & Jadwal',       href: '/ppic',       icon: 'CalendarDays',  requiredPermission: 'ppic' },
           { id: 'production', label: 'Produksi & Rendemen', href: '/production', icon: 'Factory',       requiredPermission: 'production' },

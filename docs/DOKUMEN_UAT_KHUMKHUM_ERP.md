@@ -6,7 +6,7 @@
 
 ### INFORMASI DOKUMEN & PENGUJIAN
 - **Nama Sistem:** KhumKhum ERP System
-- **Versi Rilis UAT:** Versi 1.0 (Production Release)
+- **Versi Rilis UAT:** Versi 1.1 (Production Release)
 - **Lingkungan Pengujian (Environment):** Staging / Production (`https://khumkhum-erp.vercel.app` & Localhost)
 - **Database:** Supabase PostgreSQL Cloud
 - **Pihak Pertama (Pengembang / Tim IT):** Developer / Project Lead
@@ -18,7 +18,7 @@
 ## 1. TUJUAN & RUANG LINGKUP UAT
 
 ### 1.1. Tujuan
-Dokumen *User Acceptance Testing* (UAT) ini bertujuan untuk memverifikasi dan memastikan bahwa seluruh modul dan alur kerja (*business workflow*) pada KhumKhum ERP telah berfungsi sesuai dengan spesifikasi kebutuhan yang disepakati (*Software Requirements Specification & PRD*), mudah digunakan, akurat dalam pemotongan stok otomatis, dan siap digunakan secara resmi (*Go-Live*).
+Dokumen *User Acceptance Testing* (UAT) ini bertujuan untuk memverifikasi dan memastikan bahwa seluruh modul dan alur kerja (*business workflow*) pada KhumKhum ERP telah berfungsi sesuai dengan spesifikasi kebutuhan yang disepakati (*Software Requirements Specification & PRD*), mudah digunakan, akurat dalam pemotongan stok otomatis (termasuk standar BOM Level 3), dan siap digunakan secara resmi (*Go-Live*).
 
 ### 1.2. Kriteria Kelulusan (Acceptance Criteria)
 Sistem dinyatakan **Lolos UAT** dan siap dioperasikan apabila:
@@ -55,8 +55,9 @@ Sistem dinyatakan **Lolos UAT** dan siap dioperasikan apabila:
 | Kode Tes | Fitur / Skenario | Langkah Pengujian | Hasil yang Diharapkan (*Expected Result*) | Status (P/F) | Catatan Penguji |
 | :---: | :--- | :--- | :--- | :---: | :--- |
 | `UAT-MST-01` | Tambah / Edit Bahan Baku | Buka Master Bahan Baku, tambahkan item baru dengan nama, kategori, UOM, dan batas ROP. | Data tersimpan di master, muncul di tabel, dan otomatis memiliki slot stok di gudang. | [ ] PASS<br>[ ] FAIL | |
-| `UAT-MST-02` | Standar Resep & Rasio Bumbu | Buka Standar Produksi, ubah persentase bumbu rasa (misal Balado 8%, Super Pedas 10%). | Nilai tersimpan dan otomatis menjadi dasar perhitungan kalkulasi packing di modul produksi. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-MST-02` | Standar Resep Penggorengan | Buka Standar Produksi tab Penggorengan, verifikasi rasio tepung premix 25% dan minyak 30%. | Nilai tersimpan dan menjadi acuan estimasi BOM saat penerbitan SPK Goreng. | [ ] PASS<br>[ ] FAIL | |
 | `UAT-MST-03` | Master Petani Mitra | Tambah data petani baru lengkap dengan nomor WhatsApp dan jenis kemitraan. | Data tersimpan, nomor telepon terformat standar internasional (+62), siap menerima notifikasi. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-MST-04` | Standar Kemasan BOM Level 3 & Generator Produk Massal | 1. Buka Standar Produksi tab "Standar Kemasan (BOM Level 3)", verifikasi takaran bumbu (misal 75g = 4g bumbu, 71g jamur).<br>2. Buka Master Produk, klik "Generator Varian Otomatis", generate kombinasi rasa Balado 75g. | 1. Standar komposisi tersimpan.<br>2. Varian produk ter-generate otomatis dengan SKU unik dan tag `[BOM: Jamur 71g, Bumbu 4g]`. | [ ] PASS<br>[ ] FAIL | |
 
 ---
 
@@ -87,24 +88,25 @@ Sistem dinyatakan **Lolos UAT** dan siap dioperasikan apabila:
 
 ---
 
-### MODUL 6: MANUFAKTUR LEVEL 2 — PENGGORENGAN & LONGSONG (UAT-PRD-02)
+### MODUL 6: MANUFAKTUR LEVEL 2 — PENGGORENGAN & WADAH LONGSONG (UAT-PRD-02)
 
 | Kode Tes | Fitur / Skenario | Langkah Pengujian | Hasil yang Diharapkan (*Expected Result*) | Status (P/F) | Catatan Penguji |
 | :---: | :--- | :--- | :--- | :---: | :--- |
 | `UAT-PRD-02A`| Pembuatan SPK Goreng | Buat SPK baru di tab "Produksi Goreng Jamur", target 50 kg jamur tiram segar. | Sistem menerbitkan SPK, menampilkan estimasi kebutuhan premix (12.5 kg) & minyak (15 L). | [ ] PASS<br>[ ] FAIL | |
-| `UAT-PRD-02B`| Timer Penggorengan Wajan | Klik "Catat Batch Wajan", aktifkan stopwatch penggorengan wajan 1, lalu klik Selesai. | Durasi penggorengan tercatat presisi, data time study tersimpan, peringatan jika > 30 menit. | [ ] PASS<br>[ ] FAIL | |
-| `UAT-PRD-02C`| Output Jamur Matang ke Wadah Longsong | Klik "Simpan Wadah Longsong", masukkan Label Wadah #01 dan berat jamur matang 8.5 kg. | Wadah Longsong berstatus `AVAILABLE` dengan bobot 8.5 kg terdaftar di buffer packing. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-PRD-02B`| Timer Wajan & Batas Maksimal | Klik "Catat Batch Wajan", aktifkan stopwatch penggorengan wajan 1, lalu klik Selesai. | Durasi penggorengan tercatat presisi, data time study tersimpan, sistem membatasi waktu maks 30 menit. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-PRD-02C`| Penyimpanan Output ke Wadah Longsong Buffer | Klik "Simpan Wadah Longsong", masukkan Label `Wadah Longsong #01` dan berat jamur matang 8.5 kg. | Wadah Longsong berstatus `AVAILABLE` dengan bobot 8.5 kg terdaftar di buffer packing. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-PRD-02D`| Rekapitulasi Output SPK Selesai | Verifikasi baris SPK setelah seluruh batch selesai (atau rekap langsung). | Menampilkan total jamur segar input, total jamur matang output, dan persentase rendemen dapur aktual. | [ ] PASS<br>[ ] FAIL | |
 
 ---
 
-### MODUL 7: MANUFAKTUR LEVEL 3 — PACKING & AUTO-DEDUCT GUDANG (UAT-PRD-03)
+### MODUL 7: MANUFAKTUR LEVEL 3 — PACKING & RESEP BOM LEVEL 3 (UAT-PRD-03)
 
 | Kode Tes | Fitur / Skenario | Langkah Pengujian | Hasil yang Diharapkan (*Expected Result*) | Status (P/F) | Catatan Penguji |
 | :---: | :--- | :--- | :--- | :---: | :--- |
-| `UAT-PRD-03A`| Pemilihan Wadah Longsong Sumber | Buka tab "Produksi Packing Rasa", klik "+ Buat Hasil Packing", pilih Wadah Longsong #01. | Sistem menampilkan sisa kapasitas jamur matang riil yang tersedia di wadah tersebut. | [ ] PASS<br>[ ] FAIL | |
-| `UAT-PRD-03B`| Auto-Kalkulasi Resep Bumbu Dinamis | Pilih Varian Rasa "Balado", Kemasan "Toples 60g", Jumlah "50 pcs". | Sistem otomatis menghitung kebutuhan bumbu: 50 × 60g × 8% = 240g Bumbu Balado. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-PRD-03A`| Pemilihan Wadah Longsong Sumber | Buka tab "Produksi Packing Rasa", klik "+ Buat Hasil Packing", pilih `Wadah Longsong #01`. | Sistem menampilkan sisa kapasitas jamur matang riil yang tersedia di wadah tersebut. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-PRD-03B`| Auto-Kalkulasi Resep BOM Level 3 | Pilih Varian Rasa "Balado", Kemasan "Pouch 75g", Jumlah "50 pcs". | Sesuai BOM Level 3: Sistem menghitung kebutuhan bumbu $50 \times 4\text{g} = 200\text{g}$ dan jamur matang $50 \times 71\text{g} = 3,55\text{kg}$. | [ ] PASS<br>[ ] FAIL | |
 | `UAT-PRD-03C`| Validasi Stok Gudang Pencegah Minus | Coba lakukan packing dengan kebutuhan bumbu melebihi saldo stok bumbu di gudang. | Sistem menampilkan alert merah "Stok bumbu di warehouse kurang" dan mengunci tombol simpan. | [ ] PASS<br>[ ] FAIL | |
-| `UAT-PRD-03D`| Eksekusi Packing & Pemotongan Multi-Gudang | Masukkan input packing yang valid, klik "Simpan Hasil Packing". | 1. Sisa jamur di wadah longsong berkurang sesuai gramasi.<br>2. Stok Bumbu Balado di gudang utama berkurang 240g.<br>3. Stok kemasan fisik toples berkurang 50 pcs.<br>4. Batch diteruskan ke antrean QC. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-PRD-03D`| Eksekusi Packing & Pemotongan Multi-Gudang | Masukkan input packing yang valid, klik "Simpan Hasil Packing". | 1. Sisa jamur di Wadah Longsong berkurang 3,55 kg.<br>2. Stok Bumbu Balado di gudang utama berkurang 200g.<br>3. Stok kemasan fisik toples/pouch berkurang sesuai pcs jadi + cacat.<br>4. Batch diteruskan ke antrean QC. | [ ] PASS<br>[ ] FAIL | |
 
 ---
 
@@ -142,18 +144,36 @@ Sistem dinyatakan **Lolos UAT** dan siap dioperasikan apabila:
 
 | Kode Tes | Fitur / Skenario | Langkah Pengujian | Hasil yang Diharapkan (*Expected Result*) | Status (P/F) | Catatan Penguji |
 | :---: | :--- | :--- | :--- | :---: | :--- |
-| `UAT-SLS-01` | Input Sales Order (SO) Baru | Buat pesanan penjualan untuk Swalayan, pilih produk Balado 60g sebanyak 30 pcs. | Pesanan tersimpan, total nilai rupiah terhitung otomatis, status pesanan menjadi "PENDING / PLANNED". | [ ] PASS<br>[ ] FAIL | |
+| `UAT-SLS-01` | Input Sales Order (SO) Baru | Buat pesanan penjualan untuk Swalayan, pilih produk Balado 75g sebanyak 30 pcs. | Pesanan tersimpan, total nilai rupiah terhitung otomatis, status pesanan menjadi "PENDING / PLANNED". | [ ] PASS<br>[ ] FAIL | |
 | `UAT-SLS-02` | Pengiriman & Potong Barang Jadi | Ubah status pesanan menjadi "DIKIRIM (SHIPPED)". | Stok barang jadi di gudang barang jadi otomatis terpotong 30 pcs (*Movement OUT*). | [ ] PASS<br>[ ] FAIL | |
 
 ---
 
-### MODUL 12: DASHBOARD MANAJEMEN & AUDIT TRAIL (UAT-MGT)
+### MODUL 12: AI FORECASTING & PERENCANAAN MRP (UAT-FC)
 
 | Kode Tes | Fitur / Skenario | Langkah Pengujian | Hasil yang Diharapkan (*Expected Result*) | Status (P/F) | Catatan Penguji |
 | :---: | :--- | :--- | :--- | :---: | :--- |
-| `UAT-MGT-01` | Akurasi KPI Rendemen (Yield) | Cek angka Rendemen Dapur pada Dashboard Eksekutif setelah proses produksi. | Menghitung persentase riil (Jamur Matang / Jamur Segar) secara dinamis tanpa data statis palsu. | [ ] PASS<br>[ ] FAIL | |
-| `UAT-MGT-02` | Widget Alert Stok Dashboard | Buka tab Daily Operations di Dashboard utama. | Kartu Alert Stok Gudang menampilkan item yang habis/menipis secara sinkron dengan gudang. | [ ] PASS<br>[ ] FAIL | |
-| `UAT-MGT-03` | Verifikasi Audit Trail | Buka menu Audit Log setelah melakukan transaksi edit atau hapus. | Tercatat detail waktu, nama user pelaksana, aksi yang dilakukan, dan nilai data sebelum/sesudah. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-FC-01` | Proyeksi Kebutuhan Holt-Winters | Buka menu `/ai-forecast`, amati grafik tren peramalan 4 minggu ke depan. | Grafik menampilkan proyeksi musiman dan kartu pengadaan menampilkan rekomendasi kuantitas jamur tiram (kg). | [ ] PASS<br>[ ] FAIL | |
+
+---
+
+### MODUL 13: DASHBOARD EKSEKUTIF, OPERASIONAL & AUDIT LOG (UAT-MGT)
+
+| Kode Tes | Fitur / Skenario | Langkah Pengujian | Hasil yang Diharapkan (*Expected Result*) | Status (P/F) | Catatan Penguji |
+| :---: | :--- | :--- | :--- | :---: | :--- |
+| `UAT-MGT-01` | Progress Bar Mutu & Garis Batas Target | Buka Dashboard Eksekutif, amati widget Rendemen (Yield) dan Defect Rate. | Menampilkan progress bar visual lengkap dengan garis target (Rendemen ≥80% hijau, Defect ≤5% merah). | [ ] PASS<br>[ ] FAIL | |
+| `UAT-MGT-02` | Dashboard Daily Operations Real-Time | Buka tab Daily Operations di Dashboard utama. | Kartu Batch Aktif, Antrean Tindakan (Sortasi, QC, Kirim), dan Alert Stok Gudang terhubung data live. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-MGT-03` | Keterlacakan Produk (Traceability) | Buka menu `/traceability`, masukkan nomor batch produk. | Menampilkan silsilah mundur lengkap: dari pesanan toko, batch packing, wadah longsong, wajan goreng, s/d petani. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-MGT-04` | Verifikasi Audit Trail | Buka menu Audit Log setelah melakukan transaksi edit atau hapus. | Tercatat detail waktu, nama user pelaksana, aksi yang dilakukan, dan nilai data sebelum/sesudah. | [ ] PASS<br>[ ] FAIL | |
+
+---
+
+### MODUL 14: LAPORAN & EKSPOR DOKUMEN RESMI (UAT-RPT)
+
+| Kode Tes | Fitur / Skenario | Langkah Pengujian | Hasil yang Diharapkan (*Expected Result*) | Status (P/F) | Catatan Penguji |
+| :---: | :--- | :--- | :--- | :---: | :--- |
+| `UAT-RPT-01` | Ekspor Laporan ke Excel (.xlsx) | Buka menu `/reports`, pilih Laporan Produksi, klik tombol "Unduh Excel". | File `.xlsx` terunduh otomatis berisi data tabel rapi yang dapat dibuka di Microsoft Excel. | [ ] PASS<br>[ ] FAIL | |
+| `UAT-RPT-02` | Cetak & Ekspor Laporan ke PDF (.pdf) | Pilih Laporan Inventori, klik tombol "Cetak PDF". | File dokumen PDF resmi berformat tabel siap cetak terunduh dengan header dan tanggal cetak. | [ ] PASS<br>[ ] FAIL | |
 
 ---
 
@@ -176,7 +196,7 @@ Gunakan tabel ini untuk mencatat temuan bug atau masukan selama proses pengujian
 Berdasarkan hasil pengujian yang telah dilaksanakan bersama antara pihak pengembang dan perwakilan pengguna/klien:
 
 ### Pernyataan Persetujuan:
-> *"Dengan ini menyatakan bahwa Sistem KhumKhum ERP Versi 1.0 telah diuji secara langsung melalui skenario UAT di atas, seluruh fungsi utama dan integrasi resep otomatis berjalan dengan baik dan memenuhi kebutuhan operasional CV Khaira Buana Mandiri. Sistem dinyatakan **DITERIMA** untuk memasuki fase persiapan rilis operasional penuh (Go-Live)."*
+> *"Dengan ini menyatakan bahwa Sistem KhumKhum ERP Versi 1.1 telah diuji secara langsung melalui skenario UAT di atas, seluruh fungsi utama, standar BOM Level 3, alur Wadah Longsong, dan integrasi resep otomatis berjalan dengan baik dan memenuhi kebutuhan operasional CV Khaira Buana Mandiri. Sistem dinyatakan **DITERIMA** untuk memasuki fase persiapan rilis operasional penuh (Go-Live)."*
 
 Ditandatangani pada tanggal: `........................................... 2026`
 

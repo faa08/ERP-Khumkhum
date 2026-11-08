@@ -8,6 +8,8 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { Drawer } from '@/components/ui/Drawer';
+import { Modal } from '@/components/ui/Modal';
+import { KhumKhumInvoiceModal } from '@/components/sales/KhumKhumInvoiceModal';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
@@ -34,6 +36,7 @@ import {
   Sparkles,
   Filter,
   Flame,
+  Printer,
 } from 'lucide-react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format } from 'date-fns';
@@ -104,6 +107,8 @@ export default function SalesPage() {
 
   // Drawers & Modals
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [invoiceItem, setInvoiceItem] = useState<DbSalesOrder | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadCustomer, setUploadCustomer] = useState('');
   const [uploadFile, setUploadFile] = useState<File | null>(null);
@@ -499,22 +504,52 @@ export default function SalesPage() {
       cell: ({ row }) => {
         const nextStatus = NEXT_STATUS[row.original.status];
         return (
-          <Dropdown
-            trigger={
-              <Button variant="ghost" size="sm" style={{ padding: '0 8px' }} aria-label="Aksi Pesanan">
-                <MoreVertical className="w-4 h-4 text-currentColor" aria-hidden="true" />
-              </Button>
-            }
-            items={[
-              {
-                id: 'view',
-                label: 'Lihat Detail Pesanan',
-                icon: <Eye className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />,
-                onClick: () => {
-                  setViewItem(row.original);
-                  setViewOpen(true);
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setInvoiceItem(row.original);
+                setInvoiceOpen(true);
+              }}
+              style={{
+                fontSize: '11px',
+                padding: '3px 8px',
+                color: '#991B1B',
+                borderColor: '#FCA5A5',
+                background: '#FEF2F2',
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+              leftIcon={<Printer className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />}
+            >
+              Faktur
+            </Button>
+            <Dropdown
+              trigger={
+                <Button variant="ghost" size="sm" style={{ padding: '0 6px' }} aria-label="Aksi Pesanan">
+                  <MoreVertical className="w-4 h-4 text-currentColor" aria-hidden="true" />
+                </Button>
+              }
+              items={[
+                {
+                  id: 'invoice',
+                  label: 'Buka Faktur Invoice',
+                  icon: <Printer className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />,
+                  onClick: () => {
+                    setInvoiceItem(row.original);
+                    setInvoiceOpen(true);
+                  },
                 },
-              },
+                {
+                  id: 'view',
+                  label: 'Lihat Detail Pesanan',
+                  icon: <Eye className="w-3.5 h-3.5 text-currentColor" aria-hidden="true" />,
+                  onClick: () => {
+                    setViewItem(row.original);
+                    setViewOpen(true);
+                  },
+                },
               ...(!isManagement && nextStatus
                 ? [
                     {
@@ -559,8 +594,9 @@ export default function SalesPage() {
                 : []),
             ]}
           />
-        );
-      },
+        </div>
+      );
+    },
     },
   ], [productsStockMap, isManagement, handleAdvanceStatus, loadData, toast]);
 
@@ -604,19 +640,6 @@ export default function SalesPage() {
             >
               Sinkronkan Real-Time
             </Button>
-            {!isManagement && (
-              <Button
-                id="btn-buat-sales-order"
-                variant="primary"
-                onClick={() => {
-                  setForm(EMPTY_FORM);
-                  setDrawerOpen(true);
-                }}
-                leftIcon={<Plus className="w-4 h-4 text-currentColor" aria-hidden="true" />}
-              >
-                Buat Sales Order
-              </Button>
-            )}
           </div>
         }
       />
@@ -1056,18 +1079,23 @@ export default function SalesPage() {
         <DataTable columns={columns} data={filteredSalesOrders} isLoading={isLoading} />
       </div>
 
-      {/* ── CREATE SALES ORDER DRAWER ── */}
-      <Drawer
+      {/* ── CREATE SALES ORDER MODAL (POPUP) ── */}
+      <Modal
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        title="Buat Sales Order Baru (Alokasi Stok Packing)"
+        title="Buat Pesanan Baru (Sales Order KhumKhum)"
         size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => setDrawerOpen(false)}>
               Batal
             </Button>
-            <Button variant="primary" onClick={handleSave} loading={isSaving}>
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              loading={isSaving}
+              style={{ background: '#DC2626', borderColor: '#B91C1C', color: '#fff' }}
+            >
               Simpan & Alokasikan SO
             </Button>
           </>
@@ -1277,18 +1305,33 @@ export default function SalesPage() {
             />
           </FormField>
         </div>
-      </Drawer>
+      </Modal>
 
-      {/* ── VIEW SALES ORDER DRAWER ── */}
-      <Drawer
+      {/* ── VIEW SALES ORDER MODAL (POPUP) ── */}
+      <Modal
         isOpen={viewOpen}
         onClose={() => setViewOpen(false)}
         title={`Detail Sales Order — ${viewItem?.order_number || viewItem?.id.slice(0, 8) || ''}`}
         size="md"
         footer={
-          <Button variant="secondary" onClick={() => setViewOpen(false)}>
-            Tutup
-          </Button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                if (viewItem) {
+                  setInvoiceItem(viewItem);
+                  setInvoiceOpen(true);
+                }
+              }}
+              leftIcon={<Printer className="w-4 h-4 text-currentColor" aria-hidden="true" />}
+              style={{ borderColor: '#DC2626', color: '#DC2626' }}
+            >
+              Lihat Faktur / Invoice
+            </Button>
+            <Button variant="secondary" onClick={() => setViewOpen(false)}>
+              Tutup
+            </Button>
+          </div>
         }
       >
         {viewItem && (
@@ -1361,7 +1404,14 @@ export default function SalesPage() {
             )}
           </div>
         )}
-      </Drawer>
+      </Modal>
+
+      {/* ── KHUMKHUM OFFICIAL INVOICE MODAL ── */}
+      <KhumKhumInvoiceModal
+        isOpen={invoiceOpen}
+        onClose={() => setInvoiceOpen(false)}
+        order={invoiceItem}
+      />
 
       {/* ── CONFIRM DIALOG ── */}
       <ConfirmDialog

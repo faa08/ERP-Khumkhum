@@ -48,7 +48,7 @@ export const DEFAULT_PRODUCT_WEIGHTS = [
 export const DEFAULT_PRODUCT_FLAVORS = [
   'Original',
   'Balado',
-  'Barbeque',
+  'BBQ',
   'Pedas Manis',
   'Super Pedas',
 ];

@@ -54,7 +54,7 @@ export const FLAVOR_TABS = [
   { id: 'ALL', label: 'Semua Produk' },
   { id: 'Original', label: 'Original' },
   { id: 'Balado', label: 'Balado' },
-  { id: 'Barbeque', label: 'Barbeque' },
+  { id: 'BBQ', label: 'BBQ' },
   { id: 'Pedas Manis', label: 'Pedas Manis' },
   { id: 'Super Pedas', label: 'Super Pedas' },
 ] as const;
@@ -73,7 +73,7 @@ export function getProductFlavor(item: DbProduct): string {
     return 'Balado';
   }
   if (explicit === 'barbeque' || explicit === 'bbq' || name.includes('barbeque') || name.includes('bbq')) {
-    return 'Barbeque';
+    return 'BBQ';
   }
   if (explicit === 'original' || explicit === 'ori' || name.includes('original') || name.includes('ori') || name.includes('polos')) {
     return 'Original';

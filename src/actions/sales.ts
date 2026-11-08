@@ -218,11 +218,15 @@ export async function getSalesRealtimeTracking(): Promise<{
       else if (nameLower.includes('jagung bakar')) flavor = 'Jagung Bakar';
 
       // Ekstraksi berat
-      let weight = '100g';
-      if (nameLower.includes('50g')) weight = '50g';
-      else if (nameLower.includes('75g')) weight = '75g';
-      else if (nameLower.includes('150g')) weight = '150g';
-      else if (nameLower.includes('250g')) weight = '250g';
+      let weight = '75g';
+      if (nameLower.includes('30g') || nameLower.includes('30gram')) weight = '30g';
+      else if (nameLower.includes('50g') || nameLower.includes('50gram')) weight = '50g';
+      else if (nameLower.includes('60g') || nameLower.includes('60gram')) weight = '60g';
+      else if (nameLower.includes('75g') || nameLower.includes('75gram')) weight = '75g';
+      else if (nameLower.includes('100g') || nameLower.includes('100gram')) weight = '100g';
+      else if (nameLower.includes('150g') || nameLower.includes('150gram')) weight = '150g';
+      else if (nameLower.includes('250g') || nameLower.includes('250gram')) weight = '250g';
+      else if (nameLower.includes('500g') || nameLower.includes('500gram')) weight = '500g';
 
       // Ekstraksi kemasan
       let packagingType = 'Standing Pouch';

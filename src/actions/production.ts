@@ -3393,14 +3393,35 @@ export async function syncPackedGoodsToSalesInventory(
     try {
       const { data: prods } = await supabaseAdmin.from('products').select('*').is('deleted_at', null);
       if (prods && prods.length > 0) {
-        // Coba cari nama produk yang memuat nama rasa dan berat
+        // Normalisasi rasa & bobot agar varian singkatan (misal: BBQ vs Barbeque) otomatis cocok
+        const normalizeFlavor = (f: string) => {
+          const fl = (f || '').toLowerCase();
+          if (fl.includes('bbq') || fl.includes('barbeque') || fl.includes('barbecue')) return 'bbq';
+          if (fl.includes('super pedas') || fl.includes('extra pedas') || fl.includes('spd')) return 'super pedas';
+          if (fl.includes('pedas manis') || fl.includes('manis pedas') || fl.includes('pm')) return 'pedas manis';
+          if (fl.includes('balado') || fl.includes('bld')) return 'balado';
+          if (fl.includes('original') || fl.includes('ori') || fl.includes('polos')) return 'original';
+          return fl;
+        };
+
+        const targetFlavorNorm = normalizeFlavor(flavor);
+        const cleanWeightNum = weight.replace(/\D/g, '');
+
+        // Coba cari nama produk yang memuat nama rasa dan berat yang dinormalisasi
         matchedProduct = prods.find((p: any) => {
-          const n = p.name.toLowerCase();
-          return n.includes(flavor.toLowerCase()) && n.includes(weight.toLowerCase());
+          const n = (p.name || '').toLowerCase();
+          const pFlavorNorm = normalizeFlavor(n);
+          const hasFlavor = pFlavorNorm === targetFlavorNorm;
+          const hasWeight = cleanWeightNum ? n.includes(cleanWeightNum) : true;
+          return hasFlavor && hasWeight;
         });
+
         // Jika belum cocok, cari berdasarkan rasa
         if (!matchedProduct) {
-          matchedProduct = prods.find((p: any) => p.name.toLowerCase().includes(flavor.toLowerCase()));
+          matchedProduct = prods.find((p: any) => {
+            const n = (p.name || '').toLowerCase();
+            return normalizeFlavor(n) === targetFlavorNorm;
+          });
         }
       }
     } catch (err) {

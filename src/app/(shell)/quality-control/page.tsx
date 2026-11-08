@@ -8,6 +8,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge';
 import { Card } from '@/components/ui/Card';
 import { Tabs } from '@/components/ui/Tabs';
 import { Modal } from '@/components/ui/Modal';
+import { KhumKhumQCCertificateModal } from '@/components/qc/KhumKhumQCCertificateModal';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Select } from '@/components/ui/Select';
@@ -746,65 +747,11 @@ export default function QualityControlPage() {
       {/* ───────────────────────────────────────────── */}
       {/* MODAL: PREVIEW SERTIFIKAT KELAYAKAN MUTU QC   */}
       {/* ───────────────────────────────────────────── */}
-      <Modal
+      <KhumKhumQCCertificateModal
         isOpen={certificateModalOpen}
         onClose={() => setCertificateModalOpen(false)}
-        title="Sertifikat Kelayakan Mutu Batch (QC Release Certificate)"
-        size="md"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setCertificateModalOpen(false)}>
-              Tutup
-            </Button>
-            <Button variant="primary" onClick={() => window.print()} leftIcon={<Printer size={16} />}>
-              Cetak Dokumen
-            </Button>
-          </>
-        }
-      >
-        {selectedInspection && (
-          <div style={{ border: '2px solid var(--border-color)', borderRadius: 'var(--radius-md)', padding: 'var(--space-5)', background: '#fff', color: '#1a1a1a' }}>
-            <div style={{ textAlign: 'center', borderBottom: '2px solid #333', paddingBottom: 'var(--space-3)', marginBottom: 'var(--space-4)' }}>
-              <h3 style={{ margin: 0, textTransform: 'uppercase', letterSpacing: '1px' }}>CV KHAIRA BUANA MAS</h3>
-              <h4 style={{ margin: '4px 0', color: '#666' }}>Sertifikat Kelayakan Mutu Pangan (QC Certificate)</h4>
-              <span style={{ fontSize: '12px', color: '#888' }}>Kulon Progo, D.I. Yogyakarta — Standar Kemenperin RI</span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)', fontSize: '13px', marginBottom: 'var(--space-4)' }}>
-              <div><strong>No. Dokumen:</strong> QC-{selectedInspection.id.substring(0, 8).toUpperCase()}</div>
-              <div><strong>Tanggal:</strong> {format(new Date(selectedInspection.inspection_date), 'dd MMMM yyyy', { locale: idLocale })}</div>
-              <div><strong>Nomor Batch:</strong> {selectedInspection.production_order?.batch_number || selectedInspection.batch_id || '-'}</div>
-              <div><strong>Varian Produk:</strong> {selectedInspection.production_order?.product_variant || 'Jamur Crispy Original'}</div>
-            </div>
-
-            <div style={{ background: '#f8f9fa', padding: 'var(--space-3)', borderRadius: 'var(--radius-sm)', marginBottom: 'var(--space-4)', fontSize: '13px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span>Jumlah Sampel Diuji (N):</span>
-                <strong>{selectedInspection.sample_size || 50} pcs</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                <span>Total Cacat Ditemukan:</span>
-                <strong>{selectedInspection.total_defects || 0} pcs</strong>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span>Defect Rate (%):</span>
-                <strong>{selectedInspection.defect_rate || 0}%</strong>
-              </div>
-            </div>
-
-            <div style={{ textAlign: 'center', padding: 'var(--space-3)', background: selectedInspection.is_passed ? '#e6f4ea' : '#fce8e6', borderRadius: 'var(--radius-sm)', color: selectedInspection.is_passed ? '#137333' : '#c5221f', fontWeight: 700, fontSize: '16px' }}>
-              STATUS KEPUTUSAN: {selectedInspection.decision || (selectedInspection.is_passed ? 'RELEASED (LOLOS)' : 'REJECTED')}
-            </div>
-
-            <div style={{ marginTop: 'var(--space-5)', display: 'flex', justifyContent: 'flex-end', textAlign: 'center', fontSize: '12px' }}>
-              <div>
-                <p style={{ margin: '0 0 40px 0' }}>Inspektur Quality Assurance,</p>
-                <strong>{selectedInspection.inspector?.name || 'Petugas QC KhumKhum'}</strong>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
+        inspection={selectedInspection}
+      />
     </div>
   );
 }

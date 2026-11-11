@@ -7,7 +7,7 @@
 [![AI Forecasting](https://img.shields.io/badge/AI%20Analytics-Holt--Winters%20%26%20Gemini-orange?style=for-the-badge&logo=google-gemini)](https://ai.google.dev/)
 [![License](https://img.shields.io/badge/License-Proprietary%20%2F%20Portfolio-purple?style=for-the-badge)](LICENSE)
 
-> **Enterprise Resource Planning (ERP) & Manufacturing Execution System (MES)** engineered specifically for agro-industrial crispy mushroom food processing. Built for **CV Khaira Buana Mandiri**, this system digitizes the entire **Seed-to-Shelf** production pipeline—from farmer harvest weigh-in, multi-stage frying with buffer containers, dynamic Bill of Materials (BOM Level 3) auto-deduction, to organoleptic Quality Control, B2B invoicing, and full backward traceability.
+> **Enterprise Resource Planning (ERP) & Manufacturing Execution System (MES)** engineered specifically for agro-industrial crispy mushroom food processing. Developed by **Triaksa Teknologi Nusantara** for client **CV Khaira Buana Mandiri (KhumKhum)**, this system digitizes the entire **Seed-to-Shelf** production pipeline—from farmer harvest weigh-in, multi-stage frying with buffer containers, dynamic Bill of Materials (BOM Level 3) auto-deduction, to organoleptic Quality Control, B2B invoicing, and full backward traceability.
 
 ---
 
@@ -253,9 +253,10 @@ npm run start
 
 ## 📄 License & Intellectual Property
 
-This codebase was developed as an agro-industrial digital transformation solution for **CV Khaira Buana Mandiri**. Source code is maintained for portfolio demonstration, architectural evaluation, and authorized deployment.
+This codebase was engineered by **Triaksa Teknologi Nusantara** as an enterprise digital transformation solution for its client, **CV Khaira Buana Mandiri (KhumKhum)**. Source code is maintained for portfolio demonstration, architectural evaluation, and authorized deployment.
 
-**Engineering Team:** KhumKhum ERP Development Team  
+**Engineering Team:** Triaksa Teknologi Nusantara  
+**Client / Partner:** CV Khaira Buana Mandiri (KhumKhum)  
 **Lead Developer:** Fachry  
-**Engineering Contributor:** Darmawan  
-**Copyright © 2026 CV Khaira Buana Mandiri. All rights reserved.**
+**Engineering Contributors:** Darmawan, Desia  
+**Copyright © 2026 CV Khaira Buana Mandiri & Triaksa Teknologi Nusantara. All rights reserved.**

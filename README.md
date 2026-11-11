@@ -256,5 +256,6 @@ npm run start
 This codebase was developed as an agro-industrial digital transformation solution for **CV Khaira Buana Mandiri**. Source code is maintained for portfolio demonstration, architectural evaluation, and authorized deployment.
 
 **Engineering Team:** KhumKhum ERP Development Team  
-**Lead Developer:** Darmawan & Engineering Contributors  
+**Lead Developer:** Fachry  
+**Engineering Contributor:** Darmawan  
 **Copyright © 2026 CV Khaira Buana Mandiri. All rights reserved.**

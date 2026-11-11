@@ -31,6 +31,11 @@ yarn-error.log*
 .env
 env.download
 
+# internal manual & uat documents (not committed to public repo)
+docs/BUKU_PANDUAN*
+docs/DOKUMEN_UAT*
+docs/images/
+
 # agents
 .agents/
 

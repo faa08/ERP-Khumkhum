@@ -1145,6 +1145,7 @@ export default function ReportsPage() {
             ) : (
               <div style={{ background: '#fff' }}>
                 <DataTable
+                  key={reportType}
                   columns={REPORT_COLUMNS[reportType] || []}
                   data={data}
                 />

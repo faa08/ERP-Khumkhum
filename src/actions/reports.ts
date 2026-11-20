@@ -354,13 +354,14 @@ export async function generateReportData(
     let processedData = data;
 
     if (type === 'production') {
-      processedData = data.map((po: any) => {
+      processedData = data.map((po: any, idx: number) => {
         const prodName = po.results?.filter((r: any) => r.product?.name).map((r: any) => r.product?.name).join(', ') || po.product_variant || 'Jamur Crispy';
         const totalFin = po.results?.reduce((sum: number, r: any) => sum + Number(r.finished_goods_quantity || 0), 0) || po.target_quantity || (po.output_weight ? Math.round(Number(po.output_weight) * 10) : 0);
         const resultYield = po.results?.length ? (po.results.reduce((sum: number, r: any) => sum + Number(r.yield_percentage || 0), 0) / po.results.length) : null;
         const avgYield = resultYield != null ? resultYield : Number(po.yield_percentage || 0);
 
         return {
+          id: po.id || `po-${idx}`,
           batch_number: po.batch_number,
           status: po.status,
           date: po.start_date || po.created_at,
@@ -381,7 +382,7 @@ export async function generateReportData(
       const rmMap = new Map(rmRes.data?.map(rm => [rm.id, rm]) || []);
       const prodMap = new Map(prodRes.data?.map(p => [p.id, p.name]) || []);
 
-      processedData = (data || []).map((mv: any) => {
+      processedData = (data || []).map((mv: any, idx: number) => {
         let item_name = 'Unknown';
         let uom = 'kg';
         if (mv.inventory?.item_type === 'RAW_MATERIAL') {
@@ -393,6 +394,7 @@ export async function generateReportData(
           uom = 'pcs';
         }
         return {
+          id: mv.id || `inv-${idx}`,
           date: mv.movement_date,
           item_name,
           uom,
@@ -403,7 +405,8 @@ export async function generateReportData(
         };
       });
     } else if (type === 'sales') {
-      processedData = data.map((so: any) => ({
+      processedData = data.map((so: any, idx: number) => ({
+        id: so.id || `so-${idx}`,
         order_number: so.order_number || '-',
         date: so.order_date || so.created_at,
         customer: so.customer?.name || 'Pelanggan Retail',
@@ -414,7 +417,8 @@ export async function generateReportData(
         products: so.items?.map((i: any) => `${i.product?.name || 'Produk'} (${i.quantity} pcs)`).join(', ') || '-'
       }));
     } else if (type === 'receiving') {
-      processedData = data.map((r: any) => ({
+      processedData = data.map((r: any, idx: number) => ({
+         id: r.id || `rcv-${idx}`,
          date: r.received_date || r.created_at,
          batch_number: r.batch_number,
          farmer: r.farmer?.name || '-',
@@ -424,7 +428,8 @@ export async function generateReportData(
          notes: r.notes || '-'
       }));
     } else if (type === 'sorting') {
-      processedData = data.map((s: any) => ({
+      processedData = data.map((s: any, idx: number) => ({
+         id: s.id || `sort-${idx}`,
          date: s.sorting_date || s.created_at,
          batch_number: s.receiving?.batch_number || '-',
          grade: s.quality_grade || s.grade || 'A',
@@ -433,7 +438,8 @@ export async function generateReportData(
          waste: Number(s.waste ?? s.stem_weight ?? 0)
       }));
     } else if (type === 'qc') {
-      processedData = data.map((qc: any) => ({
+      processedData = data.map((qc: any, idx: number) => ({
+         id: qc.id || `qc-${idx}`,
          date: qc.inspection_date || qc.created_at,
          reference_type: qc.reference_type || 'QC',
          is_passed: qc.is_passed ? 'Lulus' : 'Gagal',

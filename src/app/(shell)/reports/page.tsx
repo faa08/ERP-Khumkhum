@@ -19,104 +19,123 @@ import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+const safeFormatDate = (dateVal: any, pattern = 'dd/MM/yyyy HH:mm') => {
+  if (!dateVal) return '-';
+  try {
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return String(dateVal);
+    return format(d, pattern);
+  } catch (_) {
+    return String(dateVal || '-');
+  }
+};
+
 const REPORT_COLUMNS: Record<string, ColumnDef<any>[]> = {
   receiving: [
-    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
-    { accessorKey: 'batch_number', header: 'No Batch' },
-    { accessorKey: 'farmer', header: 'Petani' },
-    { accessorKey: 'material', header: 'Bahan Baku' },
-    { accessorKey: 'weight', header: 'Berat', cell: ({row}) => <strong style={{color: 'var(--color-success-600)'}}>{row.original.weight} {row.original.uom}</strong> },
-    { accessorKey: 'notes', header: 'Catatan' },
+    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => safeFormatDate(row.original?.date) },
+    { accessorKey: 'batch_number', header: 'No Batch', cell: ({row}) => row.original?.batch_number || '-' },
+    { accessorKey: 'farmer', header: 'Petani', cell: ({row}) => row.original?.farmer || '-' },
+    { accessorKey: 'material', header: 'Bahan Baku', cell: ({row}) => row.original?.material || '-' },
+    { accessorKey: 'weight', header: 'Berat', cell: ({row}) => <strong style={{color: 'var(--color-success-600)'}}>{row.original?.weight ?? 0} {row.original?.uom || 'kg'}</strong> },
+    { accessorKey: 'notes', header: 'Catatan', cell: ({row}) => row.original?.notes || '-' },
   ],
   sorting: [
-    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
-    { accessorKey: 'batch_number', header: 'No Batch Penerimaan' },
-    { accessorKey: 'grade', header: 'Grade', cell: ({row}) => <strong>{row.original.grade}</strong> },
-    { accessorKey: 'accepted', header: 'Diterima', cell: ({row}) => <span style={{color: 'var(--color-success-600)'}}>{row.original.accepted} kg</span> },
-    { accessorKey: 'rejected', header: 'Ditolak', cell: ({row}) => <span style={{color: 'var(--color-danger-600)'}}>{row.original.rejected} kg</span> },
-    { accessorKey: 'waste', header: 'Waste', cell: ({row}) => <span style={{color: 'var(--text-tertiary)'}}>{row.original.waste} kg</span> },
+    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => safeFormatDate(row.original?.date) },
+    { accessorKey: 'batch_number', header: 'No Batch Penerimaan', cell: ({row}) => row.original?.batch_number || '-' },
+    { accessorKey: 'grade', header: 'Grade', cell: ({row}) => <strong>{row.original?.grade || '-'}</strong> },
+    { accessorKey: 'accepted', header: 'Diterima', cell: ({row}) => <span style={{color: 'var(--color-success-600)'}}>{row.original?.accepted ?? 0} kg</span> },
+    { accessorKey: 'rejected', header: 'Ditolak', cell: ({row}) => <span style={{color: 'var(--color-danger-600)'}}>{row.original?.rejected ?? 0} kg</span> },
+    { accessorKey: 'waste', header: 'Waste', cell: ({row}) => <span style={{color: 'var(--text-tertiary)'}}>{row.original?.waste ?? 0} kg</span> },
   ],
   production: [
-    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
-    { accessorKey: 'batch_number', header: 'No Batch Produksi' },
-    { accessorKey: 'status', header: 'Status', cell: ({row}) => <StatusBadge status={(row.original.status || 'unknown').toLowerCase()} /> },
-    { accessorKey: 'products', header: 'Produk Dihasilkan' },
-    { accessorKey: 'total_finished', header: 'Total (kg)' },
-    { accessorKey: 'avg_yield', header: 'Rendemen (%)', cell: ({row}) => <strong style={{color: row.original.avg_yield >= 80 ? 'var(--color-success-600)' : 'var(--color-warning-600)'}}>{row.original.avg_yield.toFixed(1)}%</strong> },
+    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => safeFormatDate(row.original?.date) },
+    { accessorKey: 'batch_number', header: 'No Batch Produksi', cell: ({row}) => row.original?.batch_number || '-' },
+    { accessorKey: 'status', header: 'Status', cell: ({row}) => <StatusBadge status={String(row.original?.status || 'unknown').toLowerCase()} /> },
+    { accessorKey: 'products', header: 'Produk Dihasilkan', cell: ({row}) => row.original?.products || '-' },
+    { accessorKey: 'total_finished', header: 'Total (kg)', cell: ({row}) => `${row.original?.total_finished ?? 0} kg` },
+    { accessorKey: 'avg_yield', header: 'Rendemen (%)', cell: ({row}) => {
+      const val = typeof row.original?.avg_yield === 'number'
+        ? row.original.avg_yield
+        : (parseFloat(row.original?.avg_yield) || 0);
+      return <strong style={{color: val >= 80 ? 'var(--color-success-600)' : 'var(--color-warning-600)'}}>{val.toFixed(1)}%</strong>;
+    }},
   ],
   qc: [
-    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
-    { accessorKey: 'reference_type', header: 'Tahap', cell: ({row}) => <StatusBadge status={(row.original.reference_type || 'QC').toLowerCase()} /> },
-    { accessorKey: 'is_passed', header: 'Status', cell: ({row}) => <span style={{ padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600, background: row.original.is_passed === 'Lulus' ? 'var(--color-success-100)' : 'var(--color-danger-100)', color: row.original.is_passed === 'Lulus' ? 'var(--color-success-700)' : 'var(--color-danger-700)' }}>{row.original.is_passed}</span> },
-    { accessorKey: 'defect_type', header: 'Jenis Cacat' },
-    { accessorKey: 'inspector', header: 'Inspektur' },
-    { accessorKey: 'notes', header: 'Catatan' },
+    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => safeFormatDate(row.original?.date) },
+    { accessorKey: 'reference_type', header: 'Tahap', cell: ({row}) => <StatusBadge status={String(row.original?.reference_type || 'QC').toLowerCase()} /> },
+    { accessorKey: 'is_passed', header: 'Status', cell: ({row}) => {
+      const passed = row.original?.is_passed === 'Lulus' || row.original?.is_passed === true;
+      return (
+        <span style={{
+          padding: '4px 8px',
+          borderRadius: '4px',
+          fontSize: '12px',
+          fontWeight: 600,
+          background: passed ? 'var(--color-success-100)' : 'var(--color-danger-100)',
+          color: passed ? 'var(--color-success-700)' : 'var(--color-danger-700)'
+        }}>
+          {passed ? 'Lulus' : 'Gagal'}
+        </span>
+      );
+    }},
+    { accessorKey: 'defect_type', header: 'Jenis Cacat', cell: ({row}) => row.original?.defect_type || '-' },
+    { accessorKey: 'inspector', header: 'Inspektur', cell: ({row}) => row.original?.inspector || '-' },
+    { accessorKey: 'notes', header: 'Catatan', cell: ({row}) => row.original?.notes || '-' },
   ],
   inventory: [
-    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
-    { accessorKey: 'item_name', header: 'Item', cell: ({row}) => <strong>{row.original.item_name}</strong> },
-    { accessorKey: 'warehouse', header: 'Gudang' },
-    { accessorKey: 'movement_type', header: 'Tipe Mutasi', cell: ({row}) => <StatusBadge status={(row.original.movement_type || 'movement').toLowerCase()} /> },
+    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => safeFormatDate(row.original?.date) },
+    { accessorKey: 'item_name', header: 'Item', cell: ({row}) => <strong>{row.original?.item_name || '-'}</strong> },
+    { accessorKey: 'warehouse', header: 'Gudang', cell: ({row}) => row.original?.warehouse || '-' },
+    { accessorKey: 'movement_type', header: 'Tipe Mutasi', cell: ({row}) => <StatusBadge status={String(row.original?.movement_type || 'movement').toLowerCase()} /> },
     { accessorKey: 'quantity', header: 'Kuantitas', cell: ({row}) => {
-       const isPos = row.original.quantity > 0 || row.original.movement_type === 'IN';
-       const unit = row.original.uom || 'kg';
-       return <strong style={{ color: isPos ? 'var(--color-success-600)' : 'var(--color-danger-600)'}}>{isPos ? '+' : '-'}{Math.abs(row.original.quantity)} {unit}</strong>;
+       const qty = Number(row.original?.quantity) || 0;
+       const isPos = qty > 0 || row.original?.movement_type === 'IN';
+       const unit = row.original?.uom || 'kg';
+       return <strong style={{ color: isPos ? 'var(--color-success-600)' : 'var(--color-danger-600)'}}>{isPos ? '+' : '-'}{Math.abs(qty)} {unit}</strong>;
     }},
-    { accessorKey: 'notes', header: 'Referensi' },
+    { accessorKey: 'notes', header: 'Referensi', cell: ({row}) => row.original?.notes || '-' },
   ],
   sales: [
-    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => format(new Date(row.original.date), 'dd/MM/yyyy HH:mm') },
-    { accessorKey: 'customer', header: 'Pelanggan', cell: ({row}) => <strong>{row.original.customer}</strong> },
-    { accessorKey: 'status', header: 'Status', cell: ({row}) => <StatusBadge status={row.original.status.toLowerCase()} /> },
-    { accessorKey: 'products', header: 'Produk Terjual' },
-    { accessorKey: 'total_quantity', header: 'Total Qty', cell: ({row}) => `${row.original.total_quantity} pcs` },
+    { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => safeFormatDate(row.original?.date) },
+    { accessorKey: 'customer', header: 'Pelanggan', cell: ({row}) => <strong>{row.original?.customer || '-'}</strong> },
+    { accessorKey: 'status', header: 'Status', cell: ({row}) => <StatusBadge status={String(row.original?.status || 'unknown').toLowerCase()} /> },
+    { accessorKey: 'products', header: 'Produk Terjual', cell: ({row}) => row.original?.products || '-' },
+    { accessorKey: 'total_quantity', header: 'Total Qty', cell: ({row}) => `${row.original?.total_quantity ?? 0} pcs` },
   ],
   frying: [
-    { accessorKey: 'date', header: 'Tgl', cell: ({row}) => {
-      try {
-        return format(new Date(row.original.date), 'dd/MM/yyyy');
-      } catch (_) {
-        return row.original.date || '-';
-      }
-    }},
-    { accessorKey: 'officer', header: 'Petugas' },
+    { accessorKey: 'date', header: 'Tgl', cell: ({row}) => safeFormatDate(row.original?.date, 'dd/MM/yyyy') },
+    { accessorKey: 'officer', header: 'Petugas', cell: ({row}) => row.original?.officer || '-' },
     { accessorKey: 'mushroom_code', header: 'Kode Jamur (Supplier-Tanggal)', cell: ({row}) => (
       <span style={{ fontWeight: 700, color: '#0F447E', background: '#F0F4F8', padding: '3px 8px', borderRadius: '4px' }}>
-        {row.original.mushroom_code}
+        {row.original?.mushroom_code || '-'}
       </span>
     )},
-    { accessorKey: 'batch_number', header: 'No. Batch' },
-    { accessorKey: 'shredded_mushroom_gram', header: 'Jamur Suwir (gr)', cell: ({row}) => `${row.original.shredded_mushroom_gram} gr` },
-    { accessorKey: 'seasoned_flour_gram', header: 'Terigu Bumbu (gr)', cell: ({row}) => `${row.original.seasoned_flour_gram} gr` },
-    { accessorKey: 'mushroom_broth', header: 'Kaldu Jamur' },
-    { accessorKey: 'frying_minutes', header: 'Menit Goreng', cell: ({row}) => `${row.original.frying_minutes} m` },
-    { accessorKey: 'spinner_minutes', header: 'Menit Spinner', cell: ({row}) => `${row.original.spinner_minutes} m` },
+    { accessorKey: 'batch_number', header: 'No. Batch', cell: ({row}) => row.original?.batch_number || '-' },
+    { accessorKey: 'shredded_mushroom_gram', header: 'Jamur Suwir (gr)', cell: ({row}) => `${row.original?.shredded_mushroom_gram ?? 0} gr` },
+    { accessorKey: 'seasoned_flour_gram', header: 'Terigu Bumbu (gr)', cell: ({row}) => `${row.original?.seasoned_flour_gram ?? 0} gr` },
+    { accessorKey: 'mushroom_broth', header: 'Kaldu Jamur', cell: ({row}) => row.original?.mushroom_broth || '-' },
+    { accessorKey: 'frying_minutes', header: 'Menit Goreng', cell: ({row}) => `${row.original?.frying_minutes ?? 0} m` },
+    { accessorKey: 'spinner_minutes', header: 'Menit Spinner', cell: ({row}) => `${row.original?.spinner_minutes ?? 0} m` },
     { accessorKey: 'output_chips', header: 'Gr/Kg Keripik', cell: ({row}) => (
       <strong style={{ color: 'var(--color-success-700)', fontWeight: 700 }}>
-        {row.original.output_chips}
+        {row.original?.output_chips || '-'}
       </strong>
     )},
   ]
 };
 
 const PENERIMAAN_COLUMNS: ColumnDef<any>[] = [
-  { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => {
-    try {
-      return format(new Date(row.original.date), 'dd/MM/yyyy');
-    } catch (_) {
-      return row.original.date || '-';
-    }
-  }},
-  { accessorKey: 'supplier_name', header: 'Nama Supplier', cell: ({row}) => <strong>{row.original.supplier_name}</strong> },
-  { accessorKey: 'total_weight_kg', header: 'Berat Jamur (kg)', cell: ({row}) => <span style={{color: 'var(--color-primary-600)', fontWeight: 600}}>{row.original.total_weight_kg} kg</span> },
-  { accessorKey: 'leaf_weight_kg', header: 'Berat Daun (kg)', cell: ({row}) => `${row.original.leaf_weight_kg} kg` },
-  { accessorKey: 'stem_weight_kg', header: 'Berat Batang (kg)', cell: ({row}) => `${row.original.stem_weight_kg} kg` },
+  { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => safeFormatDate(row.original?.date, 'dd/MM/yyyy') },
+  { accessorKey: 'supplier_name', header: 'Nama Supplier', cell: ({row}) => <strong>{row.original?.supplier_name || '-'}</strong> },
+  { accessorKey: 'total_weight_kg', header: 'Berat Jamur (kg)', cell: ({row}) => <span style={{color: 'var(--color-primary-600)', fontWeight: 600}}>{row.original?.total_weight_kg ?? 0} kg</span> },
+  { accessorKey: 'leaf_weight_kg', header: 'Berat Daun (kg)', cell: ({row}) => `${row.original?.leaf_weight_kg ?? 0} kg` },
+  { accessorKey: 'stem_weight_kg', header: 'Berat Batang (kg)', cell: ({row}) => `${row.original?.stem_weight_kg ?? 0} kg` },
   { accessorKey: 'mushroom_code', header: 'Kode Jamur (Supplier-Tanggal)', cell: ({row}) => (
     <span style={{ fontWeight: 700, color: '#0F447E', background: '#F0F4F8', padding: '3px 8px', borderRadius: '4px' }}>
-      {row.original.mushroom_code}
+      {row.original?.mushroom_code || '-'}
     </span>
   )},
-  { accessorKey: 'officer', header: 'Petugas' },
+  { accessorKey: 'officer', header: 'Petugas', cell: ({row}) => row.original?.officer || '-' },
 ];
 
 const REPORT_TITLES: Record<string, string> = {
@@ -849,14 +868,14 @@ export default function ReportsPage() {
   const totalRows = data.length;
   const isProduction = reportType === 'production';
   const isFrying = reportType === 'frying';
-  const totalQty = isProduction ? data.reduce((s, r) => s + (r.total_finished || 0), 0) : 0;
-  const avgYield = isProduction && totalRows > 0 ? (data.reduce((s, r) => s + (r.avg_yield || 0), 0) / totalRows) : 0;
+  const totalQty = isProduction ? data.reduce((s, r) => s + (Number(r?.total_finished) || 0), 0) : 0;
+  const avgYield = isProduction && totalRows > 0 ? (data.reduce((s, r) => s + (Number(r?.avg_yield) || 0), 0) / totalRows) : 0;
 
   // Frying specific metrics
-  const totalPenerimaanWeight = isFrying ? penerimaanData.reduce((s, r) => s + (Number(r.total_weight_kg) || 0), 0) : 0;
-  const totalFryingMushroomKg = isFrying ? (data.reduce((s, r) => s + (Number(r.shredded_mushroom_gram) || 0), 0) / 1000) : 0;
+  const totalPenerimaanWeight = isFrying ? penerimaanData.reduce((s, r) => s + (Number(r?.total_weight_kg) || 0), 0) : 0;
+  const totalFryingMushroomKg = isFrying ? (data.reduce((s, r) => s + (Number(r?.shredded_mushroom_gram) || 0), 0) / 1000) : 0;
   const totalFryingChipsKg = isFrying ? data.reduce((s, r) => {
-    const val = typeof r.output_chips === 'string' ? parseFloat(r.output_chips) : Number(r.output_chips) || 0;
+    const val = typeof r?.output_chips === 'string' ? parseFloat(r.output_chips) : Number(r?.output_chips) || 0;
     return s + (val > 50 ? val / 1000 : val);
   }, 0) : 0;
 
@@ -897,6 +916,9 @@ export default function ReportsPage() {
               value={reportType}
               onChange={(e) => {
                 const val = e.target.value as ReportType;
+                setData([]);
+                setPenerimaanData([]);
+                setIsLoading(true);
                 setReportType(val);
                 if (typeof window !== 'undefined') {
                   sessionStorage.setItem('khumkhum_report_type', val);
@@ -985,7 +1007,7 @@ export default function ReportsPage() {
                   <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '15px' }}>Rata-Rata Rendemen</span>
                 </div>
                 <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--color-warning-700)', lineHeight: 1 }}>
-                  {avgYield.toFixed(1)}%
+                  {(avgYield || 0).toFixed(1)}%
                 </div>
               </Card>
             </div>

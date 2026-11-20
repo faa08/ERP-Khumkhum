@@ -729,9 +729,38 @@ export default function ReportsPage() {
     doc.text(`Dicetak pada: ${format(new Date(), 'dd MMMM yyyy HH:mm')} | ${period}`, 20, 45);
 
     let narasiY = 65;
-    naratif.forEach((paragraph, idx) => {
+    naratif.forEach((paragraph) => {
         // Cek jika paragraph merupakan Title (semua kapital dan berakhiran :)
         const isTitle = paragraph === paragraph.toUpperCase() && paragraph.endsWith(':');
+        const isBullet = paragraph.startsWith('Insight:') || paragraph.match(/^\d\./);
+
+        // Hitung estimasi tinggi yang dibutuhkan sebelum mencetak
+        let estimatedHeight = 15;
+        if (isTitle) {
+            estimatedHeight = 18;
+        } else if (isBullet) {
+            const printText = paragraph.startsWith('Insight:') ? paragraph.substring(8).trim() : paragraph;
+            const lines = doc.splitTextToSize(printText, paragraph.startsWith('Insight:') ? pageWidth - 70 : pageWidth - 50);
+            estimatedHeight = (lines.length * 5.5) + 8;
+        } else {
+            const lines = doc.splitTextToSize(paragraph, pageWidth - 40);
+            estimatedHeight = (lines.length * 5.5) + 8;
+        }
+
+        // Jika melebihi batas halaman, buat halaman lanjutan SEBELUM mencetak konten
+        if (narasiY + estimatedHeight > pageHeight - 20) {
+            doc.addPage();
+            doc.setFillColor(250, 252, 255);
+            doc.rect(0, 0, pageWidth, pageHeight, 'F');
+            doc.setFillColor(15, 68, 126);
+            doc.rect(0, 0, pageWidth, 5, 'F');
+            
+            doc.setTextColor(15, 68, 126);
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(18);
+            doc.text('Analisis & Narasi Laporan (Lanjutan)', 20, 25);
+            narasiY = 40;
+        }
 
         if (isTitle) {
             narasiY += 5; // Extra padding
@@ -740,7 +769,7 @@ export default function ReportsPage() {
             doc.setFontSize(13);
             doc.text(paragraph, 20, narasiY);
             narasiY += 8;
-        } else if (paragraph.startsWith('Insight:') || paragraph.match(/^\d\./)) {
+        } else if (isBullet) {
             // Bullet points
             doc.setFillColor(52, 152, 219);
             doc.circle(24, narasiY - 1.5, 2, 'F');
@@ -770,21 +799,6 @@ export default function ReportsPage() {
             const lines = doc.splitTextToSize(paragraph, pageWidth - 40);
             doc.text(lines, 20, narasiY);
             narasiY += (lines.length * 5.5) + 5;
-        }
-        
-        // Auto add page if content exceeds height
-        if (narasiY > pageHeight - 25) {
-            doc.addPage();
-            doc.setFillColor(250, 252, 255);
-            doc.rect(0, 0, pageWidth, pageHeight, 'F');
-            doc.setFillColor(15, 68, 126);
-            doc.rect(0, 0, pageWidth, 5, 'F');
-            
-            doc.setTextColor(15, 68, 126);
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(18);
-            doc.text('Analisis & Narasi Laporan (Lanjutan)', 20, 25);
-            narasiY = 40;
         }
     });
 

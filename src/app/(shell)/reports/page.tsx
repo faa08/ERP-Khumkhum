@@ -70,12 +70,59 @@ const REPORT_COLUMNS: Record<string, ColumnDef<any>[]> = {
     { accessorKey: 'status', header: 'Status', cell: ({row}) => <StatusBadge status={row.original.status.toLowerCase()} /> },
     { accessorKey: 'products', header: 'Produk Terjual' },
     { accessorKey: 'total_quantity', header: 'Total Qty', cell: ({row}) => `${row.original.total_quantity} pcs` },
+  ],
+  frying: [
+    { accessorKey: 'date', header: 'Tgl', cell: ({row}) => {
+      try {
+        return format(new Date(row.original.date), 'dd/MM/yyyy');
+      } catch (_) {
+        return row.original.date || '-';
+      }
+    }},
+    { accessorKey: 'officer', header: 'Petugas' },
+    { accessorKey: 'mushroom_code', header: 'Kode Jamur (Supplier-Tanggal)', cell: ({row}) => (
+      <span style={{ fontWeight: 700, color: '#0F447E', background: '#F0F4F8', padding: '3px 8px', borderRadius: '4px' }}>
+        {row.original.mushroom_code}
+      </span>
+    )},
+    { accessorKey: 'batch_number', header: 'No. Batch' },
+    { accessorKey: 'shredded_mushroom_gram', header: 'Jamur Suwir (gr)', cell: ({row}) => `${row.original.shredded_mushroom_gram} gr` },
+    { accessorKey: 'seasoned_flour_gram', header: 'Terigu Bumbu (gr)', cell: ({row}) => `${row.original.seasoned_flour_gram} gr` },
+    { accessorKey: 'mushroom_broth', header: 'Kaldu Jamur' },
+    { accessorKey: 'frying_minutes', header: 'Menit Goreng', cell: ({row}) => `${row.original.frying_minutes} m` },
+    { accessorKey: 'spinner_minutes', header: 'Menit Spinner', cell: ({row}) => `${row.original.spinner_minutes} m` },
+    { accessorKey: 'output_chips', header: 'Gr/Kg Keripik', cell: ({row}) => (
+      <strong style={{ color: 'var(--color-success-700)', fontWeight: 700 }}>
+        {row.original.output_chips}
+      </strong>
+    )},
   ]
 };
+
+const PENERIMAAN_COLUMNS: ColumnDef<any>[] = [
+  { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => {
+    try {
+      return format(new Date(row.original.date), 'dd/MM/yyyy');
+    } catch (_) {
+      return row.original.date || '-';
+    }
+  }},
+  { accessorKey: 'supplier_name', header: 'Nama Supplier', cell: ({row}) => <strong>{row.original.supplier_name}</strong> },
+  { accessorKey: 'total_weight_kg', header: 'Berat Jamur (kg)', cell: ({row}) => <span style={{color: 'var(--color-primary-600)', fontWeight: 600}}>{row.original.total_weight_kg} kg</span> },
+  { accessorKey: 'leaf_weight_kg', header: 'Berat Daun (kg)', cell: ({row}) => `${row.original.leaf_weight_kg} kg` },
+  { accessorKey: 'stem_weight_kg', header: 'Berat Batang (kg)', cell: ({row}) => `${row.original.stem_weight_kg} kg` },
+  { accessorKey: 'mushroom_code', header: 'Kode Jamur (Supplier-Tanggal)', cell: ({row}) => (
+    <span style={{ fontWeight: 700, color: '#0F447E', background: '#F0F4F8', padding: '3px 8px', borderRadius: '4px' }}>
+      {row.original.mushroom_code}
+    </span>
+  )},
+  { accessorKey: 'officer', header: 'Petugas' },
+];
 
 const REPORT_TITLES: Record<string, string> = {
   receiving: 'Laporan Penerimaan Bahan Baku',
   sorting: 'Laporan Sortasi & Grading',
+  frying: 'Form Pengendalian Proses Produksi (Penggorengan)',
   production: 'Laporan Rekapitulasi Produksi',
   qc: 'Laporan Inspeksi Quality Control',
   inventory: 'Laporan Mutasi Stok (Rekening Koran)',
@@ -86,7 +133,7 @@ export default function ReportsPage() {
   const [reportType, setReportType] = useState<ReportType>(() => {
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('khumkhum_report_type');
-      if (saved && ['receiving', 'sorting', 'production', 'qc', 'inventory', 'sales'].includes(saved)) {
+      if (saved && ['receiving', 'sorting', 'frying', 'production', 'qc', 'inventory', 'sales'].includes(saved)) {
         return saved as ReportType;
       }
     }
@@ -95,6 +142,7 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [data, setData] = useState<any[]>([]);
+  const [penerimaanData, setPenerimaanData] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const toast = useToast();
 
@@ -105,10 +153,16 @@ export default function ReportsPage() {
 
     setIsLoading(true);
     setData([]); // Bersihkan data sebelumnya agar tidak ada mismatch kolom dan baris
+    setPenerimaanData([]);
     try {
       const res = await generateReportData(targetType, fromDate, toDate);
       if (res.success && res.data) {
         setData(res.data);
+        if (res.metadata?.penerimaan) {
+          setPenerimaanData(res.metadata.penerimaan);
+        } else {
+          setPenerimaanData([]);
+        }
         if (isManualClick) {
           if (res.data.length === 0) {
             toast.info('Tidak ada data pada periode ini');
@@ -119,10 +173,12 @@ export default function ReportsPage() {
       } else {
         if (isManualClick) toast.error(res.error || 'Gagal menarik data laporan');
         setData([]);
+        setPenerimaanData([]);
       }
     } catch (err: any) {
       if (isManualClick) toast.error('Terjadi kesalahan saat memuat data laporan');
       setData([]);
+      setPenerimaanData([]);
     } finally {
       setIsLoading(false);
     }
@@ -134,7 +190,7 @@ export default function ReportsPage() {
   }, [reportType]);
 
   const handleExportExcel = async () => {
-    if (data.length === 0) {
+    if (data.length === 0 && penerimaanData.length === 0) {
       toast.error('Tidak ada data untuk diekspor');
       return;
     }
@@ -142,6 +198,117 @@ export default function ReportsPage() {
       const ExcelJS = (await import('exceljs')).default;
       const workbook = new ExcelJS.Workbook();
       const sheet = workbook.addWorksheet('Laporan');
+
+      if (reportType === 'frying') {
+        sheet.mergeCells('A1:J1');
+        const titleCell = sheet.getCell('A1');
+        titleCell.value = 'FORM PENGENDALIAN PROSES PRODUKSI';
+        titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FF000000' } };
+        titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+
+        sheet.mergeCells('A2:J2');
+        const dateCell = sheet.getCell('A2');
+        const period = (startDate && endDate) 
+          ? `Periode: ${format(new Date(startDate), 'dd MMM yyyy')} - ${format(new Date(endDate), 'dd MMM yyyy')}` 
+          : 'Periode: Semua Waktu';
+        dateCell.value = `CV KHAIRA BUANA MANDIRI | ${period}`;
+        dateCell.font = { name: 'Arial', size: 9, italic: true };
+        dateCell.alignment = { horizontal: 'center' };
+
+        sheet.addRow([]); // Baris 3 kosong
+
+        // ── 1. PENERIMAAN ──
+        sheet.mergeCells('A4:G4');
+        const rcvHeader = sheet.getCell('A4');
+        rcvHeader.value = 'PENERIMAAN';
+        rcvHeader.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF000000' } };
+        rcvHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+        rcvHeader.alignment = { vertical: 'middle', horizontal: 'center' };
+        rcvHeader.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+
+        const rcvCols = ['Tanggal', 'Nama Supplier', 'Berat Jamur (kg)', 'Berat Daun (kg)', 'Berat Batang (kg)', 'Kode Jamur (Supplier-Tanggal)', 'Petugas'];
+        const rcvHeaderRow = sheet.addRow(rcvCols);
+        rcvHeaderRow.eachCell((cell) => {
+          cell.font = { bold: true, color: { argb: 'FF000000' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+        });
+
+        const pData = penerimaanData.length > 0 ? penerimaanData : [];
+        pData.forEach((row) => {
+          let tgl = '-';
+          try { tgl = format(new Date(row.date), 'dd/MM/yyyy'); } catch (_) { tgl = row.date || '-'; }
+          const r = sheet.addRow([
+            tgl,
+            row.supplier_name || '-',
+            Number(row.total_weight_kg || 0),
+            Number(row.leaf_weight_kg || 0),
+            Number(row.stem_weight_kg || 0),
+            row.mushroom_code || '-',
+            row.officer || '-'
+          ]);
+          r.eachCell(cell => {
+            cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+          });
+        });
+
+        sheet.addRow([]); // Spacing
+
+        // ── 2. PENGGORENGAN ──
+        const fryStartRow = sheet.rowCount + 1;
+        sheet.mergeCells(`A${fryStartRow}:J${fryStartRow}`);
+        const fryHeader = sheet.getCell(`A${fryStartRow}`);
+        fryHeader.value = 'PENGGORENGAN';
+        fryHeader.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF000000' } };
+        fryHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+        fryHeader.alignment = { vertical: 'middle', horizontal: 'center' };
+        fryHeader.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+
+        const fryCols = ['Tgl', 'Petugas', 'Kode Jamur (Supplier-Tanggal)', 'No. Batch', 'Jamur Suwir (gr)', 'Terigu Bumbu (gr)', 'Kaldu Jamur', 'Menit Goreng', 'Menit Spinner', 'Gr/Kg Keripik'];
+        const fryHeaderRow = sheet.addRow(fryCols);
+        fryHeaderRow.eachCell((cell) => {
+          cell.font = { bold: true, color: { argb: 'FF000000' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+          cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+        });
+
+        data.forEach((row) => {
+          let tgl = '-';
+          try { tgl = format(new Date(row.date), 'dd/MM/yyyy'); } catch (_) { tgl = row.date || '-'; }
+          const r = sheet.addRow([
+            tgl,
+            row.officer || '-',
+            row.mushroom_code || '-',
+            row.batch_number || '-',
+            Number(row.shredded_mushroom_gram || 0),
+            Number(row.seasoned_flour_gram || 0),
+            row.mushroom_broth || '-',
+            Number(row.frying_minutes || 0),
+            Number(row.spinner_minutes || 0),
+            row.output_chips || '-'
+          ]);
+          r.eachCell(cell => {
+            cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+          });
+        });
+
+        for (let c = 1; c <= 10; c++) {
+          sheet.getColumn(c).width = 18;
+        }
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const url = window.URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `Form_Pengendalian_Proses_Produksi_${format(new Date(), 'yyyyMMdd')}.xlsx`;
+        anchor.click();
+        window.URL.revokeObjectURL(url);
+        toast.success('Berhasil mengekspor Form Pengendalian Proses Produksi ke Excel');
+        return;
+      }
 
       sheet.mergeCells('A1:G1');
       const titleCell = sheet.getCell('A1');
@@ -214,7 +381,7 @@ export default function ReportsPage() {
   };
 
     const handleExportPDF = () => {
-    if (data.length === 0) {
+    if (data.length === 0 && penerimaanData.length === 0) {
       toast.error('Tidak ada data untuk diekspor');
       return;
     }
@@ -222,6 +389,80 @@ export default function ReportsPage() {
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const period = (startDate && endDate) ? `Periode: ${format(new Date(startDate), 'dd MMM yyyy')} - ${format(new Date(endDate), 'dd MMM yyyy')}` : 'Semua Waktu (All Time)';
+
+    if (reportType === 'frying') {
+      // PDF resmi Form Pengendalian Proses Produksi (sesuai formulir fisik pabrik)
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(0, 0, 0);
+      doc.text('FORM PENGENDALIAN PROSES PRODUKSI', pageWidth / 2, 13, { align: 'center' });
+      
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(70, 70, 70);
+      doc.text(`CV KHAIRA BUANA MANDIRI | ${period} | Dicetak: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, pageWidth / 2, 18, { align: 'center' });
+
+      // ── 1. PENERIMAAN ──
+      autoTable(doc, {
+        startY: 23,
+        theme: 'grid',
+        head: [
+          [{ content: 'PENERIMAAN', colSpan: 7, styles: { halign: 'center', fillColor: [217, 225, 242], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 } }],
+          ['Tanggal', 'Nama Supplier', 'Berat Jamur (kg)', 'Berat Daun (kg)', 'Berat Batang (kg)', 'Kode Jamur (Supplier-Tanggal)', 'Petugas']
+        ],
+        body: (penerimaanData.length > 0 ? penerimaanData : []).map(r => {
+          let tgl = '-';
+          try { tgl = format(new Date(r.date), 'dd/MM/yyyy'); } catch (_) { tgl = r.date || '-'; }
+          return [
+            tgl,
+            r.supplier_name || '-',
+            `${r.total_weight_kg || 0} kg`,
+            `${r.leaf_weight_kg || 0} kg`,
+            `${r.stem_weight_kg || 0} kg`,
+            r.mushroom_code || '-',
+            r.officer || '-'
+          ];
+        }),
+        headStyles: { fillColor: [217, 225, 242], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.2, lineColor: [150, 150, 150], fontSize: 8 },
+        bodyStyles: { fontSize: 7.5, cellPadding: 2, lineWidth: 0.2, lineColor: [190, 190, 190], textColor: [0, 0, 0] },
+        margin: { left: 10, right: 10 }
+      });
+
+      const finalY = (doc as any).lastAutoTable.finalY + 6;
+
+      // ── 2. PENGGORENGAN ──
+      autoTable(doc, {
+        startY: finalY,
+        theme: 'grid',
+        head: [
+          [{ content: 'PENGGORENGAN', colSpan: 10, styles: { halign: 'center', fillColor: [217, 225, 242], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 } }],
+          ['Tgl', 'Petugas', 'Kode Jamur (Supplier-Tanggal)', 'No. Batch', 'Jamur Suwir (gr)', 'Terigu Bumbu (gr)', 'Kaldu Jamur', 'Menit Goreng', 'Menit Spinner', 'Gr/Kg Keripik']
+        ],
+        body: data.map(r => {
+          let tgl = '-';
+          try { tgl = format(new Date(r.date), 'dd/MM/yyyy'); } catch (_) { tgl = r.date || '-'; }
+          return [
+            tgl,
+            r.officer || '-',
+            r.mushroom_code || '-',
+            r.batch_number || '-',
+            `${r.shredded_mushroom_gram || 0} gr`,
+            `${r.seasoned_flour_gram || 0} gr`,
+            r.mushroom_broth || '-',
+            `${r.frying_minutes || 0} m`,
+            `${r.spinner_minutes || 0} m`,
+            r.output_chips || '-'
+          ];
+        }),
+        headStyles: { fillColor: [217, 225, 242], textColor: [0, 0, 0], fontStyle: 'bold', lineWidth: 0.2, lineColor: [150, 150, 150], fontSize: 8 },
+        bodyStyles: { fontSize: 7.5, cellPadding: 2, lineWidth: 0.2, lineColor: [190, 190, 190], textColor: [0, 0, 0] },
+        margin: { left: 10, right: 10 }
+      });
+
+      doc.save(`Form_Pengendalian_Proses_Produksi_${format(new Date(), 'yyyyMMdd')}.pdf`);
+      toast.success('Berhasil mencetak PDF Form Pengendalian Proses Produksi');
+      return;
+    }
 
     // ==========================================
     // SLIDE 1: COVER (CANVA INFORMATIVE STYLE)
@@ -607,8 +848,17 @@ export default function ReportsPage() {
   // ── UI Metrics ──
   const totalRows = data.length;
   const isProduction = reportType === 'production';
+  const isFrying = reportType === 'frying';
   const totalQty = isProduction ? data.reduce((s, r) => s + (r.total_finished || 0), 0) : 0;
   const avgYield = isProduction && totalRows > 0 ? (data.reduce((s, r) => s + (r.avg_yield || 0), 0) / totalRows) : 0;
+
+  // Frying specific metrics
+  const totalPenerimaanWeight = isFrying ? penerimaanData.reduce((s, r) => s + (Number(r.total_weight_kg) || 0), 0) : 0;
+  const totalFryingMushroomKg = isFrying ? (data.reduce((s, r) => s + (Number(r.shredded_mushroom_gram) || 0), 0) / 1000) : 0;
+  const totalFryingChipsKg = isFrying ? data.reduce((s, r) => {
+    const val = typeof r.output_chips === 'string' ? parseFloat(r.output_chips) : Number(r.output_chips) || 0;
+    return s + (val > 50 ? val / 1000 : val);
+  }, 0) : 0;
 
   return (
     <div style={{ paddingBottom: 'var(--space-8)' }}>
@@ -618,8 +868,8 @@ export default function ReportsPage() {
         breadcrumbs={[{ label: 'Manajemen' }, { label: 'Laporan' }]}
         actions={
           <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-            <Button variant="secondary" onClick={handleExportExcel} leftIcon={<FileSpreadsheet size={18} color="#107C41" />} style={{ background: '#fff', border: '1px solid #107C41', color: '#107C41' }}>Export Excel</Button>
-            <Button variant="secondary" onClick={handleExportPDF} leftIcon={<FileText size={18} color="#F24E1E" />} style={{ background: '#fff', border: '1px solid #F24E1E', color: '#F24E1E' }}>Export PDF</Button>
+            <Button variant="secondary" onClick={handleExportExcel} leftIcon={<FileSpreadsheet size={18} color="#107C41" aria-hidden="true" />} style={{ background: '#fff', border: '1px solid #107C41', color: '#107C41' }}>Export Excel</Button>
+            <Button variant="secondary" onClick={handleExportPDF} leftIcon={<FileText size={18} color="#F24E1E" aria-hidden="true" />} style={{ background: '#fff', border: '1px solid #F24E1E', color: '#F24E1E' }}>Export PDF</Button>
           </div>
         }
       />
@@ -656,6 +906,7 @@ export default function ReportsPage() {
                 { value: 'receiving', label: 'Laporan Penerimaan' },
                 { value: 'sorting', label: 'Laporan Sortasi' },
                 { value: 'production', label: 'Laporan Produksi' },
+                { value: 'frying', label: 'Form Pengendalian Produksi (Penggorengan)' },
                 { value: 'qc', label: 'Laporan Quality Control' },
                 { value: 'inventory', label: 'Mutasi Stok' },
                 { value: 'sales', label: 'Ringkasan Penjualan' },
@@ -698,9 +949,11 @@ export default function ReportsPage() {
           <Card bodyClassName="p-6">
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
               <div style={{ padding: '12px', background: 'var(--color-primary-50)', borderRadius: '16px', color: 'var(--color-primary-600)' }}>
-                <FileText size={28} />
+                <FileText size={28} aria-hidden="true" />
               </div>
-              <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '15px' }}>Total Baris Data</span>
+              <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '15px' }}>
+                {isFrying ? 'Total Batch Goreng' : 'Total Baris Data'}
+              </span>
             </div>
             <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>
               {totalRows}
@@ -714,7 +967,7 @@ export default function ReportsPage() {
               <Card bodyClassName="p-6">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ padding: '12px', background: 'var(--color-success-100)', borderRadius: '16px', color: 'var(--color-success-700)' }}>
-                    <Package size={28} />
+                    <Package size={28} aria-hidden="true" />
                   </div>
                   <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '15px' }}>Total Volume (kg)</span>
                 </div>
@@ -727,7 +980,7 @@ export default function ReportsPage() {
               <Card bodyClassName="p-6">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
                   <div style={{ padding: '12px', background: 'var(--color-warning-100)', borderRadius: '16px', color: 'var(--color-warning-700)' }}>
-                    <TrendingUp size={28} />
+                    <TrendingUp size={28} aria-hidden="true" />
                   </div>
                   <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '15px' }}>Rata-Rata Rendemen</span>
                 </div>
@@ -738,36 +991,146 @@ export default function ReportsPage() {
             </div>
           </>
         )}
+
+        {isFrying && (
+          <>
+            <div style={{ borderRadius: '20px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', background: 'linear-gradient(to bottom right, #ffffff, #eff6ff)' }}>
+              <Card bodyClassName="p-6">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', background: 'var(--color-primary-100)', borderRadius: '16px', color: 'var(--color-primary-700)' }}>
+                    <Factory size={28} aria-hidden="true" />
+                  </div>
+                  <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '15px' }}>Penerimaan Bahan Baku</span>
+                </div>
+                <div style={{ fontSize: '2.5rem', fontWeight: 800, color: 'var(--color-primary-700)', lineHeight: 1 }}>
+                  {totalPenerimaanWeight.toFixed(1)} <span style={{ fontSize: '1.25rem', fontWeight: 600 }}>kg</span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                  {penerimaanData.length} transaksi penerimaan mitra
+                </div>
+              </Card>
+            </div>
+            <div style={{ borderRadius: '20px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', background: 'linear-gradient(to bottom right, #ffffff, #f0fdf4)' }}>
+              <Card bodyClassName="p-6">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
+                  <div style={{ padding: '12px', background: 'var(--color-success-100)', borderRadius: '16px', color: 'var(--color-success-700)' }}>
+                    <Package size={28} aria-hidden="true" />
+                  </div>
+                  <span style={{ fontWeight: 600, color: 'var(--text-secondary)', fontSize: '15px' }}>Est. Total Keripik Jadi</span>
+                </div>
+                <div style={{ fontSize: '2.5rem', fontWeight: 800, color: 'var(--color-success-700)', lineHeight: 1 }}>
+                  {totalFryingChipsKg.toFixed(1)} <span style={{ fontSize: '1.25rem', fontWeight: 600 }}>kg</span>
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                  dari {totalFryingMushroomKg.toFixed(1)} kg jamur suwir
+                </div>
+              </Card>
+            </div>
+          </>
+        )}
       </div>
 
-      {/* The Report Table */}
-      <div style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 10px 40px rgba(0,0,0,0.03)' }}>
-        <Card bodyClassName="body--none">
-          <div style={{ padding: '24px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fafafa' }}>
-            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <BarChart2 size={24} color="var(--color-primary-500)" />
-              {REPORT_TITLES[reportType]}
-            </h3>
-            <div style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>
-              Menampilkan {totalRows} entri data
-            </div>
+      {/* The Report Table(s) */}
+      {isFrying ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Section 1: PENERIMAAN */}
+          <div style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 10px 40px rgba(0,0,0,0.03)' }}>
+            <Card bodyClassName="body--none">
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F0F4F8' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', color: '#0F447E' }}>
+                    <Factory size={22} color="#0F447E" aria-hidden="true" />
+                    1. PENERIMAAN BAHAN BAKU
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Data penimbangan jamur dari supplier/mitra petani &amp; pembentukan Kode Jamur (Supplier-Tanggal)
+                  </p>
+                </div>
+                <div style={{ fontSize: '12px', fontWeight: 600, background: '#D9E1F2', color: '#0F447E', padding: '4px 12px', borderRadius: '12px' }}>
+                  {penerimaanData.length} entri penerimaan
+                </div>
+              </div>
+              
+              {isLoading ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <RefreshCw size={28} className="animate-spin mx-auto mb-3" color="var(--color-primary-500)" aria-hidden="true" />
+                  <p>Memuat data penerimaan...</p>
+                </div>
+              ) : (
+                <div style={{ background: '#fff' }}>
+                  <DataTable
+                    columns={PENERIMAAN_COLUMNS}
+                    data={penerimaanData}
+                  />
+                </div>
+              )}
+            </Card>
           </div>
-          
-          {isLoading ? (
-            <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              <RefreshCw size={32} className="animate-spin mx-auto mb-4" color="var(--color-primary-500)" />
-              <p>Menarik data secara real-time...</p>
+
+          {/* Section 2: PENGGORENGAN */}
+          <div style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 10px 40px rgba(0,0,0,0.03)' }}>
+            <Card bodyClassName="body--none">
+              <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F0F4F8' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', color: '#0F447E' }}>
+                    <BarChart2 size={22} color="#0F447E" aria-hidden="true" />
+                    2. PENGGORENGAN (FORM PENGENDALIAN PROSES PRODUKSI)
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--text-secondary)' }}>
+                    Monitoring wajan goreng: takaran jamur suwir, bumbu, waktu penggorengan &amp; spinner, serta hasil keripik
+                  </p>
+                </div>
+                <div style={{ fontSize: '12px', fontWeight: 600, background: '#D9E1F2', color: '#0F447E', padding: '4px 12px', borderRadius: '12px' }}>
+                  {totalRows} batch penggorengan
+                </div>
+              </div>
+              
+              {isLoading ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  <RefreshCw size={28} className="animate-spin mx-auto mb-3" color="var(--color-primary-500)" aria-hidden="true" />
+                  <p>Memuat data penggorengan...</p>
+                </div>
+              ) : (
+                <div style={{ background: '#fff' }}>
+                  <DataTable
+                    columns={REPORT_COLUMNS.frying || []}
+                    data={data}
+                  />
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+      ) : (
+        /* The Single Report Table */
+        <div style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 10px 40px rgba(0,0,0,0.03)' }}>
+          <Card bodyClassName="body--none">
+            <div style={{ padding: '24px', borderBottom: '1px solid var(--border-default)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fafafa' }}>
+              <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <BarChart2 size={24} color="var(--color-primary-500)" aria-hidden="true" />
+                {REPORT_TITLES[reportType]}
+              </h3>
+              <div style={{ fontSize: '13px', color: 'var(--text-tertiary)' }}>
+                Menampilkan {totalRows} entri data
+              </div>
             </div>
-          ) : (
-            <div style={{ background: '#fff' }}>
-              <DataTable
-                columns={REPORT_COLUMNS[reportType] || []}
-                data={data}
-              />
-            </div>
-          )}
-        </Card>
-      </div>
+            
+            {isLoading ? (
+              <div style={{ padding: '60px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <RefreshCw size={32} className="animate-spin mx-auto mb-4" color="var(--color-primary-500)" aria-hidden="true" />
+                <p>Menarik data secara real-time...</p>
+              </div>
+            ) : (
+              <div style={{ background: '#fff' }}>
+                <DataTable
+                  columns={REPORT_COLUMNS[reportType] || []}
+                  data={data}
+                />
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

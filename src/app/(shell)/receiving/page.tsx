@@ -150,7 +150,7 @@ export default function ReceivingPage() {
   };
 
   const handleSave = async () => {
-    const jamurMaterial = rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur') || rm.code === 'JMR-TRM');
+    const jamurMaterial = rawMaterials.find(rm => rm.code === 'JMR-TRM' || rm.name.toLowerCase().includes('jamur tiram')) || rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur') && !rm.name.toLowerCase().includes('gagang'));
     const finalRawMaterialId = form.raw_material_id || jamurMaterial?.id;
     
     if (!form.farmer_id || !finalRawMaterialId || !form.weight_sent || !form.weight) {
@@ -360,7 +360,7 @@ export default function ReceivingPage() {
 
   const handleImportData = async (data: any[]) => {
     try {
-      const rawMat = rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur tiram')) || rawMaterials[0];
+      const rawMat = rawMaterials.find(rm => rm.code === 'JMR-TRM' || rm.name.toLowerCase().includes('jamur tiram')) || rawMaterials.find(rm => rm.name.toLowerCase().includes('jamur') && !rm.name.toLowerCase().includes('gagang')) || rawMaterials[0];
       if (!rawMat) return { success: false, error: 'Bahan baku tidak ditemukan' };
       
       const importedRecords = [];

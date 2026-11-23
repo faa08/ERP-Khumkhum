@@ -42,6 +42,7 @@ const REPORT_COLUMNS: Record<string, ColumnDef<any>[]> = {
   sorting: [
     { accessorKey: 'date', header: 'Tanggal', cell: ({row}) => safeFormatDate(row.original?.date) },
     { accessorKey: 'batch_number', header: 'No Batch Penerimaan', cell: ({row}) => row.original?.batch_number || '-' },
+    { accessorKey: 'farmer', header: 'Petani', cell: ({row}) => row.original?.farmer || '-' },
     { accessorKey: 'grade', header: 'Grade', cell: ({row}) => <strong>{row.original?.grade || '-'}</strong> },
     { accessorKey: 'accepted', header: 'Diterima', cell: ({row}) => <span style={{color: 'var(--color-success-600)'}}>{row.original?.accepted ?? 0} kg</span> },
     { accessorKey: 'rejected', header: 'Ditolak', cell: ({row}) => <span style={{color: 'var(--color-danger-600)'}}>{row.original?.rejected ?? 0} kg</span> },

@@ -9,10 +9,11 @@ import { Dropdown } from '@/components/ui/Dropdown';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
+import { Switch } from '@/components/ui/Switch';
 import { FormField } from '@/components/form/FormField';
 import { useToast } from '@/hooks/useToast';
 import { useAuth } from '@/hooks/useAuth';
-import { Plus, MoreVertical, Eye, Edit, CheckCircle, AlertTriangle, Leaf, Scale, Trash2, Calendar } from 'lucide-react';
+import { Plus, MoreVertical, Eye, Edit, CheckCircle, AlertTriangle, Leaf, Scale, Trash2, Calendar, Lock, Unlock } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import type { ColumnDef } from '@tanstack/react-table';
 import { format, isToday } from 'date-fns';
@@ -89,12 +90,37 @@ export default function SortingPage() {
   const toast = useToast();
 
   // ── Auto-Balance & Incoming Weight (Create) ──
+  const [autoBalance, setAutoBalance] = useState(true);
+
   const selectedReceiving = useMemo(() => {
     return unsortedReceivings.find(r => r.id === form.receiving_id) || null;
   }, [unsortedReceivings, form.receiving_id]);
   const incomingWeight = selectedReceiving ? Number(selectedReceiving.weight) || 0 : 0;
 
+  const toggleAutoBalance = (enabled: boolean) => {
+    setAutoBalance(enabled);
+    if (enabled && incomingWeight > 0) {
+      const curLeaf = parseFloat(form.leaf_weight);
+      if (!isNaN(curLeaf) && curLeaf >= 0) {
+        const clampedLeaf = Math.min(incomingWeight, curLeaf);
+        const autoStem = Math.max(0, Math.round((incomingWeight - clampedLeaf) * 100) / 100);
+        setForm(f => ({ ...f, leaf_weight: clampedLeaf.toString(), stem_weight: autoStem.toString() }));
+      } else {
+        const curStem = parseFloat(form.stem_weight);
+        if (!isNaN(curStem) && curStem >= 0) {
+          const clampedStem = Math.min(incomingWeight, curStem);
+          const autoLeaf = Math.max(0, Math.round((incomingWeight - clampedStem) * 100) / 100);
+          setForm(f => ({ ...f, stem_weight: clampedStem.toString(), leaf_weight: autoLeaf.toString() }));
+        }
+      }
+    }
+  };
+
   const handleLeafChange = (valStr: string) => {
+    if (!autoBalance) {
+      setForm(f => ({ ...f, leaf_weight: valStr }));
+      return;
+    }
     if (valStr === '') {
       setForm(f => ({ ...f, leaf_weight: '', stem_weight: '' }));
       return;
@@ -121,6 +147,10 @@ export default function SortingPage() {
   };
 
   const handleStemChange = (valStr: string) => {
+    if (!autoBalance) {
+      setForm(f => ({ ...f, stem_weight: valStr }));
+      return;
+    }
     if (valStr === '') {
       setForm(f => ({ ...f, stem_weight: '', leaf_weight: '' }));
       return;
@@ -176,8 +206,16 @@ export default function SortingPage() {
     }
     const leaf = parseFloat(form.leaf_weight);
     const stem = parseFloat(form.stem_weight);
-    if (incomingWeight > 0 && Math.abs((leaf + stem) - incomingWeight) > 0.05) {
-      toast.error(`Total berat daun (${leaf} kg) + batang (${stem} kg) harus pas ${incomingWeight} kg sesuai penerimaan`);
+    if (isNaN(leaf) || isNaN(stem) || leaf < 0 || stem < 0) {
+      toast.error('Berat daun dan batang harus berupa angka positif');
+      return;
+    }
+    if (leaf === 0 && stem === 0) {
+      toast.error('Berat daun atau batang harus lebih dari 0 kg');
+      return;
+    }
+    if (autoBalance && incomingWeight > 0 && Math.abs((leaf + stem) - incomingWeight) > 0.05) {
+      toast.error(`Auto-Balance aktif: Total berat daun (${leaf} kg) + batang (${stem} kg) harus pas ${incomingWeight} kg sesuai penerimaan`);
       return;
     }
     setIsSaving(true);
@@ -192,6 +230,7 @@ export default function SortingPage() {
       toast.success('Sortasi berhasil dicatat!');
       setDrawerOpen(false);
       setForm(EMPTY_FORM);
+      setAutoBalance(true);
       loadData();
     } else {
       toast.error(res.error || 'Gagal menyimpan');
@@ -199,12 +238,37 @@ export default function SortingPage() {
   };
 
   // ── Auto-Balance & Incoming Weight (Edit) ──
+  const [editAutoBalance, setEditAutoBalance] = useState(true);
+
   const editIncomingWeight = useMemo(() => {
     if (!editItem) return 0;
     return (editItem as any)?.receiving?.weight ? Number((editItem as any).receiving.weight) || 0 : 0;
   }, [editItem]);
 
+  const toggleEditAutoBalance = (enabled: boolean) => {
+    setEditAutoBalance(enabled);
+    if (enabled && editIncomingWeight > 0) {
+      const curLeaf = parseFloat(editForm.leaf_weight);
+      if (!isNaN(curLeaf) && curLeaf >= 0) {
+        const clampedLeaf = Math.min(editIncomingWeight, curLeaf);
+        const autoStem = Math.max(0, Math.round((editIncomingWeight - clampedLeaf) * 100) / 100);
+        setEditForm(f => ({ ...f, leaf_weight: clampedLeaf.toString(), stem_weight: autoStem.toString() }));
+      } else {
+        const curStem = parseFloat(editForm.stem_weight);
+        if (!isNaN(curStem) && curStem >= 0) {
+          const clampedStem = Math.min(editIncomingWeight, curStem);
+          const autoLeaf = Math.max(0, Math.round((editIncomingWeight - clampedStem) * 100) / 100);
+          setEditForm(f => ({ ...f, stem_weight: clampedStem.toString(), leaf_weight: autoLeaf.toString() }));
+        }
+      }
+    }
+  };
+
   const handleEditLeafChange = (valStr: string) => {
+    if (!editAutoBalance) {
+      setEditForm(f => ({ ...f, leaf_weight: valStr }));
+      return;
+    }
     if (valStr === '') {
       setEditForm(f => ({ ...f, leaf_weight: '', stem_weight: '' }));
       return;
@@ -231,6 +295,10 @@ export default function SortingPage() {
   };
 
   const handleEditStemChange = (valStr: string) => {
+    if (!editAutoBalance) {
+      setEditForm(f => ({ ...f, stem_weight: valStr }));
+      return;
+    }
     if (valStr === '') {
       setEditForm(f => ({ ...f, stem_weight: '', leaf_weight: '' }));
       return;
@@ -267,9 +335,14 @@ export default function SortingPage() {
 
   const handleOpenEdit = (item: DbSorting) => {
     setEditItem(item);
+    const leafVal = item.leaf_weight != null ? item.leaf_weight : item.accepted_quantity;
+    const stemVal = item.stem_weight != null ? item.stem_weight : item.waste;
+    const recWeight = (item as any)?.receiving?.weight ? Number((item as any).receiving.weight) || 0 : 0;
+    const isMatched = recWeight > 0 ? Math.abs((Number(leafVal) + Number(stemVal)) - recWeight) <= 0.05 : true;
+    setEditAutoBalance(isMatched);
     setEditForm({
-      leaf_weight: (item.leaf_weight != null ? item.leaf_weight : item.accepted_quantity).toString(),
-      stem_weight: (item.stem_weight != null ? item.stem_weight : item.waste).toString(),
+      leaf_weight: (leafVal ?? '').toString(),
+      stem_weight: (stemVal ?? '').toString(),
       sorting_date: isoToDateTimeLocal(item.sorting_date),
     });
     setEditOpen(true);
@@ -282,8 +355,16 @@ export default function SortingPage() {
     }
     const leaf = parseFloat(editForm.leaf_weight);
     const stem = parseFloat(editForm.stem_weight);
-    if (editIncomingWeight > 0 && Math.abs((leaf + stem) - editIncomingWeight) > 0.05) {
-      toast.error(`Total berat daun (${leaf} kg) + batang (${stem} kg) harus pas ${editIncomingWeight} kg sesuai penerimaan`);
+    if (isNaN(leaf) || isNaN(stem) || leaf < 0 || stem < 0) {
+      toast.error('Berat daun dan batang harus berupa angka positif');
+      return;
+    }
+    if (leaf === 0 && stem === 0) {
+      toast.error('Berat daun atau batang harus lebih dari 0 kg');
+      return;
+    }
+    if (editAutoBalance && editIncomingWeight > 0 && Math.abs((leaf + stem) - editIncomingWeight) > 0.05) {
+      toast.error(`Auto-Balance aktif: Total berat daun (${leaf} kg) + batang (${stem} kg) harus pas ${editIncomingWeight} kg sesuai penerimaan`);
       return;
     }
     setIsUpdating(true);
@@ -545,48 +626,72 @@ export default function SortingPage() {
 
           {incomingWeight > 0 && (
             <div style={{
-              padding: '10px 14px',
+              padding: '12px 14px',
               borderRadius: 'var(--radius-md)',
-              background: 'var(--color-primary-50)',
-              border: '1px solid var(--color-primary-200)',
+              background: autoBalance ? 'var(--color-primary-50)' : 'var(--bg-subtle)',
+              border: `1px solid ${autoBalance ? 'var(--color-primary-200)' : 'var(--border-default)'}`,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '10px',
             }}>
-              <div>
-                <div style={{ fontSize: '11px', color: 'var(--color-primary-700)', fontWeight: 600 }}>Timbangan Penerimaan (Patokan)</div>
-                <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-900)' }}>
+              <div style={{ flex: 1, minWidth: '220px' }}>
+                <div style={{ fontSize: '11px', color: autoBalance ? 'var(--color-primary-700)' : 'var(--text-secondary)', fontWeight: 600 }}>Timbangan Penerimaan (Patokan)</div>
+                <strong style={{ fontSize: 'var(--text-sm)', color: autoBalance ? 'var(--color-primary-900)' : 'var(--text-primary)' }}>
                   {incomingWeight} kg
                 </strong>
-                <div style={{ fontSize: '11px', color: 'var(--color-primary-800)', marginTop: '2px' }}>
-                  Auto-Balance aktif: Input daun atau batang otomatis mengunci total pas {incomingWeight} kg.
+                <div style={{ fontSize: '11px', color: autoBalance ? 'var(--color-primary-800)' : 'var(--text-tertiary)', marginTop: '2px' }}>
+                  {autoBalance
+                    ? `Auto-Balance aktif: Input daun atau batang otomatis mengunci total pas ${incomingWeight} kg.`
+                    : 'Mode Manual: Anda dapat menginput berat daun dan batang secara bebas tanpa penguncian otomatis.'}
                 </div>
               </div>
-              <span style={{
-                padding: '3px 10px',
-                borderRadius: 'var(--radius-full)',
-                background: 'white',
-                color: 'var(--color-primary-700)',
-                fontSize: '11px',
-                fontWeight: 600,
-                border: '1px solid var(--color-primary-300)',
-                whiteSpace: 'nowrap',
-                marginLeft: '8px',
-              }}>
-                Terkunci {incomingWeight} kg
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Switch
+                  id="switch-auto-balance-create"
+                  checked={autoBalance}
+                  onChange={e => toggleAutoBalance(e.target.checked)}
+                  label={autoBalance ? 'Auto-Balance' : 'Manual'}
+                />
+                <span style={{
+                  padding: '3px 10px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'white',
+                  color: autoBalance ? 'var(--color-primary-700)' : 'var(--text-secondary)',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  border: `1px solid ${autoBalance ? 'var(--color-primary-300)' : 'var(--border-default)'}`,
+                  whiteSpace: 'nowrap',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}>
+                  {autoBalance ? (
+                    <>
+                      <Lock className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                      Terkunci {incomingWeight} kg
+                    </>
+                  ) : (
+                    <>
+                      <Unlock className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                      Mode Bebas
+                    </>
+                  )}
+                </span>
+              </div>
             </div>
           )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
             <FormField label="Berat Daun / W_daun (kg)" required>
               <Input
-                type="number" step="0.01" min="0" max={incomingWeight || undefined} placeholder="0.00"
+                type="number" step="0.01" min="0" max={autoBalance ? (incomingWeight || undefined) : undefined} placeholder="0.00"
                 value={form.leaf_weight}
                 onChange={e => handleLeafChange(e.target.value)}
                 disabled={!form.receiving_id}
               />
-              {incomingWeight > 0 && (
+              {incomingWeight > 0 && autoBalance && (
                 <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
                   Maksimal: {incomingWeight} kg
                 </span>
@@ -594,12 +699,12 @@ export default function SortingPage() {
             </FormField>
             <FormField label="Berat Batang / W_batang (kg)" required>
               <Input
-                type="number" step="0.01" min="0" max={incomingWeight || undefined} placeholder="0.00"
+                type="number" step="0.01" min="0" max={autoBalance ? (incomingWeight || undefined) : undefined} placeholder="0.00"
                 value={form.stem_weight}
                 onChange={e => handleStemChange(e.target.value)}
                 disabled={!form.receiving_id}
               />
-              {incomingWeight > 0 && (
+              {incomingWeight > 0 && autoBalance && (
                 <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
                   Maksimal: {incomingWeight} kg
                 </span>
@@ -632,6 +737,24 @@ export default function SortingPage() {
                 <div style={{ textAlign: 'center' }}>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Total</div>
                   <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{total.toFixed(2)} kg</div>
+                  {!autoBalance && incomingWeight > 0 && (
+                    <div style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      marginTop: '2px',
+                      color: Math.abs(total - incomingWeight) <= 0.05
+                        ? 'var(--color-success-600)'
+                        : total < incomingWeight
+                        ? 'var(--color-warning-700)'
+                        : 'var(--color-primary-700)',
+                    }}>
+                      {Math.abs(total - incomingWeight) <= 0.05
+                        ? 'Pas dengan penerimaan'
+                        : total < incomingWeight
+                        ? `Susut -${(incomingWeight - total).toFixed(2)} kg`
+                        : `Surplus +${(total - incomingWeight).toFixed(2)} kg`}
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{ marginTop: 'var(--space-2)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
@@ -703,47 +826,71 @@ export default function SortingPage() {
 
             {editIncomingWeight > 0 && (
               <div style={{
-                padding: '10px 14px',
+                padding: '12px 14px',
                 borderRadius: 'var(--radius-md)',
-                background: 'var(--color-primary-50)',
-                border: '1px solid var(--color-primary-200)',
+                background: editAutoBalance ? 'var(--color-primary-50)' : 'var(--bg-subtle)',
+                border: `1px solid ${editAutoBalance ? 'var(--color-primary-200)' : 'var(--border-default)'}`,
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: '10px',
               }}>
-                <div>
-                  <div style={{ fontSize: '11px', color: 'var(--color-primary-700)', fontWeight: 600 }}>Timbangan Penerimaan (Patokan)</div>
-                  <strong style={{ fontSize: 'var(--text-sm)', color: 'var(--color-primary-900)' }}>
+                <div style={{ flex: 1, minWidth: '220px' }}>
+                  <div style={{ fontSize: '11px', color: editAutoBalance ? 'var(--color-primary-700)' : 'var(--text-secondary)', fontWeight: 600 }}>Timbangan Penerimaan (Patokan)</div>
+                  <strong style={{ fontSize: 'var(--text-sm)', color: editAutoBalance ? 'var(--color-primary-900)' : 'var(--text-primary)' }}>
                     {editIncomingWeight} kg
                   </strong>
-                  <div style={{ fontSize: '11px', color: 'var(--color-primary-800)', marginTop: '2px' }}>
-                    Auto-Balance aktif: Input daun atau batang otomatis mengunci total pas {editIncomingWeight} kg.
+                  <div style={{ fontSize: '11px', color: editAutoBalance ? 'var(--color-primary-800)' : 'var(--text-tertiary)', marginTop: '2px' }}>
+                    {editAutoBalance
+                      ? `Auto-Balance aktif: Input daun atau batang otomatis mengunci total pas ${editIncomingWeight} kg.`
+                      : 'Mode Manual: Anda dapat menginput berat daun dan batang secara bebas tanpa penguncian otomatis.'}
                   </div>
                 </div>
-                <span style={{
-                  padding: '3px 10px',
-                  borderRadius: 'var(--radius-full)',
-                  background: 'white',
-                  color: 'var(--color-primary-700)',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  border: '1px solid var(--color-primary-300)',
-                  whiteSpace: 'nowrap',
-                  marginLeft: '8px',
-                }}>
-                  Terkunci {editIncomingWeight} kg
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Switch
+                    id="switch-auto-balance-edit"
+                    checked={editAutoBalance}
+                    onChange={e => toggleEditAutoBalance(e.target.checked)}
+                    label={editAutoBalance ? 'Auto-Balance' : 'Manual'}
+                  />
+                  <span style={{
+                    padding: '3px 10px',
+                    borderRadius: 'var(--radius-full)',
+                    background: 'white',
+                    color: editAutoBalance ? 'var(--color-primary-700)' : 'var(--text-secondary)',
+                    fontSize: '11px',
+                    fontWeight: 600,
+                    border: `1px solid ${editAutoBalance ? 'var(--color-primary-300)' : 'var(--border-default)'}`,
+                    whiteSpace: 'nowrap',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}>
+                    {editAutoBalance ? (
+                      <>
+                        <Lock className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                        Terkunci {editIncomingWeight} kg
+                      </>
+                    ) : (
+                      <>
+                        <Unlock className="w-3 h-3 text-currentColor" aria-hidden="true" />
+                        Mode Bebas
+                      </>
+                    )}
+                  </span>
+                </div>
               </div>
             )}
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
               <FormField label="Berat Daun Baru (kg)" required>
                 <Input
-                  type="number" step="0.01" min="0" max={editIncomingWeight || undefined} placeholder="0.00"
+                  type="number" step="0.01" min="0" max={editAutoBalance ? (editIncomingWeight || undefined) : undefined} placeholder="0.00"
                   value={editForm.leaf_weight}
                   onChange={e => handleEditLeafChange(e.target.value)}
                 />
-                {editIncomingWeight > 0 && (
+                {editIncomingWeight > 0 && editAutoBalance && (
                   <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
                     Maksimal: {editIncomingWeight} kg
                   </span>
@@ -751,11 +898,11 @@ export default function SortingPage() {
               </FormField>
               <FormField label="Berat Batang Baru (kg)" required>
                 <Input
-                  type="number" step="0.01" min="0" max={editIncomingWeight || undefined} placeholder="0.00"
+                  type="number" step="0.01" min="0" max={editAutoBalance ? (editIncomingWeight || undefined) : undefined} placeholder="0.00"
                   value={editForm.stem_weight}
                   onChange={e => handleEditStemChange(e.target.value)}
                 />
-                {editIncomingWeight > 0 && (
+                {editIncomingWeight > 0 && editAutoBalance && (
                   <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '2px', display: 'block' }}>
                     Maksimal: {editIncomingWeight} kg
                   </span>
@@ -799,6 +946,24 @@ export default function SortingPage() {
                   <div style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>Total Baru</div>
                     <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>{editTotal.toFixed(2)} kg</div>
+                    {!editAutoBalance && editIncomingWeight > 0 && (
+                      <div style={{
+                        fontSize: '10px',
+                        fontWeight: 600,
+                        marginTop: '2px',
+                        color: Math.abs(editTotal - editIncomingWeight) <= 0.05
+                          ? 'var(--color-success-600)'
+                          : editTotal < editIncomingWeight
+                          ? 'var(--color-warning-700)'
+                          : 'var(--color-primary-700)',
+                      }}>
+                        {Math.abs(editTotal - editIncomingWeight) <= 0.05
+                          ? 'Pas dengan penerimaan'
+                          : editTotal < editIncomingWeight
+                          ? `Susut -${(editIncomingWeight - editTotal).toFixed(2)} kg`
+                          : `Surplus +${(editTotal - editIncomingWeight).toFixed(2)} kg`}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

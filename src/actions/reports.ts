@@ -273,7 +273,10 @@ export async function generateReportData(
           .from('sortings')
           .select(`
             id, grade, quality_grade, accepted_quantity, rejected_quantity, waste, leaf_weight, stem_weight, sorting_date, created_at,
-            receiving:receivings (batch_number),
+            receiving:receivings (
+              batch_number,
+              farmer:farmers (name)
+            ),
             sorter:users (name)
           `)
           .order('sorting_date', { ascending: false });
@@ -432,6 +435,7 @@ export async function generateReportData(
          id: s.id || `sort-${idx}`,
          date: s.sorting_date || s.created_at,
          batch_number: s.receiving?.batch_number || '-',
+         farmer: s.receiving?.farmer?.name || '-',
          grade: s.quality_grade || s.grade || 'A',
          accepted: Number(s.accepted_quantity ?? s.leaf_weight ?? 0),
          rejected: Number(s.rejected_quantity ?? 0),

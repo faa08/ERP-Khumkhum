@@ -217,105 +217,287 @@ export default function ReportsPage() {
     try {
       const ExcelJS = (await import('exceljs')).default;
       const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet('Laporan');
+      workbook.creator = 'ERP Khumkhum';
+      workbook.created = new Date();
+
+      const period = (startDate && endDate) 
+        ? `Periode: ${format(new Date(startDate), 'dd MMM yyyy')} - ${format(new Date(endDate), 'dd MMM yyyy')}` 
+        : 'Periode: Semua Waktu';
+
+      const thinBorder = {
+        top: { style: 'thin' as const, color: { argb: 'FFD0D7DE' } },
+        bottom: { style: 'thin' as const, color: { argb: 'FFD0D7DE' } },
+        left: { style: 'thin' as const, color: { argb: 'FFD0D7DE' } },
+        right: { style: 'thin' as const, color: { argb: 'FFD0D7DE' } },
+      };
+
+      const headerBorder = {
+        top: { style: 'thin' as const, color: { argb: 'FF8C9BAE' } },
+        bottom: { style: 'medium' as const, color: { argb: 'FF0F447E' } },
+        left: { style: 'thin' as const, color: { argb: 'FF8C9BAE' } },
+        right: { style: 'thin' as const, color: { argb: 'FF8C9BAE' } },
+      };
+
+      const summaryBorder = {
+        top: { style: 'thin' as const, color: { argb: 'FF0F447E' } },
+        bottom: { style: 'double' as const, color: { argb: 'FF0F447E' } },
+        left: { style: 'thin' as const, color: { argb: 'FFD0D7DE' } },
+        right: { style: 'thin' as const, color: { argb: 'FFD0D7DE' } },
+      };
 
       if (reportType === 'frying') {
-        sheet.mergeCells('A1:J1');
-        const titleCell = sheet.getCell('A1');
-        titleCell.value = 'FORM PENGENDALIAN PROSES PRODUKSI';
-        titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FF000000' } };
-        titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+        // ==========================================
+        // SHEET 1: DATA PENERIMAAN BAHAN BAKU
+        // ==========================================
+        const sheetRcv = workbook.addWorksheet('1. Penerimaan Bahan Baku', { views: [{ showGridLines: true }] });
 
-        sheet.mergeCells('A2:J2');
-        const dateCell = sheet.getCell('A2');
-        const period = (startDate && endDate) 
-          ? `Periode: ${format(new Date(startDate), 'dd MMM yyyy')} - ${format(new Date(endDate), 'dd MMM yyyy')}` 
-          : 'Periode: Semua Waktu';
-        dateCell.value = `CV KHAIRA BUANA MANDIRI | ${period}`;
-        dateCell.font = { name: 'Arial', size: 9, italic: true };
-        dateCell.alignment = { horizontal: 'center' };
+        sheetRcv.mergeCells('A1:G1');
+        const rcvT = sheetRcv.getCell('A1');
+        rcvT.value = 'FORM PENGENDALIAN PROSES PRODUKSI - PENERIMAAN';
+        rcvT.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+        rcvT.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F447E' } };
+        rcvT.alignment = { vertical: 'middle', horizontal: 'center' };
+        sheetRcv.getRow(1).height = 30;
 
-        sheet.addRow([]); // Baris 3 kosong
+        sheetRcv.mergeCells('A2:G2');
+        const rcvD = sheetRcv.getCell('A2');
+        rcvD.value = `CV KHAIRA BUANA MANDIRI | ${period} | Dicetak: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`;
+        rcvD.font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF333333' } };
+        rcvD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4F8' } };
+        rcvD.alignment = { vertical: 'middle', horizontal: 'center' };
+        sheetRcv.getRow(2).height = 20;
 
-        // ── 1. PENERIMAAN ──
-        sheet.mergeCells('A4:G4');
-        const rcvHeader = sheet.getCell('A4');
-        rcvHeader.value = 'PENERIMAAN';
-        rcvHeader.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF000000' } };
-        rcvHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
-        rcvHeader.alignment = { vertical: 'middle', horizontal: 'center' };
-        rcvHeader.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+        sheetRcv.addRow([]); // Spacing
+        sheetRcv.getRow(3).height = 10;
 
-        const rcvCols = ['Tanggal', 'Nama Supplier', 'Berat Jamur (kg)', 'Berat Daun (kg)', 'Berat Batang (kg)', 'Kode Jamur (Supplier-Tanggal)', 'Petugas'];
-        const rcvHeaderRow = sheet.addRow(rcvCols);
-        rcvHeaderRow.eachCell((cell) => {
-          cell.font = { bold: true, color: { argb: 'FF000000' } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
-          cell.alignment = { vertical: 'middle', horizontal: 'center' };
-          cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+        const rcvColsPure = ['Tanggal', 'Nama Supplier / Petani', 'Berat Jamur (kg)', 'Berat Daun (kg)', 'Berat Batang (kg)', 'Kode Jamur (Supplier-Tanggal)', 'Petugas Inbound'];
+        const rcvColWidths = [14, 30, 18, 18, 18, 28, 22];
+        rcvColWidths.forEach((w, idx) => sheetRcv.getColumn(idx + 1).width = w);
+
+        const rcvHRowPure = sheetRcv.addRow(rcvColsPure);
+        rcvHRowPure.height = 26;
+        rcvHRowPure.eachCell(c => {
+          c.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2B579A' } };
+          c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+          c.border = headerBorder;
         });
 
         const pData = penerimaanData.length > 0 ? penerimaanData : [];
-        pData.forEach((row) => {
+        let sumTotalRcv = 0;
+        let sumLeafRcv = 0;
+        let sumStemRcv = 0;
+
+        pData.forEach((row, idx) => {
           let tgl = '-';
           try { tgl = format(new Date(row.date), 'dd/MM/yyyy'); } catch (_) { tgl = row.date || '-'; }
-          const r = sheet.addRow([
+          const wTotal = Number(row.total_weight_kg || 0);
+          const wLeaf = Number(row.leaf_weight_kg || 0);
+          const wStem = Number(row.stem_weight_kg || 0);
+
+          sumTotalRcv += wTotal;
+          sumLeafRcv += wLeaf;
+          sumStemRcv += wStem;
+
+          const r = sheetRcv.addRow([
             tgl,
             row.supplier_name || '-',
-            Number(row.total_weight_kg || 0),
-            Number(row.leaf_weight_kg || 0),
-            Number(row.stem_weight_kg || 0),
+            wTotal,
+            wLeaf,
+            wStem,
             row.mushroom_code || '-',
             row.officer || '-'
           ]);
-          r.eachCell(cell => {
-            cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-          });
+          r.height = 21;
+
+          r.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(2).alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+          r.getCell(3).alignment = { vertical: 'middle', horizontal: 'right' };
+          r.getCell(3).numFmt = '#,##0.00';
+          r.getCell(3).font = { name: 'Arial', size: 10, bold: true };
+          r.getCell(4).alignment = { vertical: 'middle', horizontal: 'right' };
+          r.getCell(4).numFmt = '#,##0.00';
+          r.getCell(4).font = { name: 'Arial', size: 10, color: { argb: 'FF107C41' } };
+          r.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' };
+          r.getCell(5).numFmt = '#,##0.00';
+          r.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(6).font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF0F447E' } };
+          r.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
+
+          const isEven = idx % 2 === 0;
+          for (let col = 1; col <= 7; col++) {
+            const cell = r.getCell(col);
+            cell.border = thinBorder;
+            if (isEven) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+          }
         });
 
-        sheet.addRow([]); // Spacing
+        // Summary row Penerimaan
+        const sumRcvRow = sheetRcv.addRow([
+          `TOTAL PENERIMAAN (${pData.length} Transaksi)`,
+          '',
+          sumTotalRcv,
+          sumLeafRcv,
+          sumStemRcv,
+          `Rendemen Daun: ${sumTotalRcv > 0 ? ((sumLeafRcv / sumTotalRcv) * 100).toFixed(1) : 0}%`,
+          ''
+        ]);
+        sumRcvRow.height = 24;
+        sheetRcv.mergeCells(`A${sumRcvRow.number}:B${sumRcvRow.number}`);
+        sheetRcv.mergeCells(`F${sumRcvRow.number}:G${sumRcvRow.number}`);
 
-        // ── 2. PENGGORENGAN ──
-        const fryStartRow = sheet.rowCount + 1;
-        sheet.mergeCells(`A${fryStartRow}:J${fryStartRow}`);
-        const fryHeader = sheet.getCell(`A${fryStartRow}`);
-        fryHeader.value = 'PENGGORENGAN';
-        fryHeader.font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF000000' } };
-        fryHeader.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
-        fryHeader.alignment = { vertical: 'middle', horizontal: 'center' };
-        fryHeader.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+        sumRcvRow.getCell(1).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F447E' } };
+        sumRcvRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'right', indent: 1 };
+        sumRcvRow.getCell(3).numFmt = '#,##0.00';
+        sumRcvRow.getCell(3).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F447E' } };
+        sumRcvRow.getCell(3).alignment = { vertical: 'middle', horizontal: 'right' };
+        sumRcvRow.getCell(4).numFmt = '#,##0.00';
+        sumRcvRow.getCell(4).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF107C41' } };
+        sumRcvRow.getCell(4).alignment = { vertical: 'middle', horizontal: 'right' };
+        sumRcvRow.getCell(5).numFmt = '#,##0.00';
+        sumRcvRow.getCell(5).font = { name: 'Arial', size: 10, bold: true };
+        sumRcvRow.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' };
+        sumRcvRow.getCell(6).font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF555555' } };
+        sumRcvRow.getCell(6).alignment = { vertical: 'middle', horizontal: 'center' };
 
-        const fryCols = ['Tgl', 'Petugas', 'Kode Jamur (Supplier-Tanggal)', 'No. Batch', 'Jamur Suwir (gr)', 'Terigu Bumbu (gr)', 'Kaldu Jamur', 'Menit Goreng', 'Menit Spinner', 'Gr/Kg Keripik'];
-        const fryHeaderRow = sheet.addRow(fryCols);
-        fryHeaderRow.eachCell((cell) => {
-          cell.font = { bold: true, color: { argb: 'FF000000' } };
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
-          cell.alignment = { vertical: 'middle', horizontal: 'center' };
-          cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
+        for (let col = 1; col <= 7; col++) {
+          const cell = sumRcvRow.getCell(col);
+          cell.border = summaryBorder;
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDF2F7' } };
+        }
+
+        // ==========================================
+        // SHEET 2: DATA PENGGORENGAN & MUTU
+        // ==========================================
+        const sheetFry = workbook.addWorksheet('2. Penggorengan & Mutu', { views: [{ showGridLines: true }] });
+
+        sheetFry.mergeCells('A1:J1');
+        const fryT = sheetFry.getCell('A1');
+        fryT.value = 'FORM PENGENDALIAN PROSES PRODUKSI - PENGGORENGAN';
+        fryT.font = { name: 'Arial', size: 13, bold: true, color: { argb: 'FFFFFFFF' } };
+        fryT.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F447E' } };
+        fryT.alignment = { vertical: 'middle', horizontal: 'center' };
+        sheetFry.getRow(1).height = 30;
+
+        sheetFry.mergeCells('A2:J2');
+        const fryD = sheetFry.getCell('A2');
+        fryD.value = `CV KHAIRA BUANA MANDIRI | ${period} | Dicetak: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`;
+        fryD.font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF333333' } };
+        fryD.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4F8' } };
+        fryD.alignment = { vertical: 'middle', horizontal: 'center' };
+        sheetFry.getRow(2).height = 20;
+
+        sheetFry.addRow([]); // Spacing
+        sheetFry.getRow(3).height = 10;
+
+        const fryCols = ['Tgl', 'Petugas', 'Kode Jamur (Supplier-Tanggal)', 'No. Batch', 'Jamur Suwir (gr)', 'Terigu Bumbu (gr)', 'Kaldu Jamur', 'Menit Goreng', 'Menit Spinner', 'Keripik Jadi (kg)'];
+        const fryColWidthsPure = [14, 20, 26, 20, 16, 16, 16, 14, 14, 16];
+        fryColWidthsPure.forEach((w, idx) => sheetFry.getColumn(idx + 1).width = w);
+
+        const fryHRowPure = sheetFry.addRow(fryCols);
+        fryHRowPure.height = 26;
+        fryHRowPure.eachCell(c => {
+          c.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
+          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2B579A' } };
+          c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+          c.border = headerBorder;
         });
 
-        data.forEach((row) => {
+        let sumShredded = 0;
+        let sumFlour = 0;
+        let sumChips = 0;
+        let sumFryMin = 0;
+        let sumSpinMin = 0;
+
+        data.forEach((row, idx) => {
           let tgl = '-';
           try { tgl = format(new Date(row.date), 'dd/MM/yyyy'); } catch (_) { tgl = row.date || '-'; }
-          const r = sheet.addRow([
+          const shredded = Number(row.shredded_mushroom_gram || 0);
+          const flour = Number(row.seasoned_flour_gram || 0);
+          const fryM = Number(row.frying_minutes || 0);
+          const spinM = Number(row.spinner_minutes || 0);
+          const rawChip = typeof row.output_chips === 'string' ? parseFloat(row.output_chips) : Number(row.output_chips || 0);
+          const chipKg = rawChip > 50 ? rawChip / 1000 : rawChip;
+
+          sumShredded += shredded;
+          sumFlour += flour;
+          sumFryMin += fryM;
+          sumSpinMin += spinM;
+          sumChips += chipKg;
+
+          const r = sheetFry.addRow([
             tgl,
             row.officer || '-',
             row.mushroom_code || '-',
             row.batch_number || '-',
-            Number(row.shredded_mushroom_gram || 0),
-            Number(row.seasoned_flour_gram || 0),
+            shredded,
+            flour,
             row.mushroom_broth || '-',
-            Number(row.frying_minutes || 0),
-            Number(row.spinner_minutes || 0),
-            row.output_chips || '-'
+            fryM ? `${fryM} mnt` : '-',
+            spinM ? `${spinM} mnt` : '-',
+            chipKg ? `${chipKg.toFixed(2)} kg` : (row.output_chips || '-')
           ]);
-          r.eachCell(cell => {
-            cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-          });
+          r.height = 21;
+
+          r.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(3).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(3).font = { name: 'Arial', size: 9, bold: true, color: { argb: 'FF0F447E' } };
+          r.getCell(4).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' };
+          r.getCell(5).numFmt = '#,##0';
+          r.getCell(6).alignment = { vertical: 'middle', horizontal: 'right' };
+          r.getCell(6).numFmt = '#,##0';
+          r.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(9).alignment = { vertical: 'middle', horizontal: 'center' };
+          r.getCell(10).alignment = { vertical: 'middle', horizontal: 'right' };
+          r.getCell(10).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF107C41' } };
+
+          const isEven = idx % 2 === 0;
+          for (let col = 1; col <= 10; col++) {
+            const cell = r.getCell(col);
+            cell.border = thinBorder;
+            if (isEven) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+          }
         });
 
-        for (let c = 1; c <= 10; c++) {
-          sheet.getColumn(c).width = 18;
+        // Summary row Penggorengan
+        const sumFryRow = sheetFry.addRow([
+          `TOTAL PENGGORENGAN (${data.length} Batch)`,
+          '',
+          '',
+          '',
+          sumShredded,
+          sumFlour,
+          '-',
+          data.length > 0 ? `${(sumFryMin / data.length).toFixed(0)} mnt (avg)` : '-',
+          data.length > 0 ? `${(sumSpinMin / data.length).toFixed(0)} mnt (avg)` : '-',
+          `${sumChips.toFixed(2)} kg`
+        ]);
+        sumFryRow.height = 24;
+        sheetFry.mergeCells(`A${sumFryRow.number}:D${sumFryRow.number}`);
+
+        sumFryRow.getCell(1).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F447E' } };
+        sumFryRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'right', indent: 1 };
+        sumFryRow.getCell(5).numFmt = '#,##0';
+        sumFryRow.getCell(5).font = { name: 'Arial', size: 10, bold: true };
+        sumFryRow.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' };
+        sumFryRow.getCell(6).numFmt = '#,##0';
+        sumFryRow.getCell(6).font = { name: 'Arial', size: 10, bold: true };
+        sumFryRow.getCell(6).alignment = { vertical: 'middle', horizontal: 'right' };
+        sumFryRow.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' };
+        sumFryRow.getCell(8).font = { name: 'Arial', size: 9, italic: true };
+        sumFryRow.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' };
+        sumFryRow.getCell(9).font = { name: 'Arial', size: 9, italic: true };
+        sumFryRow.getCell(9).alignment = { vertical: 'middle', horizontal: 'center' };
+        sumFryRow.getCell(10).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF107C41' } };
+        sumFryRow.getCell(10).alignment = { vertical: 'middle', horizontal: 'right' };
+
+        for (let col = 1; col <= 10; col++) {
+          const cell = sumFryRow.getCell(col);
+          cell.border = summaryBorder;
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEDF2F7' } };
         }
 
         const buffer = await workbook.xlsx.writeBuffer();
@@ -326,38 +508,50 @@ export default function ReportsPage() {
         anchor.download = `Form_Pengendalian_Proses_Produksi_${format(new Date(), 'yyyyMMdd')}.xlsx`;
         anchor.click();
         window.URL.revokeObjectURL(url);
-        toast.success('Berhasil mengekspor Form Pengendalian Proses Produksi ke Excel');
+        toast.success('Berhasil mengekspor Form Pengendalian Proses Produksi ke Excel (2 Tab Rapi)');
         return;
       }
 
-      sheet.mergeCells('A1:G1');
-      const titleCell = sheet.getCell('A1');
-      titleCell.value = REPORT_TITLES[reportType].toUpperCase();
-      titleCell.font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
-      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F447E' } };
-      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-
-      sheet.mergeCells('A2:G2');
-      const dateCell = sheet.getCell('A2');
-      const period = (startDate && endDate) ? `Periode: ${format(new Date(startDate), 'dd MMM yyyy')} - ${format(new Date(endDate), 'dd MMM yyyy')}` : 'Periode: Semua Waktu';
-      dateCell.value = period;
-      dateCell.font = { name: 'Arial', size: 10, italic: true };
-      dateCell.alignment = { horizontal: 'right' };
-
-      sheet.addRow([]); // Spacing
+      // ==========================================
+      // LAPORAN LAINNYA (RECEIVING, SORTING, PRODUCTION, DLL)
+      // ==========================================
+      const sheetName = REPORT_TITLES[reportType]?.substring(0, 31) || 'Laporan';
+      const sheet = workbook.addWorksheet(sheetName, { views: [{ showGridLines: true }] });
 
       const tableColumns = REPORT_COLUMNS[reportType];
+      const numCols = tableColumns.length;
+
+      sheet.mergeCells(1, 1, 1, numCols);
+      const titleCell = sheet.getCell('A1');
+      titleCell.value = REPORT_TITLES[reportType].toUpperCase();
+      titleCell.font = { name: 'Arial', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F447E' } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      sheet.getRow(1).height = 32;
+
+      sheet.mergeCells(2, 1, 2, numCols);
+      const dateCell = sheet.getCell('A2');
+      dateCell.value = `CV KHAIRA BUANA MANDIRI | ${period} | Dicetak: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`;
+      dateCell.font = { name: 'Arial', size: 9, italic: true, color: { argb: 'FF333333' } };
+      dateCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F4F8' } };
+      dateCell.alignment = { vertical: 'middle', horizontal: 'center' };
+      sheet.getRow(2).height = 20;
+
+      sheet.addRow([]); // Spacing
+      sheet.getRow(3).height = 10;
+
       const headerValues = tableColumns.map(c => c.header as string);
       const headerRow = sheet.addRow(headerValues);
+      headerRow.height = 26;
       
-      const colWidths = headerValues.map(h => Math.max(15, h.length + 5));
+      const colWidths = headerValues.map(h => Math.max(16, (h?.length || 10) + 6));
       
       headerRow.eachCell((cell, colNum) => {
-        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2980B9' } };
-        cell.alignment = { vertical: 'middle', horizontal: 'center' };
-        cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } };
-        sheet.getColumn(colNum).width = colWidths[colNum - 1] + 5;
+        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+        cell.border = { top: { style: 'thin' }, bottom: { style: 'medium', color: { argb: 'FF0F447E' } }, left: { style: 'thin' }, right: { style: 'thin' } };
+        sheet.getColumn(colNum).width = colWidths[colNum - 1];
       });
 
       data.forEach((row, index) => {
